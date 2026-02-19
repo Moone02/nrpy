@@ -166,7 +166,6 @@ if __name__ == "__main__":
 
         # 3. Validation
         # Construct expected name to verify registration
-        # [Fix 3] Renamed variable to avoid shadowing local variable in function
         test_suffix = "photon" if PARTICLE_test == "photon" else "massive"
         cfunc_name = f"normalization_constraint_{test_suffix}"
 
