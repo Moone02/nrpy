@@ -58,7 +58,8 @@ def batch_integrator_numerical(spacetime_name: str) -> None:
     body = f"""
     // === INITIALIZATION ===
     printf("Initializing %ld photon states for NUMERICAL integration...\\n", num_rays);
-    PhotonState *all_photons = (PhotonState *)malloc(sizeof(PhotonState) * num_rays);
+    PhotonState *all_photons = (PhotonState *)aligned_alloc(64, sizeof(PhotonState) * num_rays);
+    // PhotonState *all_photons = (PhotonState *)malloc(sizeof(PhotonState) * num_rays);
     if (all_photons == NULL) {{ fprintf(stderr, "Error: Failed to allocate memory for photon states.\\n"); exit(1); }}
     long int active_photons = num_rays;
 
