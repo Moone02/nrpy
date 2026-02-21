@@ -121,8 +121,6 @@ if __name__ == "__main__":
     calculate_ode_rhs.calculate_ode_rhs(geodesic_data.geodesic_rhs, geodesic_data.xx)
     
     # Initial Condition Constraints
-    if geodesic_data.p0_photon is None:
-        raise ValueError(f"p0_photon symbolic expression is missing for {GEO_KEY}")
     p0_reverse.p0_reverse(geodesic_data.p0_photon)
     
     # Diagnostics
