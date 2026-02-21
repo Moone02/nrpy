@@ -23,7 +23,7 @@ def calculate_and_fill_blueprint_data_universal() -> None:
     cfunc_type = "blueprint_data_t"
 
     includes = ["BHaH_defines.h", "BHaH_function_prototypes.h"]
-    
+
     desc = r"""@brief Processes a photon's final state to compute all blueprint quantities.
 
     This finalizer engine is called once for each completed ray. It dispatches
@@ -37,7 +37,7 @@ def calculate_and_fill_blueprint_data_universal() -> None:
     @param[in]  n_x, n_y       Orthonormal basis vectors for the window plane.
     @return A fully populated `blueprint_data_t` struct ready for output.
     """
-    
+
     params = """const commondata_struct *restrict commondata, 
                 const PhotonState *restrict photon,
                 const double window_center[3], 
@@ -104,7 +104,7 @@ def calculate_and_fill_blueprint_data_universal() -> None:
         name=name,
         params=params,
         body=body,
-        include_CodeParameters_h= False,
+        include_CodeParameters_h=False,
     )
 
 

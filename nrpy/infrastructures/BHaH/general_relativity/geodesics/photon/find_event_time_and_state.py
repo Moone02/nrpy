@@ -175,7 +175,10 @@ if __name__ == "__main__":
         logger.info(" -> Success! C function generated.")
 
     except Exception as e:
-        logger.error(" -> FAIL: find_event_time_and_state test failed with error: %s", e)
+        logger.error(
+            " -> FAIL: find_event_time_and_state test failed with error: %s", e
+        )
         import traceback
+
         traceback.print_exc()
         sys.exit(1)

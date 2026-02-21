@@ -8,8 +8,8 @@ checks if the photon hit the active "glowing" region, and records the data.
 Author: Dalton J. Moone
 """
 
-import sys
 import os
+import sys
 
 # Import NRPy core modules
 import nrpy.c_function as cfc
@@ -31,16 +31,28 @@ def handle_source_plane_intersection() -> None:
     """
     # Step 0: Define Code Parameters
     # --- Local Parameter Registration ---
-    par.register_CodeParameters("REAL", __name__,
-        ["source_plane_normal_x", "source_plane_normal_y", "source_plane_normal_z",
-         "source_plane_center_x", "source_plane_center_y", "source_plane_center_z",
-         "source_up_vec_x", "source_up_vec_y", "source_up_vec_z",
-         "source_r_min", "source_r_max"],
+    par.register_CodeParameters(
+        "REAL",
+        __name__,
+        [
+            "source_plane_normal_x",
+            "source_plane_normal_y",
+            "source_plane_normal_z",
+            "source_plane_center_x",
+            "source_plane_center_y",
+            "source_plane_center_z",
+            "source_up_vec_x",
+            "source_up_vec_y",
+            "source_up_vec_z",
+            "source_r_min",
+            "source_r_max",
+        ],
         [0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 6.0, 25.0],
-        commondata=True, add_to_parfile=True
+        commondata=True,
+        add_to_parfile=True,
     )
     # ------------------------------------
-    
+
     # Step 1: Define specific C headers and function metadata
     includes = [
         "BHaH_defines.h",
@@ -48,7 +60,7 @@ def handle_source_plane_intersection() -> None:
         "<math.h>",
         "<stdbool.h>",
     ]
-    
+
     desc = r"""@brief Handles a source plane intersection by checking bounds and populating the blueprint.
     
     This function performs a coordinate transformation from the global 3D Cartesian basis 
@@ -59,7 +71,7 @@ def handle_source_plane_intersection() -> None:
     @param[out] final_blueprint_data Pointer to the final output struct to be populated if valid.
     @return True if the intersection is valid (within the active annulus) and processed; false otherwise.
     """
-    
+
     name = "handle_source_plane_intersection"
     cfunc_type = "bool"
     params = """
@@ -197,6 +209,7 @@ def handle_source_plane_intersection() -> None:
 
 if __name__ == "__main__":
     import logging
+
     import nrpy.params as par
 
     # Ensure local modules can be imported
@@ -208,7 +221,7 @@ if __name__ == "__main__":
 
     logger.info("Test: Generating C-code for Source Plane Intersection Handler...")
 
-    try:        
+    try:
         # 1. Run the Generator
         logger.info(" -> Calling handle_source_plane_intersection()...")
         handle_source_plane_intersection()
@@ -226,10 +239,10 @@ if __name__ == "__main__":
 
         # 3. Output Files to Current Directory for Inspection
         logger.info(" -> Writing generated code to disk...")
-        
+
         # We also attempt to output BHaH_defines.h if needed, but primarily the C file.
         Bdefines_h.output_BHaH_defines_h(project_dir=".")
-        
+
         for func_name, c_function in cfc.CFunction_dict.items():
             filename = f"{func_name}.c"
             with open(filename, "w", encoding="utf-8") as f:
@@ -239,7 +252,10 @@ if __name__ == "__main__":
         logger.info(" -> Success! All files generated.")
 
     except Exception as e:
-        logger.error(" -> FAIL: handle_source_plane_intersection test failed with error: %s", e)
+        logger.error(
+            " -> FAIL: handle_source_plane_intersection test failed with error: %s", e
+        )
         import traceback
+
         traceback.print_exc()
         sys.exit(1)

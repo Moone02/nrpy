@@ -9,7 +9,7 @@ import nrpy.c_function as cfc
 
 def main(spacetime_name: str) -> None:
     """
-    Generate and register the main() C function.
+    Register the master orchestrator C function.
 
     This function generates the C code for the main() function. It acts as the
     master orchestrator, managing the simulation's lifecycle.
@@ -86,7 +86,7 @@ if __name__ == "__main__":
 
     # Ensure local directory is in path for imports if needed
     sys.path.append(os.getcwd())
-    
+
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger("GenerateMain")
 

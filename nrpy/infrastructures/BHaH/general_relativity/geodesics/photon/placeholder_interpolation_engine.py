@@ -39,7 +39,7 @@ def placeholder_interpolation_engine(spacetime_name: str, PARTICLE: str) -> None
     # Step 2: Define C function metadata
     # We need BHaH_function_prototypes.h to know the signatures of the worker functions
     includes = ["BHaH_defines.h", "BHaH_function_prototypes.h"]
-    
+
     desc = f"""@brief Placeholder for the external batch-processing interpolation engine.
 
     ========================================================================
@@ -52,9 +52,9 @@ def placeholder_interpolation_engine(spacetime_name: str, PARTICLE: str) -> None
     by calling the low-level ANALYTIC WORKER functions directly. This provides
     a ground-truth analytic result for validating the numerical control flow.
     """
-    
+
     name = f"placeholder_interpolation_engine_{spacetime_name}"
-    
+
     params = """const commondata_struct *restrict commondata,
                 const int num_photons,
                 const photon_request_t *restrict requests,
@@ -124,7 +124,11 @@ if __name__ == "__main__":
     SPACETIME = "KerrSchild_Cartesian"
     PARTICLE = "photon"
 
-    logger.info("Test: Generating Placeholder Interpolation Engine C-code for %s (%s)...", SPACETIME, PARTICLE)
+    logger.info(
+        "Test: Generating Placeholder Interpolation Engine C-code for %s (%s)...",
+        SPACETIME,
+        PARTICLE,
+    )
 
     try:
         # 1. Run the Generator
@@ -152,7 +156,10 @@ if __name__ == "__main__":
         logger.info(" -> Success! C function generated.")
 
     except Exception as e:
-        logger.error(" -> FAIL: placeholder_interpolation_engine test failed with error: %s", e)
+        logger.error(
+            " -> FAIL: placeholder_interpolation_engine test failed with error: %s", e
+        )
         import traceback
+
         traceback.print_exc()
         sys.exit(1)

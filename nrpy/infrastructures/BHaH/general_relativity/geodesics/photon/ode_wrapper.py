@@ -2,7 +2,7 @@
 Register C dispatcher function for the internal RKF45 ODE solver.
 
 This module registers the 'ode_wrapper_{spacetime}' C function.
-It computes the metric and Christoffel symbols before invoking the 
+It computes the metric and Christoffel symbols before invoking the
 RHS calculation engine, specifically for use with the internal RKF45 kernel.
 
 Author: Dalton J. Moone
@@ -10,11 +10,12 @@ Author: Dalton J. Moone
 
 import nrpy.c_function as cfc
 
+
 def ode_wrapper(spacetime_name: str) -> None:
     """
     Generate the C dispatcher function for the internal RKF45 solver.
 
-    This function calls the project-specific geometry engines and 
+    This function calls the project-specific geometry engines and
     the RHS engine, providing a clean interface for the RKF45 stepper.
 
     :param spacetime_name: String used to define metric in analytic_spacetimes.py.
@@ -33,7 +34,9 @@ def ode_wrapper(spacetime_name: str) -> None:
     # Changed type to void and removed GSL-specific void* params
     cfunc_type = "void"
     name = f"ode_wrapper_{spacetime_name}"
-    params = "const double y[9], const commondata_struct *restrict commondata, double f[9]"
+    params = (
+        "const double y[9], const commondata_struct *restrict commondata, double f[9]"
+    )
 
     # Construct the body
     body = f"""
@@ -60,10 +63,12 @@ def ode_wrapper(spacetime_name: str) -> None:
         body=body,
     )
 
+
 if __name__ == "__main__":
     import logging
     import os
     import sys
+
     import nrpy.infrastructures.BHaH.BHaH_defines_h as Bdefines_h
 
     sys.path.append(os.getcwd())

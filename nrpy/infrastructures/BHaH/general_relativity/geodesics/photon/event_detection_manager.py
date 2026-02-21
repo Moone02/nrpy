@@ -9,13 +9,13 @@ source plane) and triggers the high-precision interpolation engine if a crossing
 Author: Dalton J. Moone
 """
 
-import sys
 import os
+import sys
 
 import nrpy.c_function as cfc
 import nrpy.infrastructures.BHaH.BHaH_defines_h as Bdefines_h
 
-    # --- Register C Structs ---
+# --- Register C Structs ---
 event_structs_c_code = r"""
     // ==========================================
     // Event Detection and Plane Crossing Helpers
@@ -59,7 +59,7 @@ def event_detection_manager() -> None:
     # -------------------------------------------------------------------------
     # Defines and prototypes required for the C function to compile.
     includes = ["BHaH_defines.h", "BHaH_function_prototypes.h", "<math.h>"]
-    
+
     desc = r"""@brief Detects crossings of the window and source planes.
 
     This orchestrator is called at each integration step. It determines if a
@@ -75,9 +75,9 @@ def event_detection_manager() -> None:
     @param[out]     window_event            Pointer to the event_data_struct for window crossings.
     @param[out]     source_plane_event      Pointer to the event_data_struct for source plane crossings.
     """
-    
+
     name = "event_detection_manager"
-    
+
     params = """
         const double f_prev[9], const double f_curr[9], const double f_next[9],
         double lambda_prev, double lambda_curr, double lambda_next,
@@ -203,10 +203,7 @@ if __name__ == "__main__":
     import logging
 
     # Configure logging to print only the message content
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(message)s"
-    )
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     logger = logging.getLogger("TestEventDetectionManager")
 
     logger.info("Test: Generating Event Detection Manager C-code...")
@@ -230,10 +227,10 @@ if __name__ == "__main__":
         # 3. Output Files to Current Directory for Inspection
         output_filename = f"{cfunc_name}.c"
         c_function = cfc.CFunction_dict[cfunc_name]
-        
+
         with open(output_filename, "w", encoding="utf-8") as f:
             f.write(c_function.full_function)
-        
+
         logger.info("    ... Wrote %s for inspection.", output_filename)
         logger.info(" -> Success! Test complete.")
 

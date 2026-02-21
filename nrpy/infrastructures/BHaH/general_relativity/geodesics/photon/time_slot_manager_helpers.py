@@ -1,19 +1,21 @@
 """
 Generates the C data structures and helper functions for the Time Slot Manager.
 
-The Time Slot Manager implements a temporal "bucket sort" strategy. It divides 
-the simulation timeline into discrete slots, allowing the numerical pipeline 
+The Time Slot Manager implements a temporal "bucket sort" strategy. It divides
+the simulation timeline into discrete slots, allowing the numerical pipeline
 to process photons in parallel bundles based on their coordinate time.
 
 Author: Dalton J. Moone
 """
+
 from nrpy.infrastructures.BHaH import BHaH_defines_h as Bdefines_h
+
 
 def time_slot_manager_helpers() -> None:
     """
     Generate and register the TimeSlotManager C code for injection into BHaH_defines.h.
 
-    This function defines the PhotonList and TimeSlotManager structures and 
+    This function defines the PhotonList and TimeSlotManager structures and
     the static inline functions required to manage them.
     """
     c_code = r"""

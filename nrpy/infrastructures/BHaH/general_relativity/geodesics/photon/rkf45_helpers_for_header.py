@@ -15,7 +15,7 @@ def rkf45_helpers_for_header(spacetime_name: str) -> None:
     This function generates:
     1. `calculate_rkf45_stage_f_temp()`: Computes the temporary state vector (f_temp)
        for a specific RKF45 stage. It DOES NOT calculate the RHS.
-    2. `rkf45_kernel()`: Performs the final summations to compute the 5th-order 
+    2. `rkf45_kernel()`: Performs the final summations to compute the 5th-order
        solution and the error estimate.
 
     :param spacetime_name: String used to link to the correct ode_wrapper.

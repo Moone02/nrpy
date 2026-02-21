@@ -6,7 +6,7 @@ It generates the C code that sets the complete 9-component initial state vector 
 for a single light ray. It orchestrates a sequence of geometric calculations and calls
 other C engines (g4DD_metric and p0_reverse) to accomplish this.
 
-Author: Dalton J. Moone 
+Author: Dalton J. Moone
 """
 
 # Step 0.a: Import standard Python modules
@@ -18,8 +18,6 @@ import nrpy.c_function as cfc
 import nrpy.params as par
 
 
-
-
 def set_initial_conditions_cartesian(spacetime_name: str) -> None:
     """
     Generate and register the C orchestrator for setting photon initial conditions.
@@ -28,21 +26,41 @@ def set_initial_conditions_cartesian(spacetime_name: str) -> None:
     """
     # Step 0; Define Code Parameters
     # --- Local Parameter Registration ---
-    par.register_CodeParameters("REAL", __name__,
-        ["camera_pos_x", "camera_pos_y", "camera_pos_z",
-         "window_center_x", "window_center_y", "window_center_z",
-         "window_up_vec_x", "window_up_vec_y", "window_up_vec_z",
-         "window_size", "t_start"],
+    par.register_CodeParameters(
+        "REAL",
+        __name__,
+        [
+            "camera_pos_x",
+            "camera_pos_y",
+            "camera_pos_z",
+            "window_center_x",
+            "window_center_y",
+            "window_center_z",
+            "window_up_vec_x",
+            "window_up_vec_y",
+            "window_up_vec_z",
+            "window_size",
+            "t_start",
+        ],
         [0.0, 0.0, 51.0, 0.0, 0.0, 50.0, 0.0, 1.0, 0.0, 1.5, 2000.0],
-        commondata=True, add_to_parfile=True
+        commondata=True,
+        add_to_parfile=True,
     )
-    par.register_CodeParameter("int", __name__, "scan_density", 100, commondata=True, add_to_parfile=True)
+    par.register_CodeParameter(
+        "int", __name__, "scan_density", 100, commondata=True, add_to_parfile=True
+    )
     # ------------------------------------
 
     # Step 1: Define C function metadata
     # We include math.h for sqrt(), stdio.h/stdlib.h for error handling.
-    includes = ["BHaH_defines.h", "BHaH_function_prototypes.h", "math.h", "stdio.h", "stdlib.h"]
-    
+    includes = [
+        "BHaH_defines.h",
+        "BHaH_function_prototypes.h",
+        "math.h",
+        "stdio.h",
+        "stdlib.h",
+    ]
+
     desc = f"""@brief Sets the full initial state for a light ray in Cartesian coordinates.
 
     This function orchestrates the setup of the initial state vector f[9] for a
@@ -62,7 +80,6 @@ def set_initial_conditions_cartesian(spacetime_name: str) -> None:
         f[9]: The 9-component output array for the initial state vector."""
 
     name = f"set_initial_conditions_cartesian_{spacetime_name}"
-    
 
     params = (
         "const commondata_struct *restrict commondata, "
@@ -127,7 +144,6 @@ def set_initial_conditions_cartesian(spacetime_name: str) -> None:
     )
     print(f"    ... {name}() registration complete.")
 
-    
 
 if __name__ == "__main__":
     import os
@@ -149,7 +165,7 @@ if __name__ == "__main__":
 
         # 2. Validation
         cfunc_name = f"set_initial_conditions_cartesian_{SPACETIME}"
-        
+
         if cfunc_name not in cfc.CFunction_dict:
             raise RuntimeError(
                 f"FAIL: '{cfunc_name}' was not registered in cfc.CFunction_dict."

@@ -8,7 +8,6 @@ import nrpy.c_function as cfc
 import nrpy.infrastructures.BHaH.BHaH_defines_h as Bdefines_h
 import nrpy.params as par
 
-
 # --- Register C Structs ---
 batch_structs_c_code = r"""
     // ==========================================
@@ -67,18 +66,30 @@ batch_structs_c_code = r"""
 Bdefines_h.register_BHaH_defines("photon_02_batch_structs", batch_structs_c_code)
 
 # --- Global Parameter Registration ---
-par.register_CodeParameters("REAL", __name__,
-    ["t_integration_max", "r_escape", "p_t_max",
-     "slot_manager_t_min", "slot_manager_delta_t"],
+par.register_CodeParameters(
+    "REAL",
+    __name__,
+    [
+        "t_integration_max",
+        "r_escape",
+        "p_t_max",
+        "slot_manager_t_min",
+        "slot_manager_delta_t",
+    ],
     [10000.0, 1500.0, 1000.0, -100.0, 10.0],
-    commondata=True, add_to_parfile=True
+    commondata=True,
+    add_to_parfile=True,
 )
-par.register_CodeParameters("bool", __name__,
+par.register_CodeParameters(
+    "bool",
+    __name__,
     ["perform_conservation_check", "debug_mode"],
     [True, False],
-    commondata=True, add_to_parfile=True
+    commondata=True,
+    add_to_parfile=True,
 )
 # -------------------------------------
+
 
 def batch_integrator_numerical(spacetime_name: str) -> None:
     """

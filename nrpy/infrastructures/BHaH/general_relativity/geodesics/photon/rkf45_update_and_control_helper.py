@@ -5,21 +5,31 @@ Features a high-performance L_infinity norm and L1 momentum floor for relativist
 Author: Dalton J. Moone
 """
 
-from nrpy.infrastructures.BHaH import BHaH_defines_h as Bdefines_h
 import nrpy.params as par
+from nrpy.infrastructures.BHaH import BHaH_defines_h as Bdefines_h
+
 
 def rkf45_update_and_control_helper() -> None:
-    """
-    Generate the high-performance adaptive controller.
-    """
+    """Generate the high-performance adaptive controller."""
     # --- Local Parameter Registration ---
-    par.register_CodeParameters("REAL", __name__,
-        ["rkf45_error_tolerance", "rkf45_absolute_error_tolerance",
-         "rkf45_h_min", "rkf45_h_max", "rkf45_safety_factor", "numerical_initial_h"],
+    par.register_CodeParameters(
+        "REAL",
+        __name__,
+        [
+            "rkf45_error_tolerance",
+            "rkf45_absolute_error_tolerance",
+            "rkf45_h_min",
+            "rkf45_h_max",
+            "rkf45_safety_factor",
+            "numerical_initial_h",
+        ],
         [1e-8, 1e-8, 1e-10, 10.0, 0.9, 1.0],
-        commondata=True, add_to_parfile=True
+        commondata=True,
+        add_to_parfile=True,
     )
-    par.register_CodeParameter("int", __name__, "rkf45_max_retries", 10, commondata=True, add_to_parfile=True)
+    par.register_CodeParameter(
+        "int", __name__, "rkf45_max_retries", 10, commondata=True, add_to_parfile=True
+    )
     # ------------------------------------
     c_code_for_header = r"""
     static inline bool update_photon_state_and_stepsize(
