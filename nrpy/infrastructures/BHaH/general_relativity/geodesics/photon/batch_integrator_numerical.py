@@ -5,7 +5,80 @@ Author: Dalton J. Moone
 """
 
 import nrpy.c_function as cfc
+import nrpy.infrastructures.BHaH.BHaH_defines_h as Bdefines_h
+import nrpy.params as par
 
+
+# --- Register C Structs ---
+batch_structs_c_code = r"""
+    // ==========================================
+    // Batch Integration and Output Structs
+    // ==========================================
+    typedef struct { int photon_id; double pos[4]; } photon_request_t;
+
+    typedef enum {
+        FAILURE_PT_TOO_BIG, 
+        FAILURE_RKF45_REJECTION_LIMIT, 
+        FAILURE_T_MAX_EXCEEDED,
+        FAILURE_SLOT_MANAGER_ERROR, 
+        TERMINATION_TYPE_FAILURE,
+        TERMINATION_TYPE_SOURCE_PLANE,
+        TERMINATION_TYPE_CELESTIAL_SPHERE, 
+        ACTIVE,
+    } termination_type_t;
+
+    typedef struct {
+        termination_type_t termination_type; 
+        double y_w, z_w; 
+        double y_s, z_s; 
+        double final_theta, final_phi; 
+        double L_w, t_w, L_s, t_s;
+    } __attribute__((packed)) blueprint_data_t;
+
+    // ==========================================
+    // Main Photon State Struct
+    // ==========================================
+    #define CACHE_LINE_SIZE 64
+    #define BUNDLE_CAPACITY 32768
+
+    typedef struct {
+        double f[9], f_p[9], f_p_p[9];
+        double affine_param, affine_param_p, affine_param_p_p;
+        double h; 
+        termination_type_t status;
+        int rejection_retries;
+        bool on_positive_side_of_window_prev; 
+        bool on_positive_side_of_source_prev;
+        
+        // Dependent on event_data_struct compiling first!
+        event_data_struct source_event_data;
+        event_data_struct window_event_data;
+        
+        char _padding[CACHE_LINE_SIZE - (
+            sizeof(double)*31 + 
+            sizeof(termination_type_t) + 
+            sizeof(int) +
+            sizeof(bool)*2 + 
+            sizeof(event_data_struct)*2
+        ) % CACHE_LINE_SIZE];
+    } __attribute__((aligned(CACHE_LINE_SIZE))) PhotonState;
+    """
+# Using 'photon_02_' guarantees this compiles after the event structs
+Bdefines_h.register_BHaH_defines("photon_02_batch_structs", batch_structs_c_code)
+
+# --- Global Parameter Registration ---
+par.register_CodeParameters("REAL", __name__,
+    ["t_integration_max", "r_escape", "p_t_max",
+     "slot_manager_t_min", "slot_manager_delta_t"],
+    [10000.0, 1500.0, 1000.0, -100.0, 10.0],
+    commondata=True, add_to_parfile=True
+)
+par.register_CodeParameters("bool", __name__,
+    ["perform_conservation_check", "debug_mode"],
+    [True, False],
+    commondata=True, add_to_parfile=True
+)
+# -------------------------------------
 
 def batch_integrator_numerical(spacetime_name: str) -> None:
     """
@@ -150,7 +223,6 @@ def batch_integrator_numerical(spacetime_name: str) -> None:
         printf("Performing initial conservation checks for all %ld rays...\\n", num_rays);
         #pragma omp parallel for
         for (long int i = 0; i < num_rays; ++i) {{
-            // UPDATED: Use dynamic function name and pointer signature for conserved quantities
             {conserved_quantities_func}(commondata, all_photons[i].f,
                                         &initial_conserved_quantities[i][0], &initial_conserved_quantities[i][1],
                                         &initial_conserved_quantities[i][2], &initial_conserved_quantities[i][3],
@@ -187,15 +259,16 @@ def batch_integrator_numerical(spacetime_name: str) -> None:
 
             // --- Inner Rejection-Retry Loop ---
             long int needs_retry_indices[bundle_size];
+            long int next_retry_indices[bundle_size]; // FIX 1: Secondary array for next iteration
             long int needs_retry_count = bundle_size;
             for(long int j=0; j<bundle_size; ++j) needs_retry_indices[j] = bundle_photons[j];
 
-            while (needs_retry_count > 0) {{
-                // Buffers for RKF45 intermediate steps
-                double (*k_array)[6][9] = malloc(needs_retry_count * 6 * 9 * sizeof(double));
-                double (*f_start)[9] = malloc(needs_retry_count * 9 * sizeof(double));
-                if (!k_array || !f_start) {{ fprintf(stderr, "Error: Failed to allocate retry buffers.\\n"); exit(1); }}
+            // FIX 3: Buffers for RKF45 intermediate steps allocated outside the retry loop
+            double (*k_array)[6][9] = malloc(bundle_size * 6 * 9 * sizeof(double));
+            double (*f_start)[9] = malloc(bundle_size * 9 * sizeof(double));
+            if (!k_array || !f_start) {{ fprintf(stderr, "Error: Failed to allocate retry buffers.\\n"); exit(1); }}
 
+            while (needs_retry_count > 0) {{
                 // Initialize f_start for this retry batch
                 for(long int j=0; j<needs_retry_count; ++j) {{
                     long int photon_idx = needs_retry_indices[j];
@@ -210,7 +283,7 @@ def batch_integrator_numerical(spacetime_name: str) -> None:
                     for (long int j = 0; j < needs_retry_count; ++j) {{
                         long int photon_idx = needs_retry_indices[j];
                         double h = all_photons[photon_idx].h;
-                        double f_temp[9] = {{0}}; // Add {0} to initialize the array to zero
+                        double f_temp[9] = {{0}};
 
                         // Use the helper to calculate position.
                         calculate_rkf45_stage_f_temp(stage, f_start[j], k_array[j], h, f_temp);
@@ -227,7 +300,7 @@ def batch_integrator_numerical(spacetime_name: str) -> None:
                     #pragma omp parallel for
                     for (long int j = 0; j < needs_retry_count; ++j) {{
                         long int photon_idx = needs_retry_indices[j];
-                        double f_temp[9] = {{0}}; // Add {0} to initialize the array to zero
+                        double f_temp[9] = {{0}};
                         double h = all_photons[photon_idx].h;
 
                         // Re-calculate f_temp locally
@@ -249,6 +322,7 @@ def batch_integrator_numerical(spacetime_name: str) -> None:
 
                     rkf45_kernel(f_start[j], k_array[j], all_photons[photon_idx].h, f_out, f_err);
 
+                    double h_taken = all_photons[photon_idx].h; // FIX 2: Capture h before update alters it
                     bool step_accepted = update_photon_state_and_stepsize(&all_photons[photon_idx], f_start[j], f_out, f_err, commondata);
 
                     if (step_accepted) {{
@@ -258,7 +332,8 @@ def batch_integrator_numerical(spacetime_name: str) -> None:
                             all_photons[photon_idx].f_p[k] = f_start[j][k];
                         }}
                         all_photons[photon_idx].affine_param_p_p = all_photons[photon_idx].affine_param_p;
-                        all_photons[photon_idx].affine_param_p = all_photons[photon_idx].affine_param - all_photons[photon_idx].h;
+                        // FIX 2: Use the captured h_taken instead of the potentially newly calculated h
+                        all_photons[photon_idx].affine_param_p = all_photons[photon_idx].affine_param - h_taken;
 
                         if (commondata->debug_mode && photon_idx == 0) {{
                             #pragma omp critical
@@ -274,13 +349,20 @@ def batch_integrator_numerical(spacetime_name: str) -> None:
                             all_photons[photon_idx].status = FAILURE_RKF45_REJECTION_LIMIT;
                         }} else {{
                             #pragma omp critical
-                            {{ needs_retry_indices[needs_retry_count++] = photon_idx; }}
+                            {{ next_retry_indices[needs_retry_count++] = photon_idx; }} // FIX 1: Write to new array safely
                         }}
                     }}
                 }}
-                free(k_array); 
-                free(f_start);
+                
+                // FIX 1: Copy over the indices for the next retry iteration
+                for (long int j = 0; j < needs_retry_count; ++j) {{
+                    needs_retry_indices[j] = next_retry_indices[j];
+                }}
             }} // End rejection-retry while loop
+            
+            // FIX 3: Free the buffers here, outside the while loop
+            free(k_array); 
+            free(f_start);
 
             // --- Event Cascade and Re-slotting ---
             for (long int j = 0; j < bundle_size; ++j) {{
@@ -371,7 +453,6 @@ def batch_integrator_numerical(spacetime_name: str) -> None:
 
         for (long int i = 0; i < num_rays; ++i) {{
             double final_E, final_Lx, final_Ly, final_Lz, final_Q;
-            // UPDATED: Use dynamic function name
             {conserved_quantities_func}(commondata, all_photons[i].f, &final_E, &final_Lx, &final_Ly, &final_Lz, &final_Q);
 
             const double dE = (initial_conserved_quantities[i][0] != 0) ? fabs((final_E - initial_conserved_quantities[i][0]) / initial_conserved_quantities[i][0]) : fabs(final_E - initial_conserved_quantities[i][0]);

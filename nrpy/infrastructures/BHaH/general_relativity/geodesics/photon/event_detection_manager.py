@@ -13,6 +13,33 @@ import sys
 import os
 
 import nrpy.c_function as cfc
+import nrpy.infrastructures.BHaH.BHaH_defines_h as Bdefines_h
+
+    # --- Register C Structs ---
+event_structs_c_code = r"""
+    // ==========================================
+    // Event Detection and Plane Crossing Helpers
+    // ==========================================
+    typedef struct { double n[3]; double d; } plane_event_params;
+
+    // Function pointer type for generic event functions
+    typedef double (*event_function_t)(const double f[9], void *event_params);
+
+    static inline double plane_event_func(const double f[9], void *event_params) {
+        plane_event_params *params = (plane_event_params *)event_params;
+        return f[1]*params->n[0] + f[2]*params->n[1] + f[3]*params->n[2] - params->d;
+    }
+
+    // Event data struct: Results of a crossing finding
+    typedef struct { 
+        bool found; 
+        double lambda_event; 
+        double t_event; 
+        double f_event[9]; 
+    } event_data_struct;
+    """
+# Using 'photon_01_' guarantees this compiles in the correct order
+Bdefines_h.register_BHaH_defines("photon_01_event_structs", event_structs_c_code)
 
 
 def event_detection_manager() -> None:

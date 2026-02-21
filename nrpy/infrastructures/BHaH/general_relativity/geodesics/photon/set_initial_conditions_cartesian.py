@@ -15,6 +15,7 @@ import sys
 
 # Step 0.c: Import NRPy core modules
 import nrpy.c_function as cfc
+import nrpy.params as par
 
 
 
@@ -25,6 +26,19 @@ def set_initial_conditions_cartesian(spacetime_name: str) -> None:
 
     :param spacetime_name: Name of the spacetime (used to call the specific metric function).
     """
+    # Step 0; Define Code Parameters
+    # --- Local Parameter Registration ---
+    par.register_CodeParameters("REAL", __name__,
+        ["camera_pos_x", "camera_pos_y", "camera_pos_z",
+         "window_center_x", "window_center_y", "window_center_z",
+         "window_up_vec_x", "window_up_vec_y", "window_up_vec_z",
+         "window_size", "t_start"],
+        [0.0, 0.0, 51.0, 0.0, 0.0, 50.0, 0.0, 1.0, 0.0, 1.5, 2000.0],
+        commondata=True, add_to_parfile=True
+    )
+    par.register_CodeParameter("int", __name__, "scan_density", 100, commondata=True, add_to_parfile=True)
+    # ------------------------------------
+
     # Step 1: Define C function metadata
     # We include math.h for sqrt(), stdio.h/stdlib.h for error handling.
     includes = ["BHaH_defines.h", "BHaH_function_prototypes.h", "math.h", "stdio.h", "stdlib.h"]

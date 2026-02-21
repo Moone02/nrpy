@@ -14,6 +14,7 @@ import os
 # Import NRPy core modules
 import nrpy.c_function as cfc
 import nrpy.infrastructures.BHaH.BHaH_defines_h as Bdefines_h
+import nrpy.params as par
 
 
 def handle_source_plane_intersection() -> None:
@@ -28,6 +29,18 @@ def handle_source_plane_intersection() -> None:
     It then checks if the hit is within the active annulus (r_min < r < r_max)
     and populates the 'final_blueprint_data' struct if valid.
     """
+    # Step 0: Define Code Parameters
+    # --- Local Parameter Registration ---
+    par.register_CodeParameters("REAL", __name__,
+        ["source_plane_normal_x", "source_plane_normal_y", "source_plane_normal_z",
+         "source_plane_center_x", "source_plane_center_y", "source_plane_center_z",
+         "source_up_vec_x", "source_up_vec_y", "source_up_vec_z",
+         "source_r_min", "source_r_max"],
+        [0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 6.0, 25.0],
+        commondata=True, add_to_parfile=True
+    )
+    # ------------------------------------
+    
     # Step 1: Define specific C headers and function metadata
     includes = [
         "BHaH_defines.h",
