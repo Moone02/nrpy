@@ -23,9 +23,14 @@ batch_structs_c_code = r"""
     } event_type_t;
 
     typedef enum {
-        FAILURE_PT_TOO_BIG, FAILURE_RKF45_REJECTION_LIMIT, FAILURE_T_MAX_EXCEEDED,
-        FAILURE_SLOT_MANAGER_ERROR, TERMINATION_TYPE_FAILURE, TERMINATION_TYPE_SOURCE_PLANE,
-        TERMINATION_TYPE_WINDOW_PLANE, TERMINATION_TYPE_CELESTIAL_SPHERE, ACTIVE,
+        TERMINATION_TYPE_CELESTIAL_SPHERE, //  0
+        TERMINATION_TYPE_SOURCE_PLANE,     //  1
+        FAILURE_PT_TOO_BIG,                //  2
+        FAILURE_RKF45_REJECTION_LIMIT,     //  3
+        FAILURE_T_MAX_EXCEEDED,            //  4
+        FAILURE_SLOT_MANAGER_ERROR,        //  5
+        TERMINATION_TYPE_FAILURE,          //  6
+        ACTIVE                             //  7
     } termination_type_t;
 
     typedef struct {
@@ -70,7 +75,7 @@ par.register_CodeParameters(
 )
 
 def batch_integrator_numerical(spacetime_name: str) -> None:
-    includes = ["BHaH_defines.h", "BHaH_function_prototypes.h", "omp.h"]
+    includes = ["BHaH_defines.h", "BHaH_function_prototypes.h", "omp.h", "math.h"]
     desc = r"""@brief Main orchestrator with strict SIMT-compatible SoA architecture and simple conservation checks."""
     name = "batch_integrator_numerical"
     params = """const commondata_struct *restrict commondata, long int num_rays, blueprint_data_t *results_buffer"""
@@ -165,7 +170,6 @@ def batch_integrator_numerical(spacetime_name: str) -> None:
     double *initial_cq = NULL;
     if (commondata->perform_conservation_check) {{
         printf("Performing initial conservation checks for all %ld rays...\\n", num_rays);
-        // Stores flattened [E, Lx, Ly, Lz, Q] for each ray
         initial_cq = (double *)malloc(sizeof(double) * 5 * num_rays);
         
         #pragma omp parallel for
@@ -297,7 +301,12 @@ def batch_integrator_numerical(spacetime_name: str) -> None:
                     }} else if (fabs(all_photons.f[IDX_GLOBAL(0, photon_idx, num_rays)]) > commondata->t_integration_max) {{
                         all_photons.status[photon_idx] = FAILURE_T_MAX_EXCEEDED;
                     }} else if (r_sq > (commondata->r_escape * commondata->r_escape)) {{
+                        // ---> FIX APPLIED HERE <---
                         all_photons.status[photon_idx] = TERMINATION_TYPE_CELESTIAL_SPHERE;
+                        if (r_sq > 1e-9) {{
+                            results_buffer[photon_idx].final_theta = acos(z / sqrt(r_sq));
+                            results_buffer[photon_idx].final_phi = atan2(y, x);
+                        }}
                     }} else {{
                         event_detection_manager(&all_photons, num_rays, photon_idx, commondata);
                         
@@ -343,7 +352,6 @@ def batch_integrator_numerical(spacetime_name: str) -> None:
         
         FILE *fp_cons_log = fopen("conservation_errors.txt", "w");
         
-        // Define and allocate a local buffer to hold error data in memory
         struct ConsErrData {{
             double dE, dL, dQ, init_Q, final_Q, final_t;
             int status;
@@ -387,7 +395,6 @@ def batch_integrator_numerical(spacetime_name: str) -> None:
                 double dQ = (init_Q != 0) ? fabs((final_Q - init_Q) / init_Q) : fabs(final_Q - init_Q);
                 if (dQ > local_max_dQ) {{ local_max_dQ = dQ; local_worst_Q = i; }}
 
-                // Store data to memory array without locking threads
                 if (err_data) {{
                     err_data[i].dE = dE;
                     err_data[i].dL = dL;
@@ -407,7 +414,6 @@ def batch_integrator_numerical(spacetime_name: str) -> None:
             }}
         }}
 
-        // Single-threaded file dump
         if (fp_cons_log) {{
             if (err_data) {{
                 for (long int i = 0; i < num_rays; i++) {{

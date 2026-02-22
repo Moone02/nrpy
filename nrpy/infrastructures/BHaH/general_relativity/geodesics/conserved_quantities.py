@@ -51,11 +51,15 @@ def conserved_quantities(spacetime_name: str, particle_type: str = "massive") ->
 
     preamble_lines = ["// Unpack position and momentum using strict SoA macros"]
     
+    # Added (void) casts to each unpacked variable to suppress unused variable warnings
     for i, symbol in enumerate(diagnostics.xx):
-        preamble_lines.append(f"const double {str(symbol)} = all_photons_f[IDX_GLOBAL({i}, photon_idx, num_rays)];")
+        var_name = str(symbol)
+        preamble_lines.append(f"const double {var_name} = all_photons_f[IDX_GLOBAL({i}, photon_idx, num_rays)];")
+        preamble_lines.append(f"(void){var_name};")
         
     for i in range(4):
         preamble_lines.append(f"const double p{i} = all_photons_f[IDX_GLOBAL({i+4}, photon_idx, num_rays)];")
+        preamble_lines.append(f"(void)p{i};")
 
     preamble = "\n    ".join(preamble_lines)
 

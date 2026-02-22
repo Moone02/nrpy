@@ -32,7 +32,9 @@ def placeholder_interpolation_engine(spacetime_name: str, PARTICLE: str) -> None
     metric_worker_func = f"g4DD_metric_{spacetime_name}"
     conn_worker_func = f"connections_{spacetime_name}"
 
+    # Added (void)req_photon_ids; to suppress the unused parameter warning
     body = f"""
+    (void)req_photon_ids;
     #pragma omp parallel for
     for (int batch_id = 0; batch_id < num_photons; ++batch_id) {{
         double f_local[{array_size}];

@@ -13,7 +13,7 @@ import nrpy.params as par
 def set_initial_conditions_cartesian(spacetime_name: str) -> None:
     
     # Register parameters unique to the initialization process
-    par.register_CodeParameter("int", __name__, "scan_density", 100, commondata=True, add_to_parfile=True)
+    par.register_CodeParameter("int", __name__, "scan_density", 500, commondata=True, add_to_parfile=True)
     par.register_CodeParameter("REAL", __name__, "t_start", 100, commondata=True, add_to_parfile=True)
 
     includes = [
