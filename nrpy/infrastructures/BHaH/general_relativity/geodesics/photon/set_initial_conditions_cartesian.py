@@ -1,184 +1,145 @@
 """
 Register C function for setting the initial state vector for a photon.
-
-This module registers the 'set_initial_conditions_cartesian_{spacetime_name}' C function.
-It generates the C code that sets the complete 9-component initial state vector (f[9])
-for a single light ray. It orchestrates a sequence of geometric calculations and calls
-other C engines (g4DD_metric and p0_reverse) to accomplish this.
+Updated to use unified window_width and window_height parameters.
 
 Author: Dalton J. Moone
 """
 
-# Step 0.a: Import standard Python modules
 import logging
 import sys
-
-# Step 0.c: Import NRPy core modules
 import nrpy.c_function as cfc
 import nrpy.params as par
 
-
 def set_initial_conditions_cartesian(spacetime_name: str) -> None:
-    """
-    Generate and register the C orchestrator for setting photon initial conditions.
+    
+    # Register parameters unique to the initialization process
+    par.register_CodeParameter("int", __name__, "scan_density", 100, commondata=True, add_to_parfile=True)
+    par.register_CodeParameter("REAL", __name__, "t_start", 100, commondata=True, add_to_parfile=True)
 
-    :param spacetime_name: Name of the spacetime (used to call the specific metric function).
-    """
-    # Step 0; Define Code Parameters
-    # --- Local Parameter Registration ---
-    par.register_CodeParameters(
-        "REAL",
-        __name__,
-        [
-            "camera_pos_x",
-            "camera_pos_y",
-            "camera_pos_z",
-            "window_center_x",
-            "window_center_y",
-            "window_center_z",
-            "window_up_vec_x",
-            "window_up_vec_y",
-            "window_up_vec_z",
-            "window_size",
-            "t_start",
-        ],
-        [0.0, 0.0, 51.0, 0.0, 0.0, 50.0, 0.0, 1.0, 0.0, 1.5, 2000.0],
-        commondata=True,
-        add_to_parfile=True,
-    )
-    par.register_CodeParameter(
-        "int", __name__, "scan_density", 100, commondata=True, add_to_parfile=True
-    )
-    # ------------------------------------
-
-    # Step 1: Define C function metadata
-    # We include math.h for sqrt(), stdio.h/stdlib.h for error handling.
     includes = [
         "BHaH_defines.h",
         "BHaH_function_prototypes.h",
         "math.h",
         "stdio.h",
         "stdlib.h",
+        "omp.h"
     ]
 
-    desc = f"""@brief Sets the full initial state for a light ray in Cartesian coordinates.
-
-    This function orchestrates the setup of the initial state vector f[9] for a
-    single photon in the {spacetime_name} spacetime.
-
-    It performs the following steps:
-    1. Sets initial position (f[0]..f[3]) using 'commondata->t_start' and 'commondata->camera_pos'.
-    2. Computes initial spatial momentum (f[5]..f[7]) from the aiming vector.
-    3. Calls 'g4DD_metric_{spacetime_name}' to get metric components.
-    4. Calls 'p0_reverse' to solve the null condition for time momentum (f[4]).
-    5. Initializes path length (f[8]) to zero.
-
-    Input:
-        commondata: Runtime parameters (contains t_start and camera_pos).
-        target_pos: 3D Cartesian coordinates of the target pixel.
-    Output:
-        f[9]: The 9-component output array for the initial state vector."""
-
+    desc = f"""@brief Sets initial state for all light rays using flattened SoA layout and local macro indexing.
+    Unified to use window_width and window_height for the pixel grid scan."""
+    
     name = f"set_initial_conditions_cartesian_{spacetime_name}"
-
     params = (
         "const commondata_struct *restrict commondata, "
-        "const double target_pos[3], "
-        "double f[9]"
+        "long int num_rays, "
+        "PhotonStateSoA *restrict all_photons, "
+        "double window_center_out[3], double n_x_out[3], double n_y_out[3], double n_z_out[3]"
     )
 
-    # Step 2: Generate C body
+    interpolation_func = f"placeholder_interpolation_engine_{spacetime_name}"
+
     body = f"""
-    // --- Step 1: Set the initial position to the camera's location ---
-    // We access t_start and camera_pos directly from the commondata struct.
-    f[0] = commondata->t_start;       // t
-    f[1] = commondata->camera_pos_x; // x
-    f[2] = commondata->camera_pos_y; // y
-    f[3] = commondata->camera_pos_z; // z
+    const double camera_pos[3] = {{commondata->camera_pos_x, commondata->camera_pos_y, commondata->camera_pos_z}};
+    const double window_center[3] = {{commondata->window_center_x, commondata->window_center_y, commondata->window_center_z}};
 
-    // --- Step 2: Calculate the aiming vector V and set spatial momentum ---
-    // The initial spatial momentum p^i (f[5], f[6], f[7]) is parallel to the aiming vector.
-    // Note: We use commondata->camera_pos here as well.
-    const double V_x = target_pos[0] - commondata->camera_pos_x;
-    const double V_y = target_pos[1] - commondata->camera_pos_y;
-    const double V_z = target_pos[2] - commondata->camera_pos_z;
-    const double mag_V = sqrt(V_x*V_x + V_y*V_y + V_z*V_z);
+    // Construct the view direction (n_z)
+    double n_z[3] = {{window_center[0] - camera_pos[0], window_center[1] - camera_pos[1], window_center[2] - camera_pos[2]}};
+    double mag_n_z = sqrt(n_z[0]*n_z[0] + n_z[1]*n_z[1] + n_z[2]*n_z[2]);
+    for(int i=0; i<3; i++) n_z[i] /= mag_n_z;
 
-    if (mag_V > 1e-12) {{
-        // Normalize to improve numerical stability and precision.
-        const double inv_mag_V = 1.0 / mag_V;
-        f[5] = V_x * inv_mag_V; // p^x
-        f[6] = V_y * inv_mag_V; // p^y
-        f[7] = V_z * inv_mag_V; // p^z
-    }} else {{
-        fprintf(stderr, "ERROR in set_initial_conditions_cartesian_{spacetime_name}: Camera position exactly matches target position.\\n");
-        fprintf(stderr, "       Cannot determine photon aiming direction (magnitude of vector is near-zero). Aborting.\\n");
-        exit(1);
+    // Construct the horizontal basis (n_x)
+    const double guide_up[3] = {{commondata->window_up_vec_x, commondata->window_up_vec_y, commondata->window_up_vec_z}};
+    double n_x[3] = {{n_z[1]*guide_up[2] - n_z[2]*guide_up[1], n_z[2]*guide_up[0] - n_z[0]*guide_up[2], n_z[0]*guide_up[1] - n_z[1]*guide_up[0]}};
+    double mag_n_x = sqrt(n_x[0]*n_x[0] + n_x[1]*n_x[1] + n_x[2]*n_x[2]);
+
+    if (mag_n_x < 1e-9) {{
+        double alternative_up[3] = {{0.0, 1.0, 0.0}};
+        if (fabs(n_z[1]) > 0.999) {{ alternative_up[1] = 0.0; alternative_up[2] = 1.0; }}
+        n_x[0] = alternative_up[1]*n_z[2] - alternative_up[2]*n_z[1];
+        n_x[1] = alternative_up[2]*n_z[0] - alternative_up[0]*n_z[2];
+        n_x[2] = alternative_up[0]*n_z[1] - alternative_up[1]*n_z[0];
+        mag_n_x = sqrt(n_x[0]*n_x[0] + n_x[1]*n_x[1] + n_x[2]*n_x[2]);
+    }}
+    for(int i=0; i<3; i++) n_x[i] /= mag_n_x;
+
+    // Construct the vertical basis (n_y)
+    double n_y[3] = {{n_z[1]*n_x[2] - n_z[2]*n_x[1], n_z[2]*n_x[0] - n_z[0]*n_x[2], n_z[0]*n_x[1] - n_z[1]*n_x[0]}};
+
+    // Export basis to orchestrator
+    for(int i=0; i<3; i++) {{
+        window_center_out[i] = window_center[i];
+        n_x_out[i] = n_x[i];
+        n_y_out[i] = n_y[i];
+        n_z_out[i] = n_z[i];
     }}
 
-    // --- Step 3: Calculate the time component p^0 using the null condition ---
-    // We allocate the metric struct on the STACK.
-    metric_struct metric;
+    int *req_photon_ids = (int *)malloc(sizeof(int) * BUNDLE_CAPACITY);
+    double *req_pos = (double *)malloc(sizeof(double) * 4 * BUNDLE_CAPACITY);
+    double *metric_g4DD = (double *)malloc(sizeof(double) * 10 * BUNDLE_CAPACITY); 
+    
+    if (!req_photon_ids || !req_pos || !metric_g4DD) {{ 
+        fprintf(stderr, "Error: Failed to allocate flattened initialization batch arrays.\\n"); 
+        exit(1); 
+    }}
 
-    // 3.a: Compute metric components at current position f[0]..f[3]
-    g4DD_metric_{spacetime_name}(commondata, f, &metric);
+    for (long int start_idx = 0; start_idx < num_rays; start_idx += BUNDLE_CAPACITY) {{
+        long int current_chunk_size = (num_rays - start_idx < BUNDLE_CAPACITY) ? (num_rays - start_idx) : BUNDLE_CAPACITY;
 
-    // 3.b: Solve quadratic constraint for p^0 (f[4])
-    // p0_reverse reads spatial momentum from f[5]..f[7] and writes result to &f[4]
-    p0_reverse(&metric, f, &f[4]);
+        #pragma omp parallel for
+        for (long int c = 0; c < current_chunk_size; c++) {{
+            long int i = start_idx + c;
+            const int row = i / commondata->scan_density;
+            const int col = i % commondata->scan_density;
 
-    // --- Step 4: Initialize integrated path length ---
-    f[8] = 0.0;
+            // Use window_width for horizontal (n_x) and window_height for vertical (n_y)
+            const double x_pix = -commondata->window_width/2.0 + (col + 0.5) * (commondata->window_width / commondata->scan_density);
+            const double y_pix = -commondata->window_height/2.0 + (row + 0.5) * (commondata->window_height / commondata->scan_density);
+
+            const double target_pos[3] = {{
+                window_center[0] + x_pix*n_x[0] + y_pix*n_y[0],
+                window_center[1] + x_pix*n_x[1] + y_pix*n_y[1],
+                window_center[2] + x_pix*n_x[2] + y_pix*n_y[2]
+            }};
+
+            // State vector: [t, x, y, z, p_t, p_x, p_y, p_z, L]
+            all_photons->f[IDX_GLOBAL(0, i, num_rays)] = commondata->t_start;       
+            all_photons->f[IDX_GLOBAL(1, i, num_rays)] = camera_pos[0]; 
+            all_photons->f[IDX_GLOBAL(2, i, num_rays)] = camera_pos[1]; 
+            all_photons->f[IDX_GLOBAL(3, i, num_rays)] = camera_pos[2]; 
+
+            const double V_x = target_pos[0] - camera_pos[0];
+            const double V_y = target_pos[1] - camera_pos[1];
+            const double V_z = target_pos[2] - camera_pos[2];
+            const double mag_V = sqrt(V_x*V_x + V_y*V_y + V_z*V_z);
+
+            // Normalize the spatial momentum (photon tangent vector)
+            const double inv_mag_V = 1.0 / mag_V;
+            all_photons->f[IDX_GLOBAL(5, i, num_rays)] = V_x * inv_mag_V; 
+            all_photons->f[IDX_GLOBAL(6, i, num_rays)] = V_y * inv_mag_V; 
+            all_photons->f[IDX_GLOBAL(7, i, num_rays)] = V_z * inv_mag_V; 
+
+            all_photons->f[IDX_GLOBAL(8, i, num_rays)] = 0.0; // Initial path length
+
+            req_photon_ids[c] = i;
+            for(int m=0; m<4; m++) req_pos[IDX_LOCAL(m, c, BUNDLE_CAPACITY)] = all_photons->f[IDX_GLOBAL(m, i, num_rays)];
+        }}
+
+        // Get metric at camera position to solve for p_t
+        {interpolation_func}(commondata, (int)current_chunk_size, req_photon_ids, req_pos, metric_g4DD, NULL);
+
+        #pragma omp parallel for
+        for (long int c = 0; c < current_chunk_size; c++) {{
+            long int i = start_idx + c;
+            // Solves Hamiltonian constraint and populates index 4
+            p0_reverse(metric_g4DD, all_photons->f, num_rays, BUNDLE_CAPACITY, i, c, &all_photons->f[IDX_GLOBAL(4, i, num_rays)]);
+        }}
+    }}
+
+    free(req_photon_ids);
+    free(req_pos);
+    free(metric_g4DD);
     """
 
-    print(f" -> Generating C worker function: {name} (Spacetime: {spacetime_name})...")
-
-    # Step 3: Register the C function
     cfc.register_CFunction(
-        includes=includes,
-        desc=desc,
-        name=name,
-        params=params,
-        include_CodeParameters_h=False,
-        body=body,
+        includes=includes, desc=desc, name=name, params=params, include_CodeParameters_h=False, body=body,
     )
-    print(f"    ... {name}() registration complete.")
-
-
-if __name__ == "__main__":
-    import os
-
-    # Ensure local modules can be imported
-    sys.path.append(os.getcwd())
-
-    # Configure logging
-    logging.basicConfig(level=logging.INFO)
-    logger = logging.getLogger("TestSetInitialConditions")
-
-    SPACETIME = "KerrSchild_Cartesian"
-    logger.info("Test: Generating Initial Conditions C-code for %s...", SPACETIME)
-
-    try:
-        # 1. Run the Generator
-        logger.info(" -> Calling set_initial_conditions_cartesian()...")
-        set_initial_conditions_cartesian(SPACETIME)
-
-        # 2. Validation
-        cfunc_name = f"set_initial_conditions_cartesian_{SPACETIME}"
-
-        if cfunc_name not in cfc.CFunction_dict:
-            raise RuntimeError(
-                f"FAIL: '{cfunc_name}' was not registered in cfc.CFunction_dict."
-            )
-        logger.info(" -> PASS: '%s' function registered successfully.", cfunc_name)
-
-        # 3. Output Files
-        filename = f"{cfunc_name}.c"
-        cfunc = cfc.CFunction_dict[cfunc_name]
-        with open(filename, "w", encoding="utf-8") as file:
-            file.write(cfunc.full_function)
-        logger.info(" -> Written to %s", filename)
-
-    except Exception as e:
-        logger.error(" -> FAIL: set_initial_conditions test failed with error: %s", e)
-        sys.exit(1)

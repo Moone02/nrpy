@@ -102,8 +102,7 @@ static inline void slot_add_photon(PhotonList *slot, long int photon_idx) {
 }
 
 /**
- * @brief Removes a chunk of photons. Exits on count mismatch to prevent 
- * the integrator from processing garbage data.
+ * @brief Removes a chunk of photons in O(1) time by popping from the end.
  */
 static inline void slot_remove_chunk(PhotonList *slot, long int *chunk_buffer, long int chunk_size) {
     if (chunk_size > slot->count) {
@@ -112,13 +111,9 @@ static inline void slot_remove_chunk(PhotonList *slot, long int *chunk_buffer, l
     }
 
     for (long int i = 0; i < chunk_size; ++i) {
-        chunk_buffer[i] = slot->photons[i];
+        chunk_buffer[i] = slot->photons[slot->count - 1 - i];
     }
 
-    long int remaining = slot->count - chunk_size;
-    if (remaining > 0) {
-        memmove(slot->photons, slot->photons + chunk_size, remaining * sizeof(long int));
-    }
     slot->count -= chunk_size;
 }
 """

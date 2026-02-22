@@ -3,12 +3,10 @@ Register C function for computing analytic Christoffel symbols.
 
 This module registers the 'connections_{spacetime_name}' C function, which calculates
 the 40 unique components of the Christoffel symbols (Gamma^alpha_mu_nu)
-for a specific spacetime. It also registers the required 'connection_struct'.
+for a specific spacetime using a flattened SoA architecture.
 
-It generates a preamble to unpack f[0]..f[3] from the state vector into coordinate
-variables (e.g., t, x, y, z). Spacetime parameters stored in `commondata` are passed
-as a separate argument and are accessed via the infrastructure (e.g., macros in
-`BHaH_defines.h`), not by additional unpacking in this preamble.
+It generates a preamble to unpack coordinate variables directly from the flattened 
+state vector using macro indexing. 
 
 Author: Dalton J. Moone
 """
@@ -35,14 +33,14 @@ def connections(
     """
     Generate and register the C function to compute Christoffel symbols.
 
-    Registers the 'connection_struct' and the 'connections_{spacetime_name}' C function.
     The C function computes the unique components of the Christoffel symbols
-    (Gamma^alpha_{mu nu}), exploiting symmetry in the lower indices (nu >= mu).
+    (Gamma^alpha_{mu nu}), exploiting symmetry in the lower indices (nu >= mu),
+    and writes them to a flattened 1D batch array.
 
     :param Gamma4UDD_exprs: A 4x4x4 list of SymPy expressions for connections.
     :param spacetime_name: Name of the spacetime (used for documentation).
     :param PARTICLE: The type of particle ("massive" or "photon").
-                     Determines array size for the state vector f.
+                     Determines state vector documentation logic.
     :raises ValueError: If PARTICLE is not "massive" or "photon".
     """
     # Step 1: Specific setup based on particle type
@@ -53,64 +51,57 @@ def connections(
     else:
         raise ValueError(f"Unsupported PARTICLE: {PARTICLE}")
 
-    # Step 2: Register connection_struct in BHaH_defines.h
-    # We use list comprehension to generate components: Gamma4UDD000, Gamma4UDD001...
-    connection_components = [
-        f"Gamma4UDD{i}{j}{k}" for i in range(4) for j in range(4) for k in range(j, 4)
-    ]
-    connections_struct_str = (
-        "typedef struct { double "
-        + ", ".join(connection_components)
-        + "; } connection_struct;"
-    )
-
-    # Register under the "after_general" section of BHaH_defines.h
-    Bdefines_h.register_BHaH_defines("after_general", connections_struct_str)
-
-    # Step 3: Prepare symbolic expressions and C variable names
+    # Step 2: Prepare symbolic expressions and 1D flattened C variable names
     list_of_Gamma_syms = []
     list_of_Gamma_C_vars = []
 
+    k = 0
     for alpha in range(4):
         for mu in range(4):
             for nu in range(mu, 4):
                 list_of_Gamma_syms.append(Gamma4UDD_exprs[alpha][mu][nu])
-                list_of_Gamma_C_vars.append(f"conn->Gamma4UDD{alpha}{mu}{nu}")
+                # Map 3D tensor components to 1D flat array using macro
+                list_of_Gamma_C_vars.append(f"conn_GammaUDD[IDX_LOCAL({k}, batch_id, batch_size)]")
+                k += 1
 
-    # Step 4: Generate the Dynamic Preamble
-    # 4.a: Analyze symbols used in the expressions first
+    # Step 3: Generate the Dynamic Preamble
+    # 3.a: Analyze symbols used in the expressions first
     used_symbol_names: Set[str] = set()
     for expr in list_of_Gamma_syms:
         for sym in expr.free_symbols:
             used_symbol_names.add(str(sym))
 
-    # 4.b: Retrieve coordinate symbols from the Analytic Spacetime registry
+    # 3.b: Retrieve coordinate symbols from the Analytic Spacetime registry
     xx_symbols = Analytic_Spacetimes[spacetime_name].xx
     preamble_lines = [
-        f"// Unpack position coordinates from f[0]..f[3] (State vector size: {array_size})"
+        f"// Unpack position coordinates from flattened state vector (State vector size: {array_size})"
     ]
 
     for i, symbol in enumerate(xx_symbols):
         sym_name = str(symbol)
         # Check if symbol is used before unpacking to avoid unused variable warnings
         if sym_name in used_symbol_names:
-            preamble_lines.append(f"const double {sym_name} = f[{i}];")
+            preamble_lines.append(f"const double {sym_name} = f[IDX_LOCAL({i}, batch_id, batch_size)];")
     preamble = "\n  ".join(preamble_lines)
 
-    # Step 5: Define C function metadata
+    # Step 4: Define C function metadata
     includes = ["BHaH_defines.h"]
     desc = (
         f"@brief Computes the 40 unique Christoffel symbols for the {spacetime_name} metric "
         f"for a {PARTICLE} particle.\n"
     )
     name = f"connections_{spacetime_name}"
+    
+    # Updated SoA compatible signature
     params = (
         "const commondata_struct *restrict commondata, "
-        f"const double f[{array_size}], "
-        "connection_struct *restrict conn"
+        "const double *restrict f, "
+        "double *restrict conn_GammaUDD, "
+        "const int batch_size, "
+        "const int batch_id"
     )
 
-    # Step 6: Generate C Body
+    # Step 5: Generate C Body
     print(
         f" -> Generating C worker function: {name} (Spacetime: {spacetime_name}, Particle: {PARTICLE})..."
     )
@@ -127,7 +118,7 @@ def connections(
     # Combine Preamble + Kernel
     body = preamble + "\n\n" + kernel
 
-    # Step 7: Register the C function
+    # Step 6: Register the C function
     cfc.register_CFunction(
         includes=includes,
         desc=desc,
@@ -186,20 +177,6 @@ if __name__ == "__main__":
             )
 
         logger.info(" -> PASS: '%s' function registered successfully.", cfunc_name)
-
-        # Check Struct Registration
-        bhah_defines_dict = par.glb_extras_dict.get("BHaH_defines", {})
-        if "after_general" not in bhah_defines_dict:
-            raise RuntimeError("FAIL: BHaH_defines_h 'after_general' section is empty.")
-
-        defines_str = bhah_defines_dict["after_general"]
-        if "typedef struct { double Gamma4UDD000" not in defines_str:
-            raise RuntimeError(
-                "FAIL: connection_struct definition not found in BHaH_defines."
-            )
-        logger.info(
-            " -> PASS: connection_struct registered successfully in BHaH_defines."
-        )
 
         # 4. Output Files to Current Directory
         Bdefines_h.output_BHaH_defines_h(project_dir=".")

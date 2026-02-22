@@ -1,57 +1,54 @@
 """
 Register C dispatcher function for the internal RKF45 ODE solver.
 
-This module registers the 'ode_wrapper_{spacetime}' C function.
-It computes the metric and Christoffel symbols before invoking the
-RHS calculation engine, specifically for use with the internal RKF45 kernel.
-
 Author: Dalton J. Moone
 """
 
 import nrpy.c_function as cfc
 
-
 def ode_wrapper(spacetime_name: str) -> None:
-    """
-    Generate the C dispatcher function for the internal RKF45 solver.
-
-    This function calls the project-specific geometry engines and
-    the RHS engine, providing a clean interface for the RKF45 stepper.
-
-    :param spacetime_name: String used to define metric in analytic_spacetimes.py.
-    """
     includes = ["BHaH_defines.h", "BHaH_function_prototypes.h"]
     desc = f"""@brief Internal dispatcher for photon geodesics in {spacetime_name}.
         
-        Computes the local metric and connections, then calls the RHS calculation routine.
+        Computes the local metric and connections directly into local flat arrays, 
+        writes them to the SoA batch buffers, then calls the RHS calculation routine.
         
         Input:
-            y[9]: Current state vector.
+            f_in[9]: Current state vector.
             commondata: Pointer to the simulation's common data parameters.
         Output:
-            f[9]: Computed derivatives (RHS)."""
+            k_array: Computed derivatives (RHS)."""
 
-    # Changed type to void and removed GSL-specific void* params
     cfunc_type = "void"
     name = f"ode_wrapper_{spacetime_name}"
     params = (
-        "const double y[9], const commondata_struct *restrict commondata, double f[9]"
+        "const double *restrict f_in, "
+        "const commondata_struct *restrict commondata, "
+        "double *restrict metric_g4DD, "
+        "double *restrict conn_GammaUDD, "
+        "double *restrict k_array, "
+        "int batch_size, "
+        "int batch_id"
     )
 
-    # Construct the body
     body = f"""
-    // 1. Declare geometric structs to hold intermediate results
-    metric_struct metric;
-    connection_struct conn;
+    double local_metric[10];
+    double local_conn[40];
 
-    // 2. Compute Metric 
-    g4DD_metric_{spacetime_name}(commondata, y, &metric);
-    
-    // 3. Compute Connections (Christoffel Symbols)
-    connections_{spacetime_name}(commondata, y, &conn);
-    
-    // 4. Compute Geodesic RHS
-    calculate_ode_rhs(y, &metric, &conn, f);
+    // Compute metric and connections directly into local flat arrays
+    g4DD_metric_{spacetime_name}(commondata, f_in, local_metric);
+    connections_{spacetime_name}(commondata, f_in, local_conn);
+
+    // Populate the 1D batch arrays explicitly using the IDX_LOCAL macro
+    for (int i = 0; i < 10; i++) {{
+        metric_g4DD[IDX_LOCAL(i, batch_id, batch_size)] = local_metric[i];
+    }}
+    for (int i = 0; i < 40; i++) {{
+        conn_GammaUDD[IDX_LOCAL(i, batch_id, batch_size)] = local_conn[i];
+    }}
+
+    // Call the RHS function using the populated batch arrays
+    calculate_ode_rhs(f_in, metric_g4DD, conn_GammaUDD, k_array, batch_size, batch_id);
     """
 
     cfc.register_CFunction(
@@ -63,12 +60,10 @@ def ode_wrapper(spacetime_name: str) -> None:
         body=body,
     )
 
-
 if __name__ == "__main__":
     import logging
     import os
     import sys
-
     import nrpy.infrastructures.BHaH.BHaH_defines_h as Bdefines_h
 
     sys.path.append(os.getcwd())

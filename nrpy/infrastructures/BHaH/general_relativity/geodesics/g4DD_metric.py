@@ -3,13 +3,11 @@ Register C function for computing metric components.
 
 This module registers the 'g4DD_metric_{spacetime_name}' C function,
 which calculates the 10 unique components of the metric tensor for a specific spacetime.
-It also registers the required 'metric_struct' in BHaH_defines.h using
-the specific infrastructure hook "after_general".
+It utilizes a flattened SoA architecture for SIMT-compatible batch processing on GPUs.
 
-It generates a preamble to unpack f[0]..f[3] from the state vector into coordinate
-variables. Spacetime parameters stored in `commondata` are provided through the
-function arguments and accessed via the BHaH infrastructure, rather than being
-explicitly unpacked into local variables in this preamble.
+It generates a preamble to unpack coordinate variables directly from the flattened 
+state vector using macro indexing. Spacetime parameters stored in `commondata` are 
+provided through the function arguments.
 
 Author: Dalton J. Moone
 """
@@ -35,14 +33,13 @@ def g4DD_metric(
     """
     Generate and register the C function to compute metric components.
 
-    Registers the 'metric_struct' and the 'g4DD_metric' C function.
     The C function computes the upper-triangular components of the metric
-    tensor (g_munu) based on the provided symbolic expressions.
+    tensor (g_munu) and writes them to a flattened 1D batch array.
 
     :param g4DD_exprs: A 4x4 list of SymPy expressions representing the metric.
     :param spacetime_name: Name of the spacetime (used for documentation).
     :param PARTICLE: The type of particle ("massive" or "photon").
-                     Determines array size for the state vector f.
+                     Determines state vector documentation logic.
     :raises ValueError: If PARTICLE is not "massive" or "photon".
     """
     # Step 1: Specific setup based on particle type
@@ -53,59 +50,57 @@ def g4DD_metric(
     else:
         raise ValueError(f"Unsupported PARTICLE: {PARTICLE}")
 
-    # Step 2: Register metric_struct in BHaH_defines.h
-    # The struct stores the 10 unique components of the symmetric metric tensor.
-    metric_components = [f"g4DD{i}{j}" for i in range(4) for j in range(i, 4)]
-    metric_struct_str = (
-        "typedef struct { double " + ", ".join(metric_components) + "; } metric_struct;"
-    )
-
-    # Register under the "after_general" section of BHaH_defines.h
-    Bdefines_h.register_BHaH_defines("after_general", metric_struct_str)
-
-    # Step 3: Define C function metadata
+    # Step 2: Define C function metadata
     includes = ["BHaH_defines.h"]
     desc = (
         f"@brief Computes the 10 unique components of the {spacetime_name} metric "
         f"for a {PARTICLE} particle.\n"
     )
     name = f"g4DD_metric_{spacetime_name}"
+    
+    # Updated SoA compatible signature
     params = (
         "const commondata_struct *restrict commondata, "
-        f"const double f[{array_size}], "
-        "metric_struct *restrict metric"
+        "const double *restrict f, "
+        "double *restrict metric_g4DD, "
+        "const int batch_size, "
+        "const int batch_id"
     )
 
-    # Step 4: Prepare symbolic expressions and C variable names
+    # Step 3: Prepare symbolic expressions and 1D flattened C variable names
     list_of_g4DD_syms = []
     list_of_g4DD_C_vars = []
 
+    k = 0
     for mu in range(4):
         for nu in range(mu, 4):
             list_of_g4DD_syms.append(g4DD_exprs[mu][nu])
-            list_of_g4DD_C_vars.append(f"metric->g4DD{mu}{nu}")
+            # Map 2D symmetric tensor components to 1D flat array using macro
+            list_of_g4DD_C_vars.append(f"metric_g4DD[IDX_LOCAL({k}, batch_id, batch_size)]")
+            k += 1
 
-    # Step 5: Generate the Dynamic Preamble
-    # 5.a: Analyze symbols used in the expressions
+    # Step 4: Generate the Dynamic Preamble
+    # 4.a: Analyze symbols used in the expressions
     used_symbol_names: Set[str] = set()
     for expr in list_of_g4DD_syms:
         for sym in expr.free_symbols:
             used_symbol_names.add(str(sym))
 
-    # 5.b: Retrieve coordinate symbols from the Analytic Spacetime registry
+    # 4.b: Retrieve coordinate symbols from the Analytic Spacetime registry
     xx_symbols = Analytic_Spacetimes[spacetime_name].xx
     preamble_lines = [
-        f"// Unpack position coordinates from f[0]..f[3] (State vector size: {array_size})"
+        f"// Unpack position coordinates from flattened state vector (State vector size: {array_size})"
     ]
 
     for i, symbol in enumerate(xx_symbols):
         sym_name = str(symbol)
         if sym_name in used_symbol_names:
-            preamble_lines.append(f"const double {sym_name} = f[{i}];")
+            # Unpack coordinates directly from flattened input array
+            preamble_lines.append(f"const double {sym_name} = f[IDX_LOCAL({i}, batch_id, batch_size)];")
 
     preamble = "\n  ".join(preamble_lines)
 
-    # Step 6: Generate C body
+    # Step 5: Generate C body
     print(
         f" -> Generating C worker function: {name} (Spacetime: {spacetime_name}, Particle: {PARTICLE})..."
     )
@@ -120,7 +115,7 @@ def g4DD_metric(
 
     body = preamble + "\n\n" + kernel
 
-    # Step 7: Register the C function
+    # Step 6: Register the C function
     cfc.register_CFunction(
         includes=includes,
         desc=desc,

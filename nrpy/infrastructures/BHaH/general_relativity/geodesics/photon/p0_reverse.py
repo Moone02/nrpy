@@ -1,82 +1,65 @@
-"""
-Register C function for computing the initial time component of 4-momentum.
-
-This module registers the 'p0_reverse' C function. It enforces
-the 4-momentum normalization constraint for photons (p.p = 0) by solving
-the quadratic Hamiltonian constraint for the time component p^0.
-
-It generates a preamble to unpack the state vector f[9] into spatial momentum components (p^i) required for the calculation.
-
-Author: Dalton J. Moone
-"""
-
-import logging
-
-# Step 0.a: Import standard Python modules
-import sys
-
-# Step 0.b: Import third-party modules
 import sympy as sp
-
-# Step 0.c: Import NRPy core modules
 import nrpy.c_codegen as ccg
 import nrpy.c_function as cfc
-
 
 def p0_reverse(p0_expr: sp.Expr) -> None:
     """
     Generate and register the C function to compute p^0 for a photon.
-
-    :param p0_expr: The SymPy expression for p^0.
+    Fixed to correctly map symbolic metric names to flat SoA array indices.
     """
-    # Step 3: Define C function metadata
     includes = ["BHaH_defines.h"]
     desc = """@brief Computes the initial time-component of the 4-momentum (p^0).
-
-        Solves the quadratic Hamiltonian constraint equation:
-            g_munu p^mu p^nu = 0
-        for the negative root of p^0, given the spatial momentum components.
-
-        Input:
-            metric: The metric tensor components at the current location.
-            f[9]: The state vector (specifically spatial momentum f[5]..f[7]).
-        Output:
-            p0_out: The computed p^0 component."""
+        Solves the quadratic Hamiltonian constraint for the negative root.
+        Updated for SoA architecture using global and batch indexing."""
     name = "p0_reverse"
 
+    # Signature matching your batch integrator requirements
     params = (
-        "const metric_struct *restrict metric, "
-        "const double f[9], "
+        "const double *restrict metric_g4DD, "
+        "double *restrict all_photons_f, "
+        "const long int num_rays, "
+        "const int batch_size, "
+        "const long int photon_idx, "
+        "const int batch_id, "
         "double *restrict p0_out"
     )
 
-    # Step 4: Generate C body
-    print(f" -> Generating C worker function: {name} ...")
+    # 1. Map symbolic names (metric_g4DD01) to local batch array indices
+    # We loop exactly as g4DD_metric.py does to ensure index 'k' matches.
+    metric_map = {}
+    k = 0
+    for i in range(4):
+        for j in range(i, 4):
+            # The generator outputs symbols named 'metric_g4DDij'
+            old_symbol = f"metric_g4DD{i}{j}"
+            new_access = f"metric_g4DD[IDX_LOCAL({k}, batch_id, batch_size)]"
+            metric_map[old_symbol] = new_access
+            k += 1
 
-    # 4a. Generate the Math Body (using CSE)
+    # 2. Generate the Math Body (using CSE)
+    # We pass the expression for the negative root of p0
     body_math = ccg.c_codegen(
         [p0_expr], ["*p0_out"], enable_cse=True, verbose=False, include_braces=False
     )
+    
+    # 3. Perform the substitution
+    # Replace the symbolic variables with the specific SoA array indexing
+    for old, new in metric_map.items():
+        body_math = body_math.replace(old, new)
 
-    # 4b. Generate the Dynamic Preamble
-    preamble_lines = ["// Unpack spatial momentum components from f[5]..f[7]"]
-    preamble_lines.append(
-        "// Note: f[4] is p^0 (which we are computing), so we skip it."
-    )
+    # 4. Generate the Preamble and Postamble
+    # Unpack spatial momentum from the global state vector (indices 5, 6, 7)
+    preamble = f"""
+  const double pU1 = all_photons_f[IDX_GLOBAL(5, photon_idx, num_rays)];
+  const double pU2 = all_photons_f[IDX_GLOBAL(6, photon_idx, num_rays)];
+  const double pU3 = all_photons_f[IDX_GLOBAL(7, photon_idx, num_rays)];
+"""
 
-    # Standard 3-momentum components usually map to pU1, pU2, pU3
-    # We map f[5]->pU1, f[6]->pU2, f[7]->pU3
-    preamble_lines.append("const double pU1 = f[5];")
-    preamble_lines.append("const double pU2 = f[6];")
-    preamble_lines.append("const double pU3 = f[7];")
-    preamble_lines.append("")
+    # Final assignment to the global state at index 4 (p^t)
+    postamble = f"\n  all_photons_f[IDX_GLOBAL(4, photon_idx, num_rays)] = *p0_out;"
 
-    preamble = "\n  ".join(preamble_lines)
+    full_body = preamble + body_math + postamble
 
-    # Combine preamble and math
-    full_body = preamble + body_math
-
-    # Step 5: Register the C function
     cfc.register_CFunction(
         includes=includes,
         desc=desc,
@@ -85,63 +68,3 @@ def p0_reverse(p0_expr: sp.Expr) -> None:
         include_CodeParameters_h=False,
         body=full_body,
     )
-    print(f"    ... {name}() registration complete.")
-
-
-if __name__ == "__main__":
-    import os
-
-    # Ensure local modules can be imported
-    sys.path.append(os.getcwd())
-
-    try:
-        from nrpy.equations.general_relativity.geodesics.geodesics import (
-            Geodesic_Equations,
-        )
-    except ImportError as e:
-        print(f"Error: Could not import required modules: {e}")
-        sys.exit(1)
-
-    # Configure logging
-    logging.basicConfig(level=logging.INFO)
-    logger = logging.getLogger("Testp0ReverseAnalytic")
-
-    SPACETIME = "KerrSchild_Cartesian"
-    GEO_KEY = f"{SPACETIME}_photon"
-
-    logger.info("Test: Generating p0_reverse C-code for %s...", SPACETIME)
-
-    try:
-        # 1. Acquire Symbolic Data
-        logger.info(" -> Acquiring symbolic Hamiltonian constraint (p^0)...")
-        geodesic_data = Geodesic_Equations[GEO_KEY]
-
-        if geodesic_data.p0_photon is None:
-            raise ValueError(f"p0_photon is None for key {GEO_KEY}")
-
-        # 3. Run the Generator
-        logger.info(" -> Calling p0_reverse()...")
-        p0_reverse(geodesic_data.p0_photon)
-
-        # 4. Validation
-        cfunc_name = "p0_reverse"
-
-        if cfunc_name not in cfc.CFunction_dict:
-            raise RuntimeError(
-                f"FAIL: '{cfunc_name}' was not registered in cfc.CFunction_dict."
-            )
-        logger.info(" -> PASS: '%s' function registered successfully.", cfunc_name)
-
-        # 5. Output Files
-        filename = f"{cfunc_name}.c"
-        cfunc = cfc.CFunction_dict[cfunc_name]
-        with open(filename, "w", encoding="utf-8") as f:
-            f.write(cfunc.full_function)
-        logger.info(" -> Written to %s", filename)
-
-    except Exception as e:  # pylint: disable=broad-exception-caught
-        logger.error(" -> FAIL: p0_reverse test failed with error: %s", e)
-        import traceback
-
-        traceback.print_exc()
-        sys.exit(1)

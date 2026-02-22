@@ -1,240 +1,107 @@
 """
 Generates the C orchestrator for geometric event detection.
-
-This module registers the 'event_detection_manager' C function, which is responsible
-for monitoring the photon's trajectory at every integration step. It detects if
-the photon has crossed specific geometric boundaries (the camera window or the
-source plane) and triggers the high-precision interpolation engine if a crossing occurs.
+Refactored to eradicate AoS event structs and monitor trajectories directly
+via flattened PhotonStateSoA global arrays.
 
 Author: Dalton J. Moone
 """
 
-import os
-import sys
-
 import nrpy.c_function as cfc
 import nrpy.infrastructures.BHaH.BHaH_defines_h as Bdefines_h
 
-# --- Register C Structs ---
-event_structs_c_code = r"""
+# Define the C-code for event types, geometry, and helper functions
+event_mgmt_c_code = r"""
     // ==========================================
-    // Event Detection and Plane Crossing Helpers
+    // Event Detection Types and Geometry
     // ==========================================
-    typedef struct { double n[3]; double d; } plane_event_params;
+    
+    // Define the function pointer type for event functions
+    typedef double (*event_function_t)(const double *f, long int num_rays, long int photon_idx, const void *params);
 
-    // Function pointer type for generic event functions
-    typedef double (*event_function_t)(const double f[9], void *event_params);
+    typedef struct {
+        double normal[3];
+        double d;
+    } plane_event_params;
 
-    static inline double plane_event_func(const double f[9], void *event_params) {
-        plane_event_params *params = (plane_event_params *)event_params;
-        return f[1]*params->n[0] + f[2]*params->n[1] + f[3]*params->n[2] - params->d;
+    /**
+     * @brief Computes the signed distance of a photon from a defined plane.
+     * Uses the 1D flattened SoA mapping: ((component) * (num_rays) + (ray_id)).
+     */
+    static inline double plane_event_func(const double *f, long int num_rays, long int photon_idx, const void *params) {
+        const plane_event_params *p = (const plane_event_params *)params;
+        // Unpack coordinates from the flat SoA layout
+        const double x = f[1 * num_rays + photon_idx]; 
+        const double y = f[2 * num_rays + photon_idx]; 
+        const double z = f[3 * num_rays + photon_idx]; 
+        
+        return p->normal[0] * x + p->normal[1] * y + p->normal[2] * z - p->d;
     }
+"""
 
-    // Event data struct: Results of a crossing finding
-    typedef struct { 
-        bool found; 
-        double lambda_event; 
-        double t_event; 
-        double f_event[9]; 
-    } event_data_struct;
-    """
-# Using 'photon_01_' guarantees this compiles in the correct order
-Bdefines_h.register_BHaH_defines("photon_01_event_structs", event_structs_c_code)
-
+# Register the defines so they appear in BHaH_defines.h
+Bdefines_h.register_BHaH_defines("photon_03_event_management", event_mgmt_c_code)
 
 def event_detection_manager() -> None:
     """
     Generate and register the C event detection manager.
-
-    This function generates the C code that serves as the "step-watcher" during
-    integration. It performs the following logic:
-    1. Checks if the photon has already been flagged as 'found' for an event.
-    2. If not, it calculates the signed distance of the photon to the Window and Source planes.
-    3. Checks for a sign change in distance between the current and previous steps.
-    4. If a sign change (crossing) is detected, it invokes `find_event_time_and_state()`
-       to solve for the exact intersection time.
+    Logic is performed directly on the global SoA pointers for SIMT efficiency.
     """
-    # -------------------------------------------------------------------------
-    # Step 1: Define C Function Metadata
-    # -------------------------------------------------------------------------
-    # Defines and prototypes required for the C function to compile.
     includes = ["BHaH_defines.h", "BHaH_function_prototypes.h", "<math.h>"]
-
-    desc = r"""@brief Detects crossings of the window and source planes.
-
-    This orchestrator is called at each integration step. It determines if a
-    sign change has occurred in the photon's distance to either the window or
-    source plane. If so, it calls the `find_event_time_and_state()` engine to
-    accurately interpolate the intersection point.
-
-    @param[in]      f_prev, f_curr, f_next  State vectors at three consecutive steps.
-    @param[in]      lambda_prev, lambda_curr, lambda_next Affine parameters for the three steps.
-    @param[in]      commondata              Pointer to commondata struct with runtime parameters.
-    @param[in,out]  on_positive_side_of_window_prev Pointer to the state of the photon relative to the window plane at the previous step.
-    @param[in,out]  on_positive_side_of_source_prev Pointer to the state of the photon relative to the source plane at the previous step.
-    @param[out]     window_event            Pointer to the event_data_struct for window crossings.
-    @param[out]     source_plane_event      Pointer to the event_data_struct for source plane crossings.
-    """
-
+    desc = "@brief Detects crossings of the window and source planes using SoA data."
     name = "event_detection_manager"
 
+    # Signature updated to use the master SoA struct and global indexing
     params = """
-        const double f_prev[9], const double f_curr[9], const double f_next[9],
-        double lambda_prev, double lambda_curr, double lambda_next,
-        const commondata_struct *restrict commondata,
-        bool *on_positive_side_of_window_prev,
-        bool *on_positive_side_of_source_prev,
-        event_data_struct *restrict window_event,
-        event_data_struct *restrict source_plane_event
+        PhotonStateSoA *restrict all_photons, 
+        const long int num_rays, 
+        const long int photon_idx, 
+        const commondata_struct *restrict commondata
         """
 
-    # -------------------------------------------------------------------------
-    # Step 2: Define C Function Body
-    # -------------------------------------------------------------------------
-    # The body checks plane equations: n_i * x^i = d.
-    # If (n * x_prev - d) and (n * x_curr - d) have different signs, a crossing occurred.
     body = r"""
-    // ------------------------------------------------------------------------
-    // Logic Block 1: Window Plane Detection
-    // ------------------------------------------------------------------------
-    // Only proceed if we haven't already found the window event for this photon.
-    if (!window_event->found) {
-        
-        // 1.a. Calculate the Window Plane Normal Vector
-        //      Normal = (Window Center) - (Camera Position)
-        double window_plane_normal[3] = {
+    // Helper lambda-like macro for local plane evaluation within the SoA context
+    #define EVAL_PLANE(normal, dist, state_ptr, r_idx, total_rays) ( \
+        state_ptr[IDX_GLOBAL(1, r_idx, total_rays)]*(normal)[0] + \
+        state_ptr[IDX_GLOBAL(2, r_idx, total_rays)]*(normal)[1] + \
+        state_ptr[IDX_GLOBAL(3, r_idx, total_rays)]*(normal)[2] - (dist) )
+
+    // --- Window Plane Detection ---
+    if (!all_photons->window_event_found[photon_idx]) {
+        double w_normal[3] = {
             commondata->window_center_x - commondata->camera_pos_x,
             commondata->window_center_y - commondata->camera_pos_y,
             commondata->window_center_z - commondata->camera_pos_z
         };
+        double mag_inv = 1.0 / sqrt(SQR(w_normal[0]) + SQR(w_normal[1]) + SQR(w_normal[2]));
+        for(int i=0; i<3; i++) w_normal[i] *= mag_inv;
+        double w_dist = commondata->window_center_x*w_normal[0] + commondata->window_center_y*w_normal[1] + commondata->window_center_z*w_normal[2];
 
-        // 1.b. Normalize the vector
-        const double mag_w_norm_sq = SQR(window_plane_normal[0]) + 
-                                     SQR(window_plane_normal[1]) + 
-                                     SQR(window_plane_normal[2]);
-        const double mag_w_norm = sqrt(mag_w_norm_sq);
-
-        if (mag_w_norm > 1e-12) {
-            const double inv_mag_w_norm = 1.0 / mag_w_norm;
-            for(int i=0; i<3; i++) window_plane_normal[i] *= inv_mag_w_norm;
-        }
-
-        // 1.c. Calculate Plane Distance 'd' from origin
-        //      d = Normal . (Window Center)
-        const double window_plane_dist = commondata->window_center_x * window_plane_normal[0] +
-                                         commondata->window_center_y * window_plane_normal[1] +
-                                         commondata->window_center_z * window_plane_normal[2];
-
-        // 1.d. Prepare parameters for the distance function
-        plane_event_params window_params = {
-            {window_plane_normal[0], window_plane_normal[1], window_plane_normal[2]}, 
-            window_plane_dist
-        };
-
-        // 1.e. Check for Crossing
-        //      Evaluate which side of the plane the photon is on at the 'next' step.
-        //      If it differs from the 'prev' step, a crossing occurred in the interval.
-        bool on_positive_side_curr = (plane_event_func(f_next, &window_params) > 0);
-
-        if (on_positive_side_curr != *on_positive_side_of_window_prev) {
-            // A crossing occurred!
-            // Call the high-accuracy interpolator to find the exact time 'lambda' where dist == 0.
-            find_event_time_and_state(f_prev, f_curr, f_next, 
-                                      lambda_prev, lambda_curr, lambda_next,
-                                      plane_event_func, &window_params, window_event);
-        }
-
-        // 1.f. Update state for the next integration step
-        *on_positive_side_of_window_prev = on_positive_side_curr;
-    }
-
-    // ------------------------------------------------------------------------
-    // Logic Block 2: Source Plane Detection
-    // ------------------------------------------------------------------------
-    // Only proceed if we haven't already found the source event.
-    if (!source_plane_event->found) {
+        // FIXED: Use an epsilon to prevent false crossings for photons starting EXACTLY on the plane
+        double w_val = EVAL_PLANE(w_normal, w_dist, all_photons->f, photon_idx, num_rays);
+        bool on_pos_curr = (w_val > 1e-10); 
         
-        // 2.a. Retrieve Source Plane Geometry (pre-computed in commondata)
-        const double source_plane_normal[3] = {
-            commondata->source_plane_normal_x,
-            commondata->source_plane_normal_y,
-            commondata->source_plane_normal_z
-        };
-
-        // 2.b. Calculate Plane Distance 'd'
-        const double source_plane_dist = commondata->source_plane_center_x * source_plane_normal[0] +
-                                         commondata->source_plane_center_y * source_plane_normal[1] +
-                                         commondata->source_plane_center_z * source_plane_normal[2];
-
-        // 2.c. Prepare parameters
-        plane_event_params source_params = {
-            {source_plane_normal[0], source_plane_normal[1], source_plane_normal[2]}, 
-            source_plane_dist
-        };
-
-        // 2.d. Check for Crossing
-        bool on_positive_side_curr = (plane_event_func(f_next, &source_params) > 0);
-
-        if (on_positive_side_curr != *on_positive_side_of_source_prev) {
-            // A crossing occurred. Invoke the interpolator.
-            find_event_time_and_state(f_prev, f_curr, f_next, 
-                                      lambda_prev, lambda_curr, lambda_next,
-                                      plane_event_func, &source_params, source_plane_event);
+        if (on_pos_curr != all_photons->on_positive_side_of_window_prev[photon_idx]) {
+             // Crossing found: Root-find and write directly to all_photons->window_event_f_intersect
+             find_event_time_and_state(all_photons, num_rays, photon_idx, w_normal, w_dist, WINDOW_EVENT);
         }
-
-        // 2.e. Update state
-        *on_positive_side_of_source_prev = on_positive_side_curr;
+        all_photons->on_positive_side_of_window_prev[photon_idx] = on_pos_curr;
     }
+
+    // --- Source Plane Detection ---
+    if (!all_photons->source_event_found[photon_idx]) {
+        double s_normal[3] = {commondata->source_plane_normal_x, commondata->source_plane_normal_y, commondata->source_plane_normal_z};
+        double s_dist = commondata->source_plane_center_x*s_normal[0] + commondata->source_plane_center_y*s_normal[1] + commondata->source_plane_center_z*s_normal[2];
+
+        // FIXED: Added epsilon check for source plane as well
+        double s_val = EVAL_PLANE(s_normal, s_dist, all_photons->f, photon_idx, num_rays);
+        bool on_pos_curr = (s_val > 1e-10);
+        
+        if (on_pos_curr != all_photons->on_positive_side_of_source_prev[photon_idx]) {
+             find_event_time_and_state(all_photons, num_rays, photon_idx, s_normal, s_dist, SOURCE_EVENT);
+        }
+        all_photons->on_positive_side_of_source_prev[photon_idx] = on_pos_curr;
+    }
+    #undef EVAL_PLANE
     """
 
-    # -------------------------------------------------------------------------
-    # Step 3: Register with CFunction Dictionary
-    # -------------------------------------------------------------------------
-    cfc.register_CFunction(
-        includes=includes,
-        desc=desc,
-        name=name,
-        params=params,
-        body=body,
-    )
-
-
-if __name__ == "__main__":
-    import logging
-
-    # Configure logging to print only the message content
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
-    logger = logging.getLogger("TestEventDetectionManager")
-
-    logger.info("Test: Generating Event Detection Manager C-code...")
-
-    try:
-        # 1. Run the Generator
-        logger.info(" -> Calling event_detection_manager()...")
-        event_detection_manager()
-
-        # 2. Validation
-        cfunc_name = "event_detection_manager"
-
-        # Check C Function Registration
-        if cfunc_name not in cfc.CFunction_dict:
-            raise RuntimeError(
-                f"FAIL: '{cfunc_name}' was not registered in cfc.CFunction_dict."
-            )
-
-        logger.info(" -> PASS: '%s' function registered successfully.", cfunc_name)
-
-        # 3. Output Files to Current Directory for Inspection
-        output_filename = f"{cfunc_name}.c"
-        c_function = cfc.CFunction_dict[cfunc_name]
-
-        with open(output_filename, "w", encoding="utf-8") as f:
-            f.write(c_function.full_function)
-
-        logger.info("    ... Wrote %s for inspection.", output_filename)
-        logger.info(" -> Success! Test complete.")
-
-    except Exception as e:
-        logger.error(" -> FAIL: event_detection_manager test failed.")
-        logger.exception(e)
-        sys.exit(1)
+    cfc.register_CFunction(includes=includes, desc=desc, name=name, params=params, body=body)

@@ -51,6 +51,7 @@ from nrpy.infrastructures.BHaH.general_relativity.geodesics import conserved_qua
 # 2. Logic & Control
 from nrpy.infrastructures.BHaH.general_relativity.geodesics.photon import set_initial_conditions_cartesian
 from nrpy.infrastructures.BHaH.general_relativity.geodesics.photon import handle_source_plane_intersection
+from nrpy.infrastructures.BHaH.general_relativity.geodesics.photon import handle_window_plane_intersection
 from nrpy.infrastructures.BHaH.general_relativity.geodesics.photon import event_detection_manager
 from nrpy.infrastructures.BHaH.general_relativity.geodesics.photon import find_event_time_and_state
 from nrpy.infrastructures.BHaH.general_relativity.geodesics.photon import calculate_and_fill_blueprint_data_universal
@@ -131,8 +132,9 @@ if __name__ == "__main__":
     
     # C. Event Detection & Handling
     event_detection_manager.event_detection_manager()
-    find_event_time_and_state.find_event_time_and_state() # Register the interpolation engine
+    find_event_time_and_state.find_event_time_and_state()
     handle_source_plane_intersection.handle_source_plane_intersection()
+    handle_window_plane_intersection.handle_window_plane_intersection()
     calculate_and_fill_blueprint_data_universal.calculate_and_fill_blueprint_data_universal()
 
     # D. Numerical Integration Infrastructure
