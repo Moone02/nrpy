@@ -142,8 +142,8 @@ if __name__ == "__main__":
     par.glb_code_params_dict["source_plane_normal_x"].defaultvalue = 0.0
     par.glb_code_params_dict["source_plane_normal_y"].defaultvalue = 0.0
     par.glb_code_params_dict["source_plane_normal_z"].defaultvalue = 1.0
-    par.glb_code_params_dict["source_r_max"].defaultvalue = 20.0
-    par.glb_code_params_dict["source_r_min"].defaultvalue = 6.0
+    par.glb_code_params_dict["source_r_max"].defaultvalue = 15.0
+    par.glb_code_params_dict["source_r_min"].defaultvalue = 5.0
     par.glb_code_params_dict["source_up_vec_x"].defaultvalue = 0.0
     par.glb_code_params_dict["source_up_vec_y"].defaultvalue = 1.0
     par.glb_code_params_dict["source_up_vec_z"].defaultvalue = 0.0
@@ -151,10 +151,10 @@ if __name__ == "__main__":
     # Window Plane Intersection
     par.glb_code_params_dict["camera_pos_x"].defaultvalue = 51.0
     par.glb_code_params_dict["camera_pos_y"].defaultvalue = 0.0
-    par.glb_code_params_dict["camera_pos_z"].defaultvalue = 10.2
+    par.glb_code_params_dict["camera_pos_z"].defaultvalue = 10.0
     par.glb_code_params_dict["window_center_x"].defaultvalue = 50.0
     par.glb_code_params_dict["window_center_y"].defaultvalue = 0.0
-    par.glb_code_params_dict["window_center_z"].defaultvalue = 10.0
+    par.glb_code_params_dict["window_center_z"].defaultvalue = 9.803
     par.glb_code_params_dict["window_height"].defaultvalue = 1.0
     par.glb_code_params_dict["window_up_vec_x"].defaultvalue = 0.0
     par.glb_code_params_dict["window_up_vec_y"].defaultvalue = 0.0
@@ -162,16 +162,16 @@ if __name__ == "__main__":
     par.glb_code_params_dict["window_width"].defaultvalue = 1.0
 
     # RKF45 Update and Control Helper
-    par.glb_code_params_dict["numerical_initial_h"].defaultvalue = 0.1
-    par.glb_code_params_dict["rkf45_absolute_error_tolerance"].defaultvalue = 1e-12
-    par.glb_code_params_dict["rkf45_error_tolerance"].defaultvalue = 1e-12
+    par.glb_code_params_dict["numerical_initial_h"].defaultvalue = 1.0
+    par.glb_code_params_dict["rkf45_absolute_error_tolerance"].defaultvalue = 1e-09
+    par.glb_code_params_dict["rkf45_error_tolerance"].defaultvalue = 1e-09
     par.glb_code_params_dict["rkf45_h_max"].defaultvalue = 10.0
     par.glb_code_params_dict["rkf45_h_min"].defaultvalue = 1e-10
     par.glb_code_params_dict["rkf45_max_retries"].defaultvalue = 10
     par.glb_code_params_dict["rkf45_safety_factor"].defaultvalue = 0.9
 
     # Set Initial Conditions Cartesian
-    par.glb_code_params_dict["scan_density"].defaultvalue = 500
+    par.glb_code_params_dict["scan_density"].defaultvalue = 700
     par.glb_code_params_dict["t_start"].defaultvalue = 500.0
 
     # Step 6: Generate C Code for Parameters
@@ -186,9 +186,7 @@ if __name__ == "__main__":
         project_name=project_name, cmdline_inputs=cmdline_inputs_list
     )
 
-    # ##########################################################################
-    # Step 7: Assemble Final C Project (Windows Compatible)
-    # ##########################################################################
+    # Step 7: Assemble Final C Project
     print(" -> Assembling C project on disk...")
     BHaH_defines_h.output_BHaH_defines_h(project_dir=project_dir, enable_rfm_precompute=False)
     gh.copy_files(
@@ -197,8 +195,6 @@ if __name__ == "__main__":
         project_dir=project_dir,
         subdirectory="intrinsics",
     )
-    
-    print(" -> Generating Makefile...")
     Makefile.output_CFunctions_function_prototypes_and_construct_Makefile(
         project_dir=project_dir,
         project_name=project_name,
@@ -206,26 +202,6 @@ if __name__ == "__main__":
         addl_CFLAGS=["-Wall -Wextra -g -fopenmp -O3 -march=native -ffast-math -Wno-stringop-truncation", "-Wno-unknown-pragmas"],
         addl_libraries=["-lm -fopenmp"], 
     )
-
-    # Patch Makefile for Windows/Git Bash
-    # (Fixes "pipe" errors or permission denied on temp files during compilation)
-    print(" -> Patching Makefile for Windows compatibility...")
-    local_tmp_path = "tmp"
-    os.makedirs(os.path.join(project_dir, local_tmp_path), exist_ok=True)
-
-    makefile_path = os.path.join(project_dir, "Makefile")
-
-    # Read the generated Makefile
-    with open(makefile_path, "r") as f:
-        content = f.read()
-
-    # Prepend the directory exports
-    with open(makefile_path, "w") as f:
-        f.write(f"export TMPDIR := $(CURDIR)/{local_tmp_path}\n")
-        f.write(f"export TMP := $(CURDIR)/{local_tmp_path}\n")
-        f.write(f"export TEMP := $(CURDIR)/{local_tmp_path}\n")
-        f.write("\n")
-        f.write(content)
 
     # ##########################################################################
     # PART 2: PIPELINE EXECUTION (COMPILE, RUN, VISUALIZE)
@@ -239,14 +215,8 @@ if __name__ == "__main__":
         sys.exit(1)
 
     print("\n--- PHASE 2: Running Ray-Tracer ---")
-    
-    # Conditionally add .exe for Windows/Git Bash compatibility
-    exe_extension = ".exe" if os.name == "nt" or sys.platform in ["win32", "cygwin", "msys"] else ""
-    # Use the absolute path to ensure Windows can find the executable
-    exec_path = os.path.join(project_dir, f"{exec_name}{exe_extension}")
-    
     try:
-        subprocess.run([exec_path], cwd=project_dir, check=True)
+        subprocess.run([f"./{exec_name}"], cwd=project_dir, check=True)
         print("Ray-tracing complete. Blueprint generated.")
     except subprocess.CalledProcessError:
         print("C executable failed. Exiting pipeline.")
