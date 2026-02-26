@@ -139,7 +139,7 @@ if __name__ == "__main__":
     par.glb_code_params_dict["source_plane_center_x"].defaultvalue = 0.0
     par.glb_code_params_dict["source_plane_center_y"].defaultvalue = 0.0
     par.glb_code_params_dict["source_plane_center_z"].defaultvalue = 0.0
-    par.glb_code_params_dict["source_plane_normal_x"].defaultvalue = 1.0
+    par.glb_code_params_dict["source_plane_normal_x"].defaultvalue = 0.0
     par.glb_code_params_dict["source_plane_normal_y"].defaultvalue = 0.0
     par.glb_code_params_dict["source_plane_normal_z"].defaultvalue = 1.0
     par.glb_code_params_dict["source_r_max"].defaultvalue = 20.0
@@ -151,10 +151,10 @@ if __name__ == "__main__":
     # Window Plane Intersection
     par.glb_code_params_dict["camera_pos_x"].defaultvalue = 51.0
     par.glb_code_params_dict["camera_pos_y"].defaultvalue = 0.0
-    par.glb_code_params_dict["camera_pos_z"].defaultvalue = 5.1
+    par.glb_code_params_dict["camera_pos_z"].defaultvalue = 10.2
     par.glb_code_params_dict["window_center_x"].defaultvalue = 50.0
     par.glb_code_params_dict["window_center_y"].defaultvalue = 0.0
-    par.glb_code_params_dict["window_center_z"].defaultvalue = 5.0
+    par.glb_code_params_dict["window_center_z"].defaultvalue = 10.0
     par.glb_code_params_dict["window_height"].defaultvalue = 1.0
     par.glb_code_params_dict["window_up_vec_x"].defaultvalue = 0.0
     par.glb_code_params_dict["window_up_vec_y"].defaultvalue = 0.0
@@ -163,15 +163,15 @@ if __name__ == "__main__":
 
     # RKF45 Update and Control Helper
     par.glb_code_params_dict["numerical_initial_h"].defaultvalue = 0.1
-    par.glb_code_params_dict["rkf45_absolute_error_tolerance"].defaultvalue = 5e-9
-    par.glb_code_params_dict["rkf45_error_tolerance"].defaultvalue = 5e-9
+    par.glb_code_params_dict["rkf45_absolute_error_tolerance"].defaultvalue = 1e-12
+    par.glb_code_params_dict["rkf45_error_tolerance"].defaultvalue = 1e-12
     par.glb_code_params_dict["rkf45_h_max"].defaultvalue = 10.0
     par.glb_code_params_dict["rkf45_h_min"].defaultvalue = 1e-10
     par.glb_code_params_dict["rkf45_max_retries"].defaultvalue = 10
     par.glb_code_params_dict["rkf45_safety_factor"].defaultvalue = 0.9
 
     # Set Initial Conditions Cartesian
-    par.glb_code_params_dict["scan_density"].defaultvalue = 600
+    par.glb_code_params_dict["scan_density"].defaultvalue = 500
     par.glb_code_params_dict["t_start"].defaultvalue = 500.0
 
     # Step 6: Generate C Code for Parameters
