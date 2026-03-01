@@ -151,7 +151,7 @@ if __name__ == "__main__":
     # --- Analytic Spacetime Parameters ---
     par.glb_code_params_dict["M_scale"].defaultvalue = 1.0  # Mass of the black hole
     par.glb_code_params_dict["a_spin"].defaultvalue = (
-        0.9  # Dimensionless spin parameter
+        0.0  # Dimensionless spin parameter
     )
 
     # --- Batch Integrator & Numerical Limits ---
