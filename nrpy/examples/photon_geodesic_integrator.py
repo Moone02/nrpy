@@ -290,6 +290,8 @@ if __name__ == "__main__":
     )
 
     # 2. Split-Pipeline Modular Kernels
+    if geodesic_data.p0_photon is None:
+        raise ValueError(f"p0_photon is None for {GEO_KEY}")
     p0_reverse_kernel.p0_reverse_kernel(geodesic_data.p0_photon)
     interpolation_kernel.interpolation_kernel(SPACETIME)
     calculate_ode_rhs_kernel.calculate_ode_rhs_kernel(

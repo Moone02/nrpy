@@ -117,6 +117,9 @@ if __name__ == "__main__":
 
     # --- Initialization Phase Kernels ---
     set_initial_conditions_kernel.set_initial_conditions_kernel(SPACETIME)
+
+    if geodesic_data.p0_photon is None:
+        raise ValueError(f"p0_photon is None for {GEO_KEY}")
     p0_reverse_kernel.p0_reverse_kernel(geodesic_data.p0_photon)
 
     # --- Fundamental Tensor Calculations (VRAM Persisted) ---
