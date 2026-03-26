@@ -12,6 +12,8 @@ import argparse
 import os
 import sys
 
+import numpy as np
+
 try:
     from nrpy.helpers.geodesic_visualizations import config_and_types as cfg
     from nrpy.helpers.geodesic_visualizations import render_lensed_image as rli
@@ -121,6 +123,9 @@ def main() -> None:
         colormap=cfg.COLORMAP,
     )
 
+    # Cast the uint8 array to float64 to satisfy mypy type constraints
+    disk_texture_float = disk_texture.astype(np.float64)
+
     print(f"Rendering image to: {args.output}...")
 
     # The static image generator merges the geodesic blueprint with the texture maps to yield the final visualization.
@@ -129,7 +134,7 @@ def main() -> None:
         output_pixel_width=args.pixel_width,
         source_image_width=source_physical_width,
         sphere_image=starmap_path,
-        source_image=disk_texture,
+        source_image=disk_texture_float,
         blueprint_filename=args.blueprint,
         window_width=actual_window_width,
     )
