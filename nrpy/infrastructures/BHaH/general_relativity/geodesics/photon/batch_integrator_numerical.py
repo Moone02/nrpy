@@ -981,27 +981,74 @@ def batch_integrator_numerical(spacetime_name: str) -> None:
             printf(" CONSERVED QUANTITIES DIAGNOSTIC REPORT\n");
             printf("=================================================\n");
 
-            // Scalar variables tracking the maximum recorded relative drift for energy $E$, angular momentum $L_z$, and Carter constant $Q$.
-            double max_err_E = 0.0, max_err_Lz = 0.0, max_err_Q = 0.0;
-            // Absolute master indices $m_{{idx}}$ identifying the trajectory responsible for the maximum numerical drift in each respective quantity.
-            long int worst_ray_E = -1, worst_ray_Lz = -1, worst_ray_Q = -1;
+            double max_err_E = 0.0; // Scalar variable tracking the maximum recorded relative drift for energy $E$.
+            double max_err_Lz = 0.0; // Scalar variable tracking the maximum recorded relative drift for angular momentum $L_z$.
+            double max_err_Q = 0.0; // Scalar variable tracking the maximum recorded relative drift for Carter constant $Q$.
 
-            // Loop iterator $i$ spanning the global dataset to calculate relative errors natively on the CPU.
+            long int worst_ray_E = -1; // Absolute master index $m_{{idx}}$ identifying the trajectory responsible for the maximum relative numerical drift in energy $E$.
+            long int worst_ray_Lz = -1; // Absolute master index $m_{{idx}}$ identifying the trajectory responsible for the maximum relative numerical drift in angular momentum $L_z$.
+            long int worst_ray_Q = -1; // Absolute master index $m_{{idx}}$ identifying the trajectory responsible for the maximum relative numerical drift in Carter constant $Q$.
+
+            double max_abs_err_E = 0.0; // Scalar variable tracking the maximum recorded absolute drift for energy $E$.
+            double max_abs_err_Lz = 0.0; // Scalar variable tracking the maximum recorded absolute drift for angular momentum $L_z$.
+            double max_abs_err_Q = 0.0; // Scalar variable tracking the maximum recorded absolute drift for Carter constant $Q$.
+
+            long int worst_ray_abs_E = -1; // Absolute master index $m_{{idx}}$ identifying the trajectory responsible for the maximum absolute numerical drift in energy $E$.
+            long int worst_ray_abs_Lz = -1; // Absolute master index $m_{{idx}}$ identifying the trajectory responsible for the maximum absolute numerical drift in angular momentum $L_z$.
+            long int worst_ray_abs_Q = -1; // Absolute master index $m_{{idx}}$ identifying the trajectory responsible for the maximum absolute numerical drift in Carter constant $Q$.
+
+            // Loop iterator $i$ spanning the global dataset to calculate errors natively on the CPU.
             for (long int i = 0; i < num_rays; i++) {{
-                double err_E = fabs((final_cq_host[i].E - initial_cq_host[i].E) / (initial_cq_host[i].E + 1e-15)); // Evaluates the relative numerical drift for energy $E$.
-                double err_Lz = fabs((final_cq_host[i].Lz - initial_cq_host[i].Lz) / (initial_cq_host[i].Lz + 1e-15)); // Evaluates the relative numerical drift for angular momentum $L_z$.
-                double err_Q = fabs((final_cq_host[i].Q - initial_cq_host[i].Q) / (initial_cq_host[i].Q + 1e-15)); // Evaluates the relative numerical drift for Carter constant $Q$.
+            
+            double err_E = fabs((final_cq_host[i].E - initial_cq_host[i].E) / (initial_cq_host[i].E + 1e-15)); // Evaluates the relative numerical drift for energy $E$.
+            double err_Lz = fabs((final_cq_host[i].Lz - initial_cq_host[i].Lz) / (initial_cq_host[i].Lz + 1e-15)); // Evaluates the relative numerical drift for angular momentum $L_z$.
+            double err_Q = fabs((final_cq_host[i].Q - initial_cq_host[i].Q) / (initial_cq_host[i].Q + 1e-15)); // Evaluates the relative numerical drift for Carter constant $Q$.
 
-                if (err_E > max_err_E) {{ max_err_E = err_E; worst_ray_E = i; }} // Updates the maximum tracked relative error and associated index $i$ for energy $E$.
-                if (err_Lz > max_err_Lz) {{ max_err_Lz = err_Lz; worst_ray_Lz = i; }} // Updates the maximum tracked relative error and associated index $i$ for angular momentum $L_z$.
-                if (err_Q > max_err_Q) {{ max_err_Q = err_Q; worst_ray_Q = i; }} // Updates the maximum tracked relative error and associated index $i$ for Carter constant $Q$.
+            double abs_err_E = fabs(final_cq_host[i].E - initial_cq_host[i].E); // Evaluates the absolute numerical drift for energy $E$.
+            double abs_err_Lz = fabs(final_cq_host[i].Lz - initial_cq_host[i].Lz); // Evaluates the absolute numerical drift for angular momentum $L_z$.
+            double abs_err_Q = fabs(final_cq_host[i].Q - initial_cq_host[i].Q); // Evaluates the absolute numerical drift for Carter constant $Q$.
+
+            if (err_E > max_err_E) {{
+                max_err_E = err_E; // Updates the maximum tracked relative error for energy $E$.
+                worst_ray_E = i; // Updates the absolute master index $m_{{idx}}$ for the maximum relative energy drift.
+            }} 
+            
+            if (err_Lz > max_err_Lz) {{
+                max_err_Lz = err_Lz; // Updates the maximum tracked relative error for angular momentum $L_z$.
+                worst_ray_Lz = i; // Updates the absolute master index $m_{{idx}}$ for the maximum relative angular momentum drift.
+            }} 
+            
+            if (err_Q > max_err_Q) {{
+                max_err_Q = err_Q; // Updates the maximum tracked relative error for Carter constant $Q$.
+                worst_ray_Q = i; // Updates the absolute master index $m_{{idx}}$ for the maximum relative Carter constant drift.
+            }} 
+
+            if (abs_err_E > max_abs_err_E) {{
+                max_abs_err_E = abs_err_E; // Updates the maximum tracked absolute error for energy $E$.
+                worst_ray_abs_E = i; // Updates the absolute master index $m_{{idx}}$ for the maximum absolute energy drift.
+            }}
+            
+            if (abs_err_Lz > max_abs_err_Lz) {{
+                max_abs_err_Lz = abs_err_Lz; // Updates the maximum tracked absolute error for angular momentum $L_z$.
+                worst_ray_abs_Lz = i; // Updates the absolute master index $m_{{idx}}$ for the maximum absolute angular momentum drift.
+            }}
+            
+            if (abs_err_Q > max_abs_err_Q) {{
+                max_abs_err_Q = abs_err_Q; // Updates the maximum tracked absolute error for Carter constant $Q$.
+                worst_ray_abs_Q = i; // Updates the absolute master index $m_{{idx}}$ for the maximum absolute Carter constant drift.
+            }}
             }}
 
             printf("  Max Relative Error (Energy E): %e (Ray %ld)\n", max_err_E, worst_ray_E); // Output block printing the maximum relative error for energy $E$.
-            printf("  Max Relative Error (Momentum Lz): %e (Ray %ld)\n", max_err_Lz, worst_ray_Lz); // Output block printing the maximum relative error for angular momentum $L_z$.
-            printf("  Max Relative Error (Carter Q): %e (Ray %ld)\n", max_err_Q, worst_ray_Q); // Output block printing the maximum relative error for Carter constant $Q$.
-            printf("=================================================\n\n");
+            printf("  Max Absolute Error (Energy E): %e (Ray %ld)\n\n", max_abs_err_E, worst_ray_abs_E); // Output block printing the maximum absolute error for energy $E$.
 
+            printf("  Max Relative Error (Momentum Lz): %e (Ray %ld)\n", max_err_Lz, worst_ray_Lz); // Output block printing the maximum relative error for angular momentum $L_z$.
+            printf("  Max Absolute Error (Momentum Lz): %e (Ray %ld)\n\n", max_abs_err_Lz, worst_ray_abs_Lz); // Output block printing the maximum absolute error for angular momentum $L_z$.
+
+            printf("  Max Relative Error (Carter Q): %e (Ray %ld)\n", max_err_Q, worst_ray_Q); // Output block printing the maximum relative error for Carter constant $Q$.
+            printf("  Max Absolute Error (Carter Q): %e (Ray %ld)\n", max_abs_err_Q, worst_ray_abs_Q); // Output block printing the maximum absolute error for Carter constant $Q$.
+            
+            printf("=================================================\n\n"); // Output block printing the terminal footer for the diagnostic sequence.
             // Host Memory Free: Purges pinned diagnostic buffers.
             {free_pinned}(initial_cq_host); // Purges pinned initial diagnostic data buffer.
             {free_pinned}(final_cq_host); // Purges pinned final diagnostic data buffer.
