@@ -98,7 +98,9 @@ def generate_source_disk_array(
     colormap_func = plt.colormaps[colormap]
     colors = colormap_func(norm_temperature)
 
-    return (colors[:, :, :3] * 255).astype(np.uint8)
+    # Explicitly type the result
+    final_colors: npt.NDArray[np.uint8] = (colors[:, :, :3] * 255).astype(np.uint8)
+    return final_colors
 
 
 def generate_static_lensed_image(
@@ -131,7 +133,7 @@ def generate_static_lensed_image(
     :raises FileNotFoundError: Raised if the specified blueprint file is not found.
     """
     # pylint: disable=import-outside-toplevel
-    from PIL import Image  # type: ignore
+    from PIL import Image
 
     print(f"--- Generating Static Lensed Image: '{output_filename}' ---")
 
