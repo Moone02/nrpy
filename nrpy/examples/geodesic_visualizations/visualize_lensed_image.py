@@ -15,8 +15,8 @@ import sys
 import numpy as np
 
 try:
-    from nrpy.helpers.geodesic_visualizations import config_and_types as cfg
-    from nrpy.helpers.geodesic_visualizations import render_lensed_image as rli
+    from nrpy.examples.geodesic_visualizations import config_and_types as cfg
+    from nrpy.examples.geodesic_visualizations import render_lensed_image as rli
 except ImportError as e:
     # A failure here indicates the Python path lacks the core NRPy infrastructure.
     print(f"FATAL: Failed to import NRPy visualization scripts. Error: {e}")

@@ -6,7 +6,7 @@ from typing import Union
 import numpy as np
 import numpy.typing as npt
 
-from nrpy.helpers.geodesic_visualizations import config_and_types as cfg
+from nrpy.examples.geodesic_visualizations import config_and_types as cfg
 
 # STATIC IMAGE RENDERING ENGINE
 # This script translates raw geodesic data (blueprints) into visual images. It performs

@@ -191,7 +191,7 @@ if __name__ == "__main__":
     # Batch Integrator & Numerical Limits
     par.glb_code_params_dict["p_t_max"].defaultvalue = 1000.0
     par.glb_code_params_dict["perform_conservation_check"].defaultvalue = True
-    par.glb_code_params_dict["r_escape"].defaultvalue = 150.0
+    par.glb_code_params_dict["r_escape"].defaultvalue = 100.0
     par.glb_code_params_dict["slot_manager_delta_t"].defaultvalue = 10.0
     par.glb_code_params_dict["slot_manager_t_min"].defaultvalue = -1000.0
     par.glb_code_params_dict["t_integration_max"].defaultvalue = 10000.0
@@ -336,7 +336,7 @@ if __name__ == "__main__":
     # ##########################################################################
 
     # Define the directory containing the visualization assets relative to the repository root
-    vis_dir = os.path.join("nrpy", "helpers", "geodesic_visualizations")
+    vis_dir = os.path.join("nrpy", "examples", "geodesic_visualizations")
 
     # Locate the visualization script and the background texture
     vis_script_src = os.path.join(vis_dir, "visualize_lensed_image.py")
