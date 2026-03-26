@@ -4,6 +4,7 @@ import os
 from typing import Union
 
 import numpy as np
+import numpy.typing as npt
 
 from nrpy.helpers.geodesic_visualizations import config_and_types as cfg
 
@@ -14,7 +15,9 @@ from nrpy.helpers.geodesic_visualizations import config_and_types as cfg
 # curved spacetime onto a 2D pixel grid via the camera's local window coordinates.
 
 
-def _load_texture(image_input: Union[str, np.ndarray]) -> np.ndarray:
+def _load_texture(
+    image_input: Union[str, npt.NDArray[np.float64]],
+) -> npt.NDArray[np.float64]:
     """
     Load and normalize textures into float64 arrays.
 
@@ -26,7 +29,7 @@ def _load_texture(image_input: Union[str, np.ndarray]) -> np.ndarray:
     :raises TypeError: Raised if the input is not a string or NumPy array.
     """
     # pylint: disable=import-outside-toplevel
-    from PIL import Image
+    from PIL import Image  # type: ignore
 
     if isinstance(image_input, str):
         if not os.path.exists(image_input):
@@ -48,7 +51,7 @@ def generate_source_disk_array(
     disk_outer_radius: float = 20.0,
     disk_temp_power_law: float = -0.75,
     colormap: str = "hot",
-) -> np.ndarray:
+) -> npt.NDArray[np.uint8]:
     """
     Generate a synthetic top-down texture of an accretion disk.
 
@@ -95,15 +98,15 @@ def generate_source_disk_array(
     colormap_func = plt.colormaps[colormap]
     colors = colormap_func(norm_temperature)
 
-    return (colors[:, :, :3] * 255).astype(np.uint8)  # type: ignore
+    return (colors[:, :, :3] * 255).astype(np.uint8)
 
 
 def generate_static_lensed_image(
     output_filename: str,
     output_pixel_width: int,
     source_image_width: float,
-    sphere_image: Union[str, np.ndarray],
-    source_image: Union[str, np.ndarray],
+    sphere_image: Union[str, npt.NDArray[np.float64]],
+    source_image: Union[str, npt.NDArray[np.float64]],
     blueprint_filename: str,
     window_width: float,
     chunk_size: int = cfg.CHUNK_SIZE,
@@ -128,7 +131,7 @@ def generate_static_lensed_image(
     :raises FileNotFoundError: Raised if the specified blueprint file is not found.
     """
     # pylint: disable=import-outside-toplevel
-    from PIL import Image
+    from PIL import Image  # type: ignore
 
     print(f"--- Generating Static Lensed Image: '{output_filename}' ---")
 
