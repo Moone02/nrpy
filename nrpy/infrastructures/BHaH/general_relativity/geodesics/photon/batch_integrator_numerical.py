@@ -540,13 +540,19 @@ def batch_integrator_numerical(spacetime_name: str) -> None:
         if (active_chunks[current] > 0) {{
             slot_remove_chunk(&tsm, slot_idx, chunk_buffer[current], active_chunks[current]); // Extracts the execution chunk mapping from the Host-side temporal bin.
 
-            for (int bridge_i = 0; bridge_i < active_chunks[current]; ++bridge_i) {{  // Loop iterator $bridge_i$ packing the physical state payloads into the Host-side bridge arrays.
-                long int m_idx = chunk_buffer[current][bridge_i]; // Absolute master index $m_{{ idx}}$ mapping the active payload to the global trajectory matrix.
-                for (int c_k = 0; c_k < 9; ++c_k) {{  // Loop index $c_k$ iterating over the 9 tensor components of the state vectors.
+            // 1. Pack the 9-component tensors using cache-friendly forward sweeps
+            for (int c_k = 0; c_k < 9; ++c_k) {{  // Loop index $c_k$ iterating over the 9 tensor components of the state vectors.
+                for (int bridge_i = 0; bridge_i < active_chunks[current]; ++bridge_i) {{  // Loop iterator $bridge_i$ packing the physical state payloads into the Host-side bridge arrays.
+                    long int m_idx = chunk_buffer[current][bridge_i]; // Absolute master index $m_{{ idx}}$ mapping the active payload to the global trajectory matrix.
                     f_bridge[current][c_k * BUNDLE_CAPACITY + bridge_i] = all_photons_host.f[c_k * num_rays + m_idx]; // Packs the coordinate state vector $f^\mu$ into the transfer bridge.
                     f_p_bridge[current][c_k * BUNDLE_CAPACITY + bridge_i] = all_photons_host.f_p[c_k * num_rays + m_idx]; // Packs the first derivative $\dot{{ f}}^\mu$ into the transfer bridge.
                     f_p_p_bridge[current][c_k * BUNDLE_CAPACITY + bridge_i] = all_photons_host.f_p_p[c_k * num_rays + m_idx]; // Packs the second derivative $\ddot{{ f}}^\mu$ into the transfer bridge.
                 }}
+            }}
+
+            // 2. Pack the 1D arrays in a separate sequential loop
+            for (int bridge_i = 0; bridge_i < active_chunks[current]; ++bridge_i) {{
+                long int m_idx = chunk_buffer[current][bridge_i];
                 h_bridge[current][bridge_i] = all_photons_host.h[m_idx]; // Packs the current integration step size $h$ into the transfer bridge.
                 status_bridge[current][bridge_i] = all_photons_host.status[m_idx]; // Packs the trajectory status enum into the transfer bridge.
                 retries_bridge[current][bridge_i] = all_photons_host.rejection_retries[m_idx]; // Packs the error rejection scalar into the transfer bridge.
@@ -650,13 +656,19 @@ def batch_integrator_numerical(spacetime_name: str) -> None:
             if (active_chunks[next] > 0) {{
                 slot_remove_chunk(&tsm, slot_idx, chunk_buffer[next], active_chunks[next]); // Extracts the next execution chunk mapping from the Host-side temporal bin.
 
-                for (int bridge_i = 0; bridge_i < active_chunks[next]; ++bridge_i) {{  // Loop iterator $bridge_i$ packing the physical state payloads into the next Host-side bridge array.
-                    long int m_idx = chunk_buffer[next][bridge_i]; // Absolute master index $m_{{ idx}}$ mapping the active payload to the global trajectory matrix.
-                    for (int c_k = 0; c_k < 9; ++c_k) {{  // Loop index $c_k$ iterating over the 9 tensor components of the state vectors.
+                // 1. Pack the 9-component tensors using cache-friendly forward sweeps
+                for (int c_k = 0; c_k < 9; ++c_k) {{  // Loop index $c_k$ iterating over the 9 tensor components of the state vectors.
+                    for (int bridge_i = 0; bridge_i < active_chunks[next]; ++bridge_i) {{  // Loop iterator $bridge_i$ packing the physical state payloads into the next Host-side bridge array.
+                        long int m_idx = chunk_buffer[next][bridge_i]; // Absolute master index $m_{{ idx}}$ mapping the active payload to the global trajectory matrix.
                         f_bridge[next][c_k * BUNDLE_CAPACITY + bridge_i] = all_photons_host.f[c_k * num_rays + m_idx]; // Packs the coordinate state vector $f^\mu$ into the transfer bridge.
                         f_p_bridge[next][c_k * BUNDLE_CAPACITY + bridge_i] = all_photons_host.f_p[c_k * num_rays + m_idx]; // Packs the first derivative $\dot{{ f}}^\mu$ into the transfer bridge.
                         f_p_p_bridge[next][c_k * BUNDLE_CAPACITY + bridge_i] = all_photons_host.f_p_p[c_k * num_rays + m_idx]; // Packs the second derivative $\ddot{{ f}}^\mu$ into the transfer bridge.
                     }}
+                }}
+
+                // 2. Pack the 1D arrays in a separate sequential loop
+                for (int bridge_i = 0; bridge_i < active_chunks[next]; ++bridge_i) {{
+                    long int m_idx = chunk_buffer[next][bridge_i];
                     h_bridge[next][bridge_i] = all_photons_host.h[m_idx]; // Packs the current integration step size $h$ into the transfer bridge.
                     status_bridge[next][bridge_i] = all_photons_host.status[m_idx]; // Packs the trajectory status enum into the transfer bridge.
                     retries_bridge[next][bridge_i] = all_photons_host.rejection_retries[m_idx]; // Packs the error rejection scalar into the transfer bridge.
@@ -754,13 +766,19 @@ def batch_integrator_numerical(spacetime_name: str) -> None:
                 // Device synchronization barrier strictly enforcing completion of the current stream before payload unpacking.
                 {stream_sync("streams[current]")}
 
-                for (int fin_i = 0; fin_i < active_chunks[current]; ++fin_i) {{  // Loop iterator $fin_i$ unpacking the finalized physical data back to the global Host matrix.
-                    long int m_idx = chunk_buffer[current][fin_i]; // Absolute master index $m_{{ idx}}$ retrieving the specific photon index from the execution chunk.
-                    for (int fin_k = 0; fin_k < 9; ++fin_k) {{  // Loop index $fin_k$ retrieving the 9 tensor components back into the global Host matrix.
+                // 1. Unpack 9-component tensors sequentially
+                for (int fin_k = 0; fin_k < 9; ++fin_k) {{  // Loop index $fin_k$ retrieving the 9 tensor components back into the global Host matrix.
+                    for (int fin_i = 0; fin_i < active_chunks[current]; ++fin_i) {{  // Loop iterator $fin_i$ unpacking the finalized physical data back to the global Host matrix.
+                        long int m_idx = chunk_buffer[current][fin_i]; // Absolute master index $m_{{ idx}}$ retrieving the specific photon index from the execution chunk.
                         all_photons_host.f[fin_k * num_rays + m_idx] = f_bridge[current][fin_k * BUNDLE_CAPACITY + fin_i]; // Unpacks the synchronized state vector $f^\mu$ into the global Host matrix.
                         all_photons_host.f_p[fin_k * num_rays + m_idx] = f_p_bridge[current][fin_k * BUNDLE_CAPACITY + fin_i]; // Unpacks the synchronized first derivative $\dot{{ f}}^\mu$ into the global Host matrix.
                         all_photons_host.f_p_p[fin_k * num_rays + m_idx] = f_p_p_bridge[current][fin_k * BUNDLE_CAPACITY + fin_i]; // Unpacks the synchronized second derivative $\ddot{{ f}}^\mu$ into the global Host matrix.
                     }}
+                }}
+
+                // 2. Unpack 1D arrays sequentially
+                for (int fin_i = 0; fin_i < active_chunks[current]; ++fin_i) {{  
+                    long int m_idx = chunk_buffer[current][fin_i]; 
                     all_photons_host.h[m_idx] = h_bridge[current][fin_i]; // Unpacks the synchronized step size $h$ into the global Host matrix.
                     all_photons_host.status[m_idx] = status_bridge[current][fin_i]; // Unpacks the synchronized trajectory status into the global Host matrix.
                     all_photons_host.rejection_retries[m_idx] = retries_bridge[current][fin_i]; // Unpacks the synchronized rejection count into the global Host matrix.
@@ -771,7 +789,11 @@ def batch_integrator_numerical(spacetime_name: str) -> None:
                     all_photons_host.affine_param_p_p[m_idx] = affine_p_p_bridge[current][fin_i]; // Unpacks the synchronized historical affine parameter $\lambda_{{ n-2}}$ into the global Host matrix.
                     all_photons_host.window_event_found[m_idx] = window_event_found_bridge[current][fin_i]; // Unpacks the synchronized window lock into the global Host matrix.
                     all_photons_host.source_event_found[m_idx] = source_event_found_bridge[current][fin_i]; // Unpacks the synchronized source lock into the global Host matrix.
+                }}
 
+                // 3. TimeSlotManager State Update (Cache-hot, strictly sequential)
+                for (int fin_i = 0; fin_i < active_chunks[current]; ++fin_i) {{
+                    long int m_idx = chunk_buffer[current][fin_i]; 
                     if (status_bridge[current][fin_i] == ACTIVE) {{  // Evaluates the continuation logic if the trajectory remains within safe physical bounds.
                         int next_s_idx = slot_get_index(&tsm, all_photons_host.f[m_idx]); // Evaluates the updated temporal coordinate $t$ to determine the next operational bin.
                         if (next_s_idx != -1) {{  // Confirms the physical state has not exceeded the maximum simulation time bounds.
@@ -926,8 +948,6 @@ def batch_integrator_numerical(spacetime_name: str) -> None:
             {free_pinned}(norm_diag_bridge); // Memory Free: Purges the diagnostic bridge utilized for the geometric normalization constraint checks.
         }}
 
-
-
         // Loop iterator $s$ purging the double-buffered arrays across both hardware streams.
         for (int s = 0; s < 2; ++s) {{
             // Host Memory Free: Purges bridge components supporting scatter logic mapped to PCIe DMA transfers.
@@ -1000,43 +1020,43 @@ def batch_integrator_numerical(spacetime_name: str) -> None:
             // Loop iterator $i$ spanning the global dataset to calculate errors natively on the CPU.
             for (long int i = 0; i < num_rays; i++) {{
             
-            double err_E = fabs((final_cq_host[i].E - initial_cq_host[i].E) / (initial_cq_host[i].E + 1e-15)); // Evaluates the relative numerical drift for energy $E$.
-            double err_Lz = fabs((final_cq_host[i].Lz - initial_cq_host[i].Lz) / (initial_cq_host[i].Lz + 1e-15)); // Evaluates the relative numerical drift for angular momentum $L_z$.
-            double err_Q = fabs((final_cq_host[i].Q - initial_cq_host[i].Q) / (initial_cq_host[i].Q + 1e-15)); // Evaluates the relative numerical drift for Carter constant $Q$.
+                double err_E = fabs((final_cq_host[i].E - initial_cq_host[i].E) / (initial_cq_host[i].E + 1e-15)); // Evaluates the relative numerical drift for energy $E$.
+                double err_Lz = fabs((final_cq_host[i].Lz - initial_cq_host[i].Lz) / (initial_cq_host[i].Lz + 1e-15)); // Evaluates the relative numerical drift for angular momentum $L_z$.
+                double err_Q = fabs((final_cq_host[i].Q - initial_cq_host[i].Q) / (initial_cq_host[i].Q + 1e-15)); // Evaluates the relative numerical drift for Carter constant $Q$.
 
-            double abs_err_E = fabs(final_cq_host[i].E - initial_cq_host[i].E); // Evaluates the absolute numerical drift for energy $E$.
-            double abs_err_Lz = fabs(final_cq_host[i].Lz - initial_cq_host[i].Lz); // Evaluates the absolute numerical drift for angular momentum $L_z$.
-            double abs_err_Q = fabs(final_cq_host[i].Q - initial_cq_host[i].Q); // Evaluates the absolute numerical drift for Carter constant $Q$.
+                double abs_err_E = fabs(final_cq_host[i].E - initial_cq_host[i].E); // Evaluates the absolute numerical drift for energy $E$.
+                double abs_err_Lz = fabs(final_cq_host[i].Lz - initial_cq_host[i].Lz); // Evaluates the absolute numerical drift for angular momentum $L_z$.
+                double abs_err_Q = fabs(final_cq_host[i].Q - initial_cq_host[i].Q); // Evaluates the absolute numerical drift for Carter constant $Q$.
 
-            if (err_E > max_err_E) {{
-                max_err_E = err_E; // Updates the maximum tracked relative error for energy $E$.
-                worst_ray_E = i; // Updates the absolute master index $m_{{idx}}$ for the maximum relative energy drift.
-            }} 
-            
-            if (err_Lz > max_err_Lz) {{
-                max_err_Lz = err_Lz; // Updates the maximum tracked relative error for angular momentum $L_z$.
-                worst_ray_Lz = i; // Updates the absolute master index $m_{{idx}}$ for the maximum relative angular momentum drift.
-            }} 
-            
-            if (err_Q > max_err_Q) {{
-                max_err_Q = err_Q; // Updates the maximum tracked relative error for Carter constant $Q$.
-                worst_ray_Q = i; // Updates the absolute master index $m_{{idx}}$ for the maximum relative Carter constant drift.
-            }} 
+                if (err_E > max_err_E) {{
+                    max_err_E = err_E; // Updates the maximum tracked relative error for energy $E$.
+                    worst_ray_E = i; // Updates the absolute master index $m_{{idx}}$ for the maximum relative energy drift.
+                }} 
+                
+                if (err_Lz > max_err_Lz) {{
+                    max_err_Lz = err_Lz; // Updates the maximum tracked relative error for angular momentum $L_z$.
+                    worst_ray_Lz = i; // Updates the absolute master index $m_{{idx}}$ for the maximum relative angular momentum drift.
+                }} 
+                
+                if (err_Q > max_err_Q) {{
+                    max_err_Q = err_Q; // Updates the maximum tracked relative error for Carter constant $Q$.
+                    worst_ray_Q = i; // Updates the absolute master index $m_{{idx}}$ for the maximum relative Carter constant drift.
+                }} 
 
-            if (abs_err_E > max_abs_err_E) {{
-                max_abs_err_E = abs_err_E; // Updates the maximum tracked absolute error for energy $E$.
-                worst_ray_abs_E = i; // Updates the absolute master index $m_{{idx}}$ for the maximum absolute energy drift.
-            }}
-            
-            if (abs_err_Lz > max_abs_err_Lz) {{
-                max_abs_err_Lz = abs_err_Lz; // Updates the maximum tracked absolute error for angular momentum $L_z$.
-                worst_ray_abs_Lz = i; // Updates the absolute master index $m_{{idx}}$ for the maximum absolute angular momentum drift.
-            }}
-            
-            if (abs_err_Q > max_abs_err_Q) {{
-                max_abs_err_Q = abs_err_Q; // Updates the maximum tracked absolute error for Carter constant $Q$.
-                worst_ray_abs_Q = i; // Updates the absolute master index $m_{{idx}}$ for the maximum absolute Carter constant drift.
-            }}
+                if (abs_err_E > max_abs_err_E) {{
+                    max_abs_err_E = abs_err_E; // Updates the maximum tracked absolute error for energy $E$.
+                    worst_ray_abs_E = i; // Updates the absolute master index $m_{{idx}}$ for the maximum absolute energy drift.
+                }}
+                
+                if (abs_err_Lz > max_abs_err_Lz) {{
+                    max_abs_err_Lz = abs_err_Lz; // Updates the maximum tracked absolute error for angular momentum $L_z$.
+                    worst_ray_abs_Lz = i; // Updates the absolute master index $m_{{idx}}$ for the maximum absolute angular momentum drift.
+                }}
+                
+                if (abs_err_Q > max_abs_err_Q) {{
+                    max_abs_err_Q = abs_err_Q; // Updates the maximum tracked absolute error for Carter constant $Q$.
+                    worst_ray_abs_Q = i; // Updates the absolute master index $m_{{idx}}$ for the maximum absolute Carter constant drift.
+                }}
             }}
 
             printf("  Max Relative Error (Energy E): %e (Ray %ld)\n", max_err_E, worst_ray_E); // Output block printing the maximum relative error for energy $E$.
@@ -1049,6 +1069,7 @@ def batch_integrator_numerical(spacetime_name: str) -> None:
             printf("  Max Absolute Error (Carter Q): %e (Ray %ld)\n", max_abs_err_Q, worst_ray_abs_Q); // Output block printing the maximum absolute error for Carter constant $Q$.
             
             printf("=================================================\n\n"); // Output block printing the terminal footer for the diagnostic sequence.
+            
             // Host Memory Free: Purges pinned diagnostic buffers.
             {free_pinned}(initial_cq_host); // Purges pinned initial diagnostic data buffer.
             {free_pinned}(final_cq_host); // Purges pinned final diagnostic data buffer.

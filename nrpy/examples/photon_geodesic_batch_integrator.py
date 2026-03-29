@@ -192,7 +192,7 @@ if __name__ == "__main__":
     par.glb_code_params_dict["p_t_max"].defaultvalue = 1000.0
     par.glb_code_params_dict["perform_conservation_check"].defaultvalue = True
     par.glb_code_params_dict["r_escape"].defaultvalue = 100.0
-    par.glb_code_params_dict["slot_manager_delta_t"].defaultvalue = 10.0
+    par.glb_code_params_dict["slot_manager_delta_t"].defaultvalue = 100.0
     par.glb_code_params_dict["slot_manager_t_min"].defaultvalue = -1000.0
     par.glb_code_params_dict["t_integration_max"].defaultvalue = 10000.0
 
