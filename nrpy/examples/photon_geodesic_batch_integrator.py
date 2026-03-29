@@ -341,6 +341,8 @@ if __name__ == "__main__":
     # Locate the visualization script and the background texture
     vis_script_src = os.path.join(vis_dir, "visualize_lensed_image.py")
     starmap_src = os.path.join(vis_dir, "starmap_2020.png")
+    config_src = os.path.join(vis_dir, "config_and_types.py")
+    render_src = os.path.join(vis_dir, "render_lensed_image.py")
 
     # Locate the blueprint analysis script
     blueprint_analysis_src = os.path.join(vis_dir, "blueprint_analysis.py")
