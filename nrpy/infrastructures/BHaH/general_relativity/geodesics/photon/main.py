@@ -116,18 +116,22 @@ def main(spacetime_name: str) -> None:
     const double tile_h = master_height / (double)commondata.window_tiles_height;
 
     // --- BASIS VECTOR CALCULATION ---
+    // n_z: The forward "Look" vector
     double n_z[3] = {{master_center_x - commondata.camera_pos_x, 
                      master_center_y - commondata.camera_pos_y, 
                      master_center_z - commondata.camera_pos_z}};
     double mag_n_z = sqrt(n_z[0]*n_z[0] + n_z[1]*n_z[1] + n_z[2]*n_z[2]);
     for(int j=0; j<3; j++) n_z[j] /= mag_n_z;
 
+    // n_x: The "Right" vector (Horizontal)
+    // Calculated as Up (guide_up) x Forward (n_z) to point Right.
     const double guide_up[3] = {{commondata.window_up_vec_x, commondata.window_up_vec_y, commondata.window_up_vec_z}};
-    double n_x[3] = {{n_z[1]*guide_up[2] - n_z[2]*guide_up[1], 
-                     n_z[2]*guide_up[0] - n_z[0]*guide_up[2], 
-                     n_z[0]*guide_up[1] - n_z[1]*guide_up[0]}};
+    double n_x[3] = {{guide_up[1]*n_z[2] - guide_up[2]*n_z[1], 
+                     guide_up[2]*n_z[0] - guide_up[0]*n_z[2], 
+                     guide_up[0]*n_z[1] - guide_up[1]*n_z[0]}};
     double mag_n_x = sqrt(n_x[0]*n_x[0] + n_x[1]*n_x[1] + n_x[2]*n_x[2]);
     
+    // Fallback logic for near-nadir camera angles (looking straight up or down)
     if (mag_n_x < 1e-10) {{
         double alt_up[3] = {{0.0, 1.0, 0.0}};
         if (fabs(n_z[1]) > 0.9) {{ alt_up[1] = 0.0; alt_up[2] = 1.0; }}
@@ -138,7 +142,8 @@ def main(spacetime_name: str) -> None:
     }}
     for(int j=0; j<3; j++) n_x[j] /= mag_n_x;
 
-    // Strict orthonormalization of the Up vector (n_y)
+    // n_y: The "Up" vector (Vertical)
+    // Calculated as Forward (n_z) x Right (n_x) to point Up.
     double n_y[3] = {{n_z[1]*n_x[2] - n_z[2]*n_x[1], 
                      n_z[2]*n_x[0] - n_z[0]*n_x[2], 
                      n_z[0]*n_x[1] - n_z[1]*n_x[0]}};
@@ -153,7 +158,6 @@ def main(spacetime_name: str) -> None:
         fprintf(stderr, "FATAL: Failed to allocate %ld rays. Check system RAM.\\n", num_rays);
         exit(1);
     }}
-
     // --- NESTED TILING LOOP ---
     for (int ty = 0; ty < commondata.window_tiles_height; ty++) {{
         for (int tx = 0; tx < commondata.window_tiles_width; tx++) {{
@@ -175,6 +179,15 @@ def main(spacetime_name: str) -> None:
 
             // 3. Execute Numerical Integration Pipeline
             batch_integrator_numerical(&commondata, num_rays, results_buffer);
+
+            // 3.5. Coordinate Global Shift
+            // Maps local tile-space hits to the global window coordinate system.
+            // y_w (horizontal) corresponds to offset_x along n_x.
+            // z_w (vertical) corresponds to offset_y along n_y.
+            for (long int i = 0; i < num_rays; i++) {{
+                results_buffer[i].y_w += offset_x;
+                results_buffer[i].z_w += offset_y;
+            }}
 
             // 4. Data Serialization
             char bin_name[256], zip_cmd[512];

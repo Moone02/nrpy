@@ -15,7 +15,7 @@ It performs three critical functions:
 
 import os
 import sys
-from typing import Any, Optional
+from typing import Any
 
 import nrpy.examples.geodesic_visualizations.config_and_types as cfg
 
@@ -113,43 +113,102 @@ def plot_heatmaps(data: Any) -> None:
     plt.show()
 
 
-def diagnose_blueprint(blueprint_path: Optional[str] = None) -> None:
+def diagnose_blueprint(window_tiles_width: int = 1, window_tiles_height: int = 1) -> None:
     """
-    Read the binary blueprint file and print critical diagnostics to the console.
+    Read the binary blueprint files and print critical diagnostics to the console.
 
     This helps identify numerical instabilities or logic errors in the integrator.
 
-    :param blueprint_path: Path to the .bin file. Defaults to relative project path.
+    :param window_tiles_width: Number of horizontal tiles generated.
+    :param window_tiles_height: Number of vertical tiles generated.
     """
     # pylint: disable=import-outside-toplevel
     import numpy as np
-
-    if blueprint_path is None:
-        # Look for the blueprint in the exact same directory as this script
-        blueprint_path = os.path.join(script_dir, "light_blueprint.bin")
+    import zipfile
 
     print("=================================================================")
     print(" BLUEPRINT DIAGNOSTICS & VISUALIZATION")
-    print(f" File: {blueprint_path}")
+    print(f" Grid: {window_tiles_width}x{window_tiles_height} Tiles")
     print("=================================================================")
 
-    if not os.path.exists(blueprint_path):
-        print(f"[!] ERROR: Blueprint file not found at:\n    {blueprint_path}")
+    blueprint_zips = []
+    total_expected_records = 0
+    
+    # Identify valid tiles and pre-calculate total records for safe subsampling
+    for i in range(window_tiles_width):
+        for j in range(window_tiles_height):
+            zip_filename = f"light_blueprint_{i:02d}_{j:02d}.zip"
+            zip_filepath = os.path.join(script_dir, zip_filename)
+            if os.path.exists(zip_filepath):
+                blueprint_zips.append(zip_filepath)
+                with zipfile.ZipFile(zip_filepath, 'r') as zf:
+                    for name in zf.namelist():
+                        if name.endswith('.bin'):
+                            total_expected_records += zf.getinfo(name).file_size // cfg.BLUEPRINT_DTYPE.itemsize
+
+    if not blueprint_zips:
+        print("[!] ERROR: No blueprint zip files found to analyze.")
         return
 
-    # Load data using the structured dtype.
-    # This automatically unpacks the f8 (double) and int32 fields.
-    data = np.fromfile(blueprint_path, dtype=cfg.BLUEPRINT_DTYPE)
-    total_rays = len(data)
-    print(f"Total records loaded: {total_rays:,}\n")
+    # To prevent OOM errors during plotting, we cap visualization to ~2 million points
+    max_viz_points = 2_000_000
+    subsample_rate = max(1, total_expected_records // max_viz_points)
 
-    # --- 1. Check Enum Mappings ---
+    total_rays = 0
+    in_view = 0
+    enum_counts: dict[int, int] = {}
+    first_records = []
+    sampled_data_list = []
+    
+    chunk_size = cfg.CHUNK_SIZE
+    chunk_bytes = chunk_size * cfg.BLUEPRINT_DTYPE.itemsize
+
+    print(f"Total records detected: {total_expected_records:,}")
+    print(f"Streaming data and sampling 1 in every {subsample_rate} rays for visualization...\n")
+
+    # Stream the data chunk by chunk
+    for zip_filepath in blueprint_zips:
+        with zipfile.ZipFile(zip_filepath, 'r') as zf:
+            bin_files = [name for name in zf.namelist() if name.endswith('.bin')]
+            if not bin_files:
+                continue
+            
+            with zf.open(bin_files[0], 'r') as f:
+                while True:
+                    raw_bytes = f.read(chunk_bytes)
+                    if not raw_bytes:
+                        break
+                        
+                    chunk_data = np.frombuffer(raw_bytes, dtype=cfg.BLUEPRINT_DTYPE)
+                    total_rays += len(chunk_data)
+
+                    # --- 1. Accumulate Enum Mappings ---
+                    unique_enums, counts = np.unique(chunk_data["termination_type"], return_counts=True)
+                    for e, c in zip(unique_enums, counts):
+                        enum_counts[e] = enum_counts.get(e, 0) + c
+
+                    # --- 2. Accumulate Window Coordinate Bounds ---
+                    half_w = cfg.WINDOW_WIDTH / 2.0
+                    in_view += np.sum(
+                        (chunk_data["y_w"] >= -half_w)
+                        & (chunk_data["y_w"] < half_w)
+                        & (chunk_data["z_w"] >= -half_w)
+                        & (chunk_data["z_w"] < half_w)
+                    )
+
+                    # --- 3. Accumulate Raw Sample Data ---
+                    if len(first_records) < 9:
+                        first_records.extend(chunk_data[:9 - len(first_records)])
+
+                    # Subsample the chunk for memory-safe plotting
+                    sampled_data_list.append(chunk_data[::subsample_rate])
+
     # Crucial for verifying that C enums and Python enums match.
     # If the C code terminates at the sphere but uses ID 9, this check will flag it.
     print("--- 1. Raw Termination Enums in Binary ---")
-    unique_enums, counts = np.unique(data["termination_type"], return_counts=True)
-    for e, c in zip(unique_enums, counts):
-        print(f"  Raw Enum {e:2d}: {c:8,} rays ({c/total_rays*100:6.2f}%)")
+    for e in sorted(enum_counts.keys()):
+        c = enum_counts[e]
+        print(f"  Raw Enum {e:2d}: {c:12,} rays ({c/total_rays*100:6.2f}%)")
 
     print(
         f"\n  [Config Current]: SPHERE = {cfg.TERM_SPHERE}, SOURCE_PLANE = {cfg.TERM_SOURCE_PLANE}, FAIL_PT_BIG = {cfg.TERM_FAIL_PT_BIG}"
@@ -158,20 +217,11 @@ def diagnose_blueprint(blueprint_path: Optional[str] = None) -> None:
         "  -> If your raw enums above do NOT match these, update config_and_types.py."
     )
 
-    # --- 2. Check Window Coordinates (Field of View) ---
     # Validates that the C-generated rays actually align with the window dimensions
     # specified in the Python configuration.
     print("\n--- 2. Window Coordinate Bounds (y_w, z_w) ---")
-    half_w = cfg.WINDOW_WIDTH / 2.0
-    in_view = np.sum(
-        (data["y_w"] >= -half_w)
-        & (data["y_w"] < half_w)
-        & (data["z_w"] >= -half_w)
-        & (data["z_w"] < half_w)
-    )
     print(f"  Rays inside Renderer FOV: {in_view:,} ({in_view/total_rays*100:.2f}%)")
 
-    # --- 3. View Raw Sample Data ---
     # Direct sanity check of the first 5 records.
     # Useful for spotting immediate NANs or impossible values (e.g., negative theta).
     print("\n--- 3. First 5 Raw Records ---")
@@ -179,8 +229,7 @@ def diagnose_blueprint(blueprint_path: Optional[str] = None) -> None:
     print(header)
     print("-" * len(header))
 
-    for i in range(min(9, total_rays)):
-        rec = data[i]
+    for i, rec in enumerate(first_records):
         tt = rec["termination_type"]
         # Context-aware display: show plane coords for disk hits, angles for sphere hits.
         val_1 = rec["y_s"] if tt == cfg.TERM_SOURCE_PLANE else rec["final_theta"]
@@ -191,9 +240,23 @@ def diagnose_blueprint(blueprint_path: Optional[str] = None) -> None:
 
     # --- 4. Launch Visualization ---
     print("\n[i] Generating heatmaps...")
-    plot_heatmaps(data)
+    if sampled_data_list:
+        viz_data = np.concatenate(sampled_data_list)
+        plot_heatmaps(viz_data)
+    else:
+        print("[!] No data available to plot.")
     print("=================================================================")
 
 
 if __name__ == "__main__":
-    diagnose_blueprint()
+    import argparse
+    parser = argparse.ArgumentParser(description="Blueprint Diagnostic Suite")
+    parser.add_argument(
+        "--window_tiles_width", type=int, default=10, help="Number of horizontal tiles generated."
+    )
+    parser.add_argument(
+        "--window_tiles_height", type=int, default=10, help="Number of vertical tiles generated."
+    )
+    args = parser.parse_args()
+    
+    diagnose_blueprint(args.window_tiles_width, args.window_tiles_height)
