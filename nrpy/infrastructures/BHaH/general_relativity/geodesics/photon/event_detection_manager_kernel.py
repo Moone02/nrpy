@@ -147,27 +147,39 @@ def event_detection_manager_kernel() -> None:
 
     // Window plane logic is guarded to lock the intersection coordinates permanently.
     if (!d_window_event_found[i]) {{
-        double w_normal[3]; // 3D geometric unit normal vector $n_i$ of the observer window.
-        w_normal[0] = {cd_access}window_center_x - {cd_access}camera_pos_x; // Computes the $x$ component of the window normal.
-        w_normal[1] = {cd_access}window_center_y - {cd_access}camera_pos_y; // Computes the $y$ component of the window normal.
-        w_normal[2] = {cd_access}window_center_z - {cd_access}camera_pos_z; // Computes the $z$ component of the window normal.
+        // --- GLOBAL WINDOW PLANE RECONSTRUCTION ---
+        // Hardware/Math Justification: The physical boundary of the observer's camera window must remain
+        // mathematically immutable across all rendered tiles. We strictly use the original_window_center 
+        // to compute the global plane normal and distance, ensuring consistent geometric hit detection 
+        // depth regardless of the active local tile center.
+        
+        double w_normal[3]; // 3D geometric unit normal vector $n_i$ of the global observer window.
+        w_normal[0] = {cd_access}original_window_center_x - {cd_access}camera_pos_x; // Computes the $x$ component of the global window normal.
+        w_normal[1] = {cd_access}original_window_center_y - {cd_access}camera_pos_y; // Computes the $y$ component of the global window normal.
+        w_normal[2] = {cd_access}original_window_center_z - {cd_access}camera_pos_z; // Computes the $z$ component of the global window normal.
 
         const double mag_inv = 1.0 / SqrtCUDA(w_normal[0]*w_normal[0] + w_normal[1]*w_normal[1] + w_normal[2]*w_normal[2]); // Computes the inverse magnitude $1/|n|$ for normalization.
         w_normal[0] *= mag_inv; // Normalizes the $x$ component.
         w_normal[1] *= mag_inv; // Normalizes the $y$ component.
         w_normal[2] *= mag_inv; // Normalizes the $z$ component.
 
-        const double w_dist = {cd_access}window_center_x*w_normal[0] + {cd_access}window_center_y*w_normal[1] + {cd_access}window_center_z*w_normal[2]; // Calculates orthogonal distance $d_w$ to the window plane.
-        const double w_val = x*w_normal[0] + y*w_normal[1] + z*w_normal[2] - w_dist; // Evaluates the plane equation $E_w$ for the current position.
+        // Calculates orthogonal distance $d_w$ from the origin to the global window plane.
+        const double w_dist = {cd_access}original_window_center_x*w_normal[0] + {cd_access}original_window_center_y*w_normal[1] + {cd_access}original_window_center_z*w_normal[2]; 
+        
+        // Evaluates the global plane equation $E_w$ for the photon's current spatial position.
+        const double w_val = x*w_normal[0] + y*w_normal[1] + z*w_normal[2] - w_dist; 
 
-        const bool on_pos_win_curr = (w_val > 1e-10); // Checks if the photon is on the positive side of the window.
+        const bool on_pos_win_curr = (w_val > 1e-10); // Checks if the photon is on the positive side of the global window.
         const bool on_pos_win_prev = d_on_pos_window_prev[i]; // Retrieves the previous integration step's window side evaluation.
 
-        if (on_pos_win_curr != on_pos_win_prev) {{ // Triggers intersection event if the plane was crossed.
+        if (on_pos_win_curr != on_pos_win_prev) {{ // Triggers intersection event if the physical plane was crossed.
             double f_int[9];  // Reconstructed $9$-component state vector $f^\mu$ at the intersection.
             double lam_event; // Interpolated affine parameter $\lambda$ of the exact boundary crossing.
             find_event_time_and_state(f_local, f_p_local, f_p_p_local, lam_local, lam_p_local, lam_p_p_local, w_normal, w_dist, &lam_event, f_int); // Calculates the exact mathematical boundary crossing state.
+            
             // Writes the physical intersection to the persistent master index array slot via global mapping.
+            // The downstream function handle_window_plane_intersection safely handles mapping the global 
+            // spatial coordinates to the local tile offsets.
             // Window plane function call to pass commondata conditionally.
             if (handle_window_plane_intersection(f_int, lam_event, &d_results_buffer[master_idx]{commondata_arg})) {{
                 d_window_event_found[i] = true;

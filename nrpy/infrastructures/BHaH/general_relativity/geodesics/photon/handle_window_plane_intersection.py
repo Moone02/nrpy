@@ -20,28 +20,6 @@ def handle_window_plane_intersection() -> None:
     # Add the access variable
     cd_access = get_commondata_access(parallelization)
 
-    # Register the necessary C-code parameters for camera setup to ensure they are available in constant memory.
-    par.register_CodeParameters(
-        "REAL",
-        __name__,
-        [
-            "window_center_x",
-            "window_center_y",
-            "window_center_z",
-            "camera_pos_x",
-            "camera_pos_y",
-            "camera_pos_z",
-            "window_up_vec_x",
-            "window_up_vec_y",
-            "window_up_vec_z",
-            "window_width",
-            "window_height",
-        ],
-        [50.0, 0.0, 0.0, 51.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        commondata=True,
-        add_to_parfile=True,
-    )
-
     # Define inclusion headers for the C function compilation.
     includes = ["BHaH_defines.h"]
 
@@ -77,7 +55,7 @@ def handle_window_plane_intersection() -> None:
     # Toggle generation of CodeParameters.h inclusion.
     include_CodeParameters_h = False
 
-    # Construct the raw C-string for the function body.
+    # Construct the C-string for the function body.
     body = r"""
     // --- STATE UNPACKING ---
     // Maps global states to immediate thread-local variables to minimize VRAM latency.
@@ -87,14 +65,13 @@ def handle_window_plane_intersection() -> None:
     const double z_intersect = f_local[3]; // Cartesian $z$ at intersection.
 
     // --- CAMERA BASIS RECONSTRUCTION ---
-    // Reconstructs the orthonormal frame to map the physical intersection onto the virtual pixel grid.
-    const double window_center[3] = {d_commondata.window_center_x, d_commondata.window_center_y, d_commondata.window_center_z}; // 3D center coordinate of the camera window.
-
+    // Reconstructs the orthonormal frame using the immutable global original_window_center
+    // to prevent perspective warping or rotation across peripheral tiles.
     double w_z[3] = {
-        d_commondata.window_center_x - d_commondata.camera_pos_x,
-        d_commondata.window_center_y - d_commondata.camera_pos_y,
-        d_commondata.window_center_z - d_commondata.camera_pos_z
-    }; // Vector pointing from the camera position to the window center.
+        d_commondata.original_window_center_x - d_commondata.camera_pos_x,
+        d_commondata.original_window_center_y - d_commondata.camera_pos_y,
+        d_commondata.original_window_center_z - d_commondata.camera_pos_z
+    }; // Global line-of-sight vector pointing from the camera position to the original window center.
 
     double mag_w_z = SqrtCUDA(w_z[0]*w_z[0] + w_z[1]*w_z[1] + w_z[2]*w_z[2]); // Magnitude of the $w_z$ vector.
     if (mag_w_z > 1e-12) {
@@ -130,11 +107,14 @@ def handle_window_plane_intersection() -> None:
 
     // --- PROJECTION & VALIDATION ---
     // Transforms the global spatial intersection into the local 2D window coordinate system.
+    // The dynamically shifted local_window_center is used here as the anchor to map hits within the active tile bounds.
+    const double local_window_center[3] = {d_commondata.window_center_x, d_commondata.window_center_y, d_commondata.window_center_z};
+
     const double relative_pos[3] = {
-        x_intersect - window_center[0],
-        y_intersect - window_center[1],
-        z_intersect - window_center[2]
-    }; // Vector pointing from the window center to the 3D intersection.
+        x_intersect - local_window_center[0],
+        y_intersect - local_window_center[1],
+        z_intersect - local_window_center[2]
+    }; // Vector pointing from the local tile window center to the 3D intersection.
 
     const double local_y_w = relative_pos[0]*w_x[0] + relative_pos[1]*w_x[1] + relative_pos[2]*w_x[2]; // Projected local horizontal coordinate on the window.
     const double local_z_w = relative_pos[0]*w_y[0] + relative_pos[1]*w_y[1] + relative_pos[2]*w_y[2]; // Projected local vertical coordinate on the window.

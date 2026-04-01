@@ -95,18 +95,44 @@ def set_initial_conditions_kernel(spacetime_name: str) -> None:
 
     :param spacetime_name: The specific metric or spacetime identifier (e.g., 'KerrSchild').
     """
-    # Register necessary global parameters for the grid setup and numerical controls.
+    # Register necessary global parameters
     par.register_CodeParameter(
         "int", __name__, "scan_density", 500, commondata=True, add_to_parfile=True
     )
-    par.register_CodeParameter(
-        "REAL", __name__, "t_start", 100.0, commondata=True, add_to_parfile=True
+    par.register_CodeParameters(
+        "REAL",
+        __name__,
+        [
+            "window_center_x",
+            "window_center_y",
+            "window_center_z",
+        ],
+
+        [50.0, 0.0, 0.0],
+        commondata=True,
+        add_to_parfile=False,
     )
-    par.register_CodeParameter(
-        "REAL", __name__, "window_width", 10.0, commondata=True, add_to_parfile=True
-    )
-    par.register_CodeParameter(
-        "REAL", __name__, "window_height", 10.0, commondata=True, add_to_parfile=True
+    par.register_CodeParameters(
+        "REAL",
+        __name__,
+        [
+            "original_window_center_x",
+            "original_window_center_y",
+            "original_window_center_z",
+            "camera_pos_x",
+            "camera_pos_y",
+            "camera_pos_z",
+            "window_up_vec_x",
+            "window_up_vec_y",
+            "window_up_vec_z",
+            "window_width",
+            "window_height",
+            "t_start",
+        ],
+
+        [50.0, 0.0, 0.0, 51.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 100.0],
+        commondata=True,
+        add_to_parfile=True,
     )
 
     # Dynamic architecture detection.
@@ -320,16 +346,21 @@ def set_initial_conditions_kernel(spacetime_name: str) -> None:
     body = rf"""
     // --- HOST-SIDE GEOMETRY SETUP ---
     // Algorithmic Step: Pre-calculate the projection plane basis vectors to save device registers.
+    // Calculations use the static original window center to maintain consistent projection framing across all local tiles.
     const double cam_x = commondata->camera_pos_x; // The $x$-coordinate of the camera.
     const double cam_y = commondata->camera_pos_y; // The $y$-coordinate of the camera.
     const double cam_z = commondata->camera_pos_z; // The $z$-coordinate of the camera.
 
-    const double wc_x = commondata->window_center_x; // The $x$-coordinate of the geometric window center.
-    const double wc_y = commondata->window_center_y; // The $y$-coordinate of the geometric window center.
-    const double wc_z = commondata->window_center_z; // The $z$-coordinate of the geometric window center.
+    const double owc_x = commondata->original_window_center_x; // Original $x$-coordinate of the master window center.
+    const double owc_y = commondata->original_window_center_y; // Original $y$-coordinate of the master window center.
+    const double owc_z = commondata->original_window_center_z; // Original $z$-coordinate of the master window center.
 
-    // Vector $n_z^i$ normal to the camera window representing the line of sight.
-    double n_z[3] = {{wc_x - cam_x, wc_y - cam_y, wc_z - cam_z}};
+    const double wc_x = commondata->window_center_x; // The $x$-coordinate of the shifted tile window center.
+    const double wc_y = commondata->window_center_y; // The $y$-coordinate of the shifted tile window center.
+    const double wc_z = commondata->window_center_z; // The $z$-coordinate of the shifted tile window center.
+
+    // Vector $n_z^i$ normal to the camera window representing the global line of sight.
+    double n_z[3] = {{owc_x - cam_x, owc_y - cam_y, owc_z - cam_z}};
     // Magnitude of the normal vector $n_z^i$.
     double mag_n_z = sqrt(n_z[0]*n_z[0] + n_z[1]*n_z[1] + n_z[2]*n_z[2]);
     // Normalize the $n_z^i$ vector.
@@ -339,7 +370,9 @@ def set_initial_conditions_kernel(spacetime_name: str) -> None:
     const double guide_up[3] = {{commondata->window_up_vec_x, commondata->window_up_vec_y, commondata->window_up_vec_z}};
 
     // Basis vector $n_x^i$ describing the horizontal camera axis.
-    double n_x[3] = {{n_z[1]*guide_up[2] - n_z[2]*guide_up[1], n_z[2]*guide_up[0] - n_z[0]*guide_up[2], n_z[0]*guide_up[1] - n_z[1]*guide_up[0]}};
+    double n_x[3] = {{guide_up[1]*n_z[2] - guide_up[2]*n_z[1], 
+                     guide_up[2]*n_z[0] - guide_up[0]*n_z[2], 
+                     guide_up[0]*n_z[1] - guide_up[1]*n_z[0]}};
     // Magnitude of the horizontal basis vector $n_x^i$.
     double mag_n_x = sqrt(n_x[0]*n_x[0] + n_x[1]*n_x[1] + n_x[2]*n_x[2]);
 
@@ -360,36 +393,30 @@ def set_initial_conditions_kernel(spacetime_name: str) -> None:
     // Basis vector $n_y^i$ describing the vertical camera axis.
     double n_y[3] = {{n_z[1]*n_x[2] - n_z[2]*n_x[1], n_z[2]*n_x[0] - n_z[0]*n_x[2], n_z[0]*n_x[1] - n_z[1]*n_x[0]}};
 
-    // Output the $x$-component of the geometric window center.
+    // Output the local tile components.
     window_center_out[0] = wc_x;
-    // Output the $y$-component of the geometric window center.
     window_center_out[1] = wc_y;
-    // Output the $z$-component of the geometric window center.
     window_center_out[2] = wc_z;
     for(int j=0; j<3; j++) {{
-        // Output the normalized basis vectors $n_x^i, n_y^i, n_z^i$.
+        // Output the normalized global basis vectors $n_x^i, n_y^i, n_z^i$.
         n_x_out[j] = n_x[j]; n_y_out[j] = n_y[j]; n_z_out[j] = n_z[j];
     }}
 
-    // Extracted basis component for GPU argument passing.
+    // Extracted basis components.
     const double nx_0 = n_x[0];
-    // Extracted basis component for GPU argument passing.
     const double nx_1 = n_x[1];
-    // Extracted basis component for GPU argument passing.
     const double nx_2 = n_x[2];
-    // Extracted basis component for GPU argument passing.
     const double ny_0 = n_y[0];
-    // Extracted basis component for GPU argument passing.
     const double ny_1 = n_y[1];
-    // Extracted basis component for GPU argument passing.
     const double ny_2 = n_y[2];
 
     // --- DYNAMIC GEOMETRIC PLANE INITIALIZATION ---
     // Algorithmic Step: Evaluate the initial side of the observer and source planes natively on the CPU.
     // Hardware Justification: Computed efficiently exactly once to prevent redundant VRAM allocation and PCIe transfers.
-    const double val_window = n_z[0] * (cam_x - wc_x) +
-                              n_z[1] * (cam_y - wc_y) +
-                              n_z[2] * (cam_z - wc_z);
+    // Evaluates against the original global window to correctly flag observer window crossings regardless of tile offset.
+    const double val_window = n_z[0] * (cam_x - owc_x) +
+                              n_z[1] * (cam_y - owc_y) +
+                              n_z[2] * (cam_z - owc_z);
 
     // Evaluates strictly greater than zero per the physical observer constraints.
     const bool init_window_side = (val_window > 0.0);

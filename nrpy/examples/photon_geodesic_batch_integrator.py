@@ -213,9 +213,9 @@ if __name__ == "__main__":
     par.glb_code_params_dict["camera_pos_x"].defaultvalue = 51.0
     par.glb_code_params_dict["camera_pos_y"].defaultvalue = 0.0
     par.glb_code_params_dict["camera_pos_z"].defaultvalue = 10.2
-    par.glb_code_params_dict["window_center_x"].defaultvalue = 50.0
-    par.glb_code_params_dict["window_center_y"].defaultvalue = 0.0
-    par.glb_code_params_dict["window_center_z"].defaultvalue = 10.0
+    par.glb_code_params_dict["original_window_center_x"].defaultvalue = 50.0
+    par.glb_code_params_dict["original_window_center_y"].defaultvalue = 0.0
+    par.glb_code_params_dict["original_window_center_z"].defaultvalue = 10.0
     par.glb_code_params_dict["window_height"].defaultvalue = 1.0
     par.glb_code_params_dict["window_up_vec_x"].defaultvalue = 0.0
     par.glb_code_params_dict["window_up_vec_y"].defaultvalue = 0.0

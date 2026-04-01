@@ -56,6 +56,13 @@ def main(spacetime_name: str) -> None:
     commondata_struct_set_to_default(&commondata); 
     cmdline_input_and_parfile_parser(&commondata, argc, argv); 
 
+    // --- INITIALIZE DYNAMIC WINDOW CENTER ---
+    // The tile orchestrator modifies the window center dynamically per tile. 
+    // We seed the active window center with the original master center provided by the configuration.
+    commondata.window_center_x = commondata.original_window_center_x;
+    commondata.window_center_y = commondata.original_window_center_y;
+    commondata.window_center_z = commondata.original_window_center_z;
+
     // --- TELEMETRY AND PARAMETER VERIFICATION ---
     // Outputs core physical and architectural variables to the standard output.
     printf("=============================================\\n");
@@ -97,7 +104,7 @@ def main(spacetime_name: str) -> None:
 
     printf("--- Window Plane ---\\n");
     printf("Camera Pos (x, y, z): %.3f, %.3f, %.3f\\n", commondata.camera_pos_x, commondata.camera_pos_y, commondata.camera_pos_z);
-    printf("Window Center (x, y, z): %.3f, %.3f, %.3f\\n", commondata.window_center_x, commondata.window_center_y, commondata.window_center_z);
+    printf("Original Window Center (x, y, z): %.3f, %.3f, %.3f\\n", commondata.original_window_center_x, commondata.original_window_center_y, commondata.original_window_center_z);
     printf("Window Height: %.3f\\n", commondata.window_height);
     printf("Window Width: %.3f\\n", commondata.window_width);
     printf("Window Up Vec (x, y, z): %.3f, %.3f, %.3f\\n", commondata.window_up_vec_x, commondata.window_up_vec_y, commondata.window_up_vec_z);
@@ -106,9 +113,10 @@ def main(spacetime_name: str) -> None:
            commondata.scan_density, commondata.scan_density);
 
     // --- TILING CALCULATIONS ---
-    const double master_center_x = commondata.window_center_x;
-    const double master_center_y = commondata.window_center_y;
-    const double master_center_z = commondata.window_center_z;
+    // Master parameters define the full global frame, referencing the immutable original center.
+    const double master_center_x = commondata.original_window_center_x;
+    const double master_center_y = commondata.original_window_center_y;
+    const double master_center_z = commondata.original_window_center_z;
     const double master_width    = commondata.window_width;
     const double master_height   = commondata.window_height;
 

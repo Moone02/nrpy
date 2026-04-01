@@ -125,7 +125,7 @@ def batch_integrator_numerical(spacetime_name: str) -> None:
 
     # Establish memory transfer protocols based on the target parallelization architecture.
     if parallelization == "cuda":
-        # Python: Generates asynchronous PCIe transfer commands for CUDA architectures.
+        # Generates asynchronous PCIe transfer commands for CUDA architectures.
         def memcpy_async(
             dest: str, src: str, size: str, direction: str, stream: str
         ) -> str:
