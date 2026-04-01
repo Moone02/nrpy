@@ -9,6 +9,7 @@ Author: Dalton J. Moone.
 """
 
 import argparse
+import math
 import os
 import sys
 
@@ -122,11 +123,11 @@ def main() -> None:
         print(f"ERROR: Sphere texture not found at '{starmap_path}'.")
         return
 
-    # The maximum dimension bounds the geometric camera projection window.
-    actual_window_width = max(args.window_width, args.window_height)
-
     # The physical span encompasses the full mathematical diameter of the accretion disk geometry.
     source_physical_width = 2.0 * args.source_r_max
+
+    # Calculate the vertical pixel dimension to maintain the physical aspect ratio.
+    pixel_height = math.ceil((args.window_height / args.window_width) * args.pixel_width)
 
     print("Generating source disk array...")
 
@@ -147,14 +148,17 @@ def main() -> None:
     rli.generate_static_lensed_image(
         output_filename=args.output,
         output_pixel_width=args.pixel_width,
+        output_pixel_height=pixel_height,
         source_image_width=source_physical_width,
         sphere_image=starmap_path,
         source_image=disk_texture_float,
         blueprint_filenames=blueprint_zips,
-        window_width=actual_window_width,
+        window_width=args.window_width,
+        window_height=args.window_height,
     )
 
     print("Visualization complete!")
+
 
 
 if __name__ == "__main__":

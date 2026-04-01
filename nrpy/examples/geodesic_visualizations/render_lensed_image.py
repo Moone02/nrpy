@@ -261,15 +261,16 @@ def _process_blueprint_tile(
 
     return flat_y, flat_x, flat_colors, flat_counts
 
-
 def generate_static_lensed_image(
     output_filename: str,
     output_pixel_width: int,
+    output_pixel_height: int,
     source_image_width: float,
     sphere_image: Union[str, npt.NDArray[np.float64]],
     source_image: Union[str, npt.NDArray[np.float64]],
     blueprint_filenames: list[str],
     window_width: float,
+    window_height: float,
     chunk_size: int = cfg.CHUNK_SIZE,
     display_image: bool = True,
 ) -> None:
@@ -282,10 +283,12 @@ def generate_static_lensed_image(
 
     :param output_filename: Path where the final rendered image will be saved.
     :param output_pixel_width: Desired width of the output image in pixels.
+    :param output_pixel_height: Desired height of the output image in pixels.
     :param source_image_width: The physical width of the accretion disk source plane.
     :param sphere_image: The background celestial sphere texture (path or array).
     :param source_image: The accretion disk texture (path or array).
     :param blueprint_filenames: List of paths to the zipped blueprint files containing ray data.
+    :param window_height: The physical height of the camera's local window.
     :param window_width: The physical width of the camera's local window.
     :param chunk_size: Number of records to read from the binary stream at once.
     :param display_image: If True, opens the resulting image using the default viewer.
@@ -297,12 +300,12 @@ def generate_static_lensed_image(
 
     # Establish the FOV (Field of View) bounds for the camera window
     half_w = window_width / 2.0
+    half_h = window_height / 2.0
     y_w_min, y_w_max = -half_w, half_w
-    z_w_min, z_w_max = -half_w, half_w
+    z_w_min, z_w_max = -half_h, half_h
 
     window_y_range = y_w_max - y_w_min
     window_z_range = z_w_max - z_w_min
-    output_pixel_height = int(output_pixel_width * (window_z_range / window_y_range))
 
     # Load textures for mapping
     source_texture = _load_texture(source_image)
