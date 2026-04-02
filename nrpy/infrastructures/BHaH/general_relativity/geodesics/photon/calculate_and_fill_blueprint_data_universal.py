@@ -11,7 +11,7 @@ Author: Dalton J. Moone.
 import nrpy.c_function as cfc
 import nrpy.params as par
 from nrpy.helpers.loop import loop
-from nrpy.helpers.parallelization.utilities import generate_kernel_and_launch_code
+import nrpy.helpers.parallelization.utilities as parallel_utils
 
 
 def calculate_and_fill_blueprint_data_universal() -> None:
@@ -98,7 +98,7 @@ def calculate_and_fill_blueprint_data_universal() -> None:
         "stream": "stream_idx",
     }
 
-    prefunc, launch_body = generate_kernel_and_launch_code(
+    prefunc, launch_body = parallel_utils.generate_kernel_and_launch_code(
         kernel_name=kernel_name,
         kernel_body=kernel_body,
         arg_dict_cuda=arg_dict_cuda,

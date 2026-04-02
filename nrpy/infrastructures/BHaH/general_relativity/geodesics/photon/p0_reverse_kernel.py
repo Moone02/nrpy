@@ -13,7 +13,7 @@ import sympy as sp
 import nrpy.c_codegen as ccg
 import nrpy.c_function as cfc
 import nrpy.params as par
-from nrpy.helpers.parallelization.utilities import generate_kernel_and_launch_code
+import nrpy.helpers.parallelization.utilities as parallel_utils
 
 
 def p0_reverse_kernel(p0_expr: sp.Expr) -> None:
@@ -141,7 +141,7 @@ def p0_reverse_kernel(p0_expr: sp.Expr) -> None:
         "stream": "stream_idx",
     }
 
-    prefunc, launch_code = generate_kernel_and_launch_code(
+    prefunc, launch_code = parallel_utils.generate_kernel_and_launch_code(
         kernel_name="p0_reverse_kernel",
         kernel_body=kernel_body,
         arg_dict_cuda=arg_dict,

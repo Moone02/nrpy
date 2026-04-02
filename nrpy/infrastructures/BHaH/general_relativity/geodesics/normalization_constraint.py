@@ -13,9 +13,7 @@ import nrpy.c_codegen as ccg
 import nrpy.c_function as cfc
 import nrpy.infrastructures.BHaH.BHaH_defines_h as Bdefines_h
 import nrpy.params as par
-from nrpy.helpers.parallelization.utilities import (
-    generate_kernel_and_launch_code,
-)
+import nrpy.helpers.parallelization.utilities as parallel_utils
 
 
 def normalization_constraint(norm_expr: sp.Expr, PARTICLE: str) -> None:
@@ -151,7 +149,7 @@ def normalization_constraint(norm_expr: sp.Expr, PARTICLE: str) -> None:
     }
 
     # Generate the kernel definition and the internal launch string.
-    prefunc, launch_body = generate_kernel_and_launch_code(
+    prefunc, launch_body = parallel_utils.generate_kernel_and_launch_code(
         kernel_name=kernel_name,
         kernel_body=kernel_body,
         arg_dict_cuda=arg_dict,

@@ -10,7 +10,7 @@ Author: Dalton J. Moone.
 
 import nrpy.c_function as cfc
 import nrpy.params as par
-from nrpy.helpers.parallelization.utilities import get_commondata_access
+import nrpy.helpers.parallelization.utilities as parallel_utils
 
 
 def handle_window_plane_intersection() -> None:
@@ -18,7 +18,7 @@ def handle_window_plane_intersection() -> None:
     parallelization = par.parval_from_str("parallelization")
 
     # Add the access variable
-    cd_access = get_commondata_access(parallelization)
+    cd_access = parallel_utils.get_commondata_access(parallelization)
 
     # Define inclusion headers for the C function compilation.
     includes = ["BHaH_defines.h"]

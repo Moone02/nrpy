@@ -20,10 +20,7 @@ from nrpy.equations.general_relativity.geodesics.geodesic_diagnostics.conserved_
     Geodesic_Diagnostics,
 )
 from nrpy.helpers.loop import loop
-from nrpy.helpers.parallelization.utilities import (
-    generate_kernel_and_launch_code,
-    get_commondata_access,
-)
+import nrpy.helpers.parallelization.utilities as parallel_utils
 
 
 def conserved_quantities(spacetime_name: str, particle_type: str = "photon") -> None:
@@ -35,7 +32,7 @@ def conserved_quantities(spacetime_name: str, particle_type: str = "photon") -> 
     """
     # 1. Architecture Detection
     parallelization = par.parval_from_str("parallelization")
-    cd_access = get_commondata_access(parallelization)
+    cd_access = parallel_utils.get_commondata_access(parallelization)
 
     config_key = f"{spacetime_name}_{particle_type}"
     diagnostics = Geodesic_Diagnostics[config_key]
@@ -202,7 +199,7 @@ def conserved_quantities(spacetime_name: str, particle_type: str = "photon") -> 
     }
 
     # 3. Update the Kernel Launch
-    prefunc, launch_body = generate_kernel_and_launch_code(
+    prefunc, launch_body = parallel_utils.generate_kernel_and_launch_code(
         kernel_name=kernel_name,
         kernel_body=kernel_body,
         arg_dict_cuda=arg_dict_cuda,

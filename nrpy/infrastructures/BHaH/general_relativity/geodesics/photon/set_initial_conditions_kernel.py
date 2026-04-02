@@ -13,10 +13,7 @@ import nrpy.c_function as cfc
 import nrpy.infrastructures.BHaH.BHaH_defines_h as Bdefines_h
 import nrpy.params as par
 from nrpy.helpers.loop import loop
-from nrpy.helpers.parallelization.utilities import (
-    generate_kernel_and_launch_code,
-    get_commondata_access,
-)
+import nrpy.helpers.parallelization.utilities as parallel_utils
 
 # Define the C-structs required for the simulation pipeline.
 # These are registered here to ensure they appear in BHaH_defines.h before
@@ -137,7 +134,7 @@ def set_initial_conditions_kernel(spacetime_name: str) -> None:
 
     # Dynamic architecture detection.
     parallelization = par.parval_from_str("parallelization")
-    cd_access = get_commondata_access(parallelization)
+    cd_access = parallel_utils.get_commondata_access(parallelization)
 
     # Dictionary mapping for GPU/CPU kernel arguments.
     arg_dict = {
@@ -262,7 +259,7 @@ def set_initial_conditions_kernel(spacetime_name: str) -> None:
         else None
     )
 
-    kernel_prefunc, launch_code = generate_kernel_and_launch_code(
+    kernel_prefunc, launch_code = parallel_utils.generate_kernel_and_launch_code(
         kernel_name=f"set_initial_conditions_kernel_{spacetime_name}",
         kernel_body=kernel_body,
         arg_dict_cuda=arg_dict,

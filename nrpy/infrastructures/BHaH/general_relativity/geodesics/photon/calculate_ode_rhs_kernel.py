@@ -15,7 +15,7 @@ import sympy as sp
 import nrpy.c_codegen as ccg
 import nrpy.c_function as cfc
 import nrpy.params as par
-from nrpy.helpers.parallelization.utilities import generate_kernel_and_launch_code
+import nrpy.helpers.parallelization.utilities as parallel_utils
 
 
 def calculate_ode_rhs_kernel(
@@ -209,7 +209,7 @@ def calculate_ode_rhs_kernel(
         "stream": "stream_idx",
     }
 
-    prefunc_kernel, launch_code = generate_kernel_and_launch_code(
+    prefunc_kernel, launch_code = parallel_utils.generate_kernel_and_launch_code(
         kernel_name="calculate_ode_rhs_kernel",
         kernel_body=kernel_body,
         arg_dict_cuda=arg_dict_cuda,

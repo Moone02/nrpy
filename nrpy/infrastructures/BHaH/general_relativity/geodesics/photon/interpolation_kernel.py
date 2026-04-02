@@ -10,7 +10,7 @@ Author: Dalton J. Moone.
 
 import nrpy.c_function as cfc
 import nrpy.params as par
-from nrpy.helpers.parallelization.utilities import generate_kernel_and_launch_code
+import nrpy.helpers.parallelization.utilities as parallel_utils
 
 
 def interpolation_kernel(spacetime_name: str) -> None:
@@ -134,7 +134,7 @@ def interpolation_kernel(spacetime_name: str) -> None:
         "stream": "stream_idx",
     }
 
-    prefunc_kernel, launch_code = generate_kernel_and_launch_code(
+    prefunc_kernel, launch_code = parallel_utils.generate_kernel_and_launch_code(
         kernel_name=f"interpolation_kernel_{spacetime_name}",
         kernel_body=kernel_body,
         arg_dict_cuda=arg_dict_cuda,

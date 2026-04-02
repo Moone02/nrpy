@@ -8,10 +8,7 @@ Author: Dalton J. Moone.
 
 import nrpy.c_function as cfc
 import nrpy.params as par
-from nrpy.helpers.parallelization.utilities import (
-    generate_kernel_and_launch_code,
-    get_commondata_access,
-)
+import nrpy.helpers.parallelization.utilities as parallel_utils
 
 
 def event_detection_manager_kernel() -> None:
@@ -26,7 +23,7 @@ def event_detection_manager_kernel() -> None:
     )
 
     parallelization = par.parval_from_str("parallelization")
-    cd_access = get_commondata_access(parallelization)
+    cd_access = parallel_utils.get_commondata_access(parallelization)
 
     find_event_c_code = cfc.CFunction_dict["find_event_time_and_state"].full_function
     window_c_code = cfc.CFunction_dict["handle_window_plane_intersection"].full_function
@@ -233,7 +230,7 @@ def event_detection_manager_kernel() -> None:
         "stream": "stream_idx",
     }
 
-    prefunc_kernel, body = generate_kernel_and_launch_code(
+    prefunc_kernel, body = parallel_utils.generate_kernel_and_launch_code(
         kernel_name="event_detection_manager_kernel",
         kernel_body=kernel_body,
         arg_dict_cuda=arg_dict_cuda,
