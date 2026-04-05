@@ -348,8 +348,10 @@ par.adjust_CodeParam_default("initial_p_r", initial_p_r)
 par.adjust_CodeParam_default("TP_npoints_A", TP_npoints_A)
 par.adjust_CodeParam_default("TP_npoints_B", TP_npoints_B)
 par.adjust_CodeParam_default("TP_npoints_phi", TP_npoints_phi)
-par.adjust_CodeParam_default("TP_bare_mass_m", 1.0 / (1.0 + mass_ratio))
-par.adjust_CodeParam_default("TP_bare_mass_M", mass_ratio / (1.0 + mass_ratio))
+# Leave TwoPunctures bare masses unset by default so it solves for them
+# to match target ADM masses, as in the original, NRPy1 workflow.
+par.adjust_CodeParam_default("TP_bare_mass_m", -1.0)
+par.adjust_CodeParam_default("TP_bare_mass_M", -1.0)
 # Evolution / diagnostics parameters
 par.adjust_CodeParam_default("eta", GammaDriving_eta)
 if enable_psi4_diagnostics:

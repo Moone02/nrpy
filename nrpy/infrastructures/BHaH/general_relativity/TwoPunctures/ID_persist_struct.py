@@ -171,7 +171,12 @@ set up initial_p_t and initial_p_r if not set in parfile.
     //   the xy plane. So does NRPyPN:
     NRPyPN_quasicircular_momenta(commondata);
 
-    fprintf(stderr, "NRPyPN: Found |p_t|, |p_r| = %.8f %.8f\n", fabs(commondata->initial_p_t), fabs(commondata->initial_p_r));
+    // For q=1, spins=0, diameter_of_separation=4.0, p_r can be negative.
+    // Fix that here:
+    if (commondata->initial_p_r < 0.0)
+      commondata->initial_p_r *= -1.0;
+
+    fprintf(stderr, "NRPyPN: Found p_t, p_r = %.8f %.8f\n", commondata->initial_p_t, commondata->initial_p_r);
   }
 
   // UNIVERSAL PARAMETERS:
@@ -207,16 +212,16 @@ set up initial_p_t and initial_p_r if not set in parfile.
     //   Initialize center_offset to zero before setting z component
     for (int ii = 0; ii < 3; ii++)
       par->center_offset[ii] = 0.0;
-    par->center_offset[0] = -(grid_dist_from_origin_BH_m - grid_dist_from_origin_BH_M) * 0.5;
+    par->center_offset[2] = -(grid_dist_from_origin_BH_m - grid_dist_from_origin_BH_M) * 0.5;
 
     //   Initialize linear momenta to zero before setting initial radial and tangential momenta
     for (int ii = 0; ii < 3; ii++)
       par->par_P_plus[ii] = par->par_P_minus[ii] = 0.0;
-    par->par_P_plus[0] = -fabs(p_r);  // momentum of the m+ puncture
-    par->par_P_minus[0] = +fabs(p_r); // momentum of the m- puncture
+    par->par_P_plus[0] = -p_r;  // momentum of the m+ puncture
+    par->par_P_minus[0] = +p_r; // momentum of the m- puncture
 
-    par->par_P_plus[1] = +fabs(p_t);  // momentum of the m+ puncture
-    par->par_P_minus[1] = -fabs(p_t); // momentum of the m- puncture
+    par->par_P_plus[1] = +p_t;  // momentum of the m+ puncture
+    par->par_P_minus[1] = -p_t; // momentum of the m- puncture
     for (int ii = 0; ii < 3; ii++) {
       const REAL bbhxy_BH_m_chi[3] = {commondata->bbhxy_BH_m_chix, commondata->bbhxy_BH_m_chiy, commondata->bbhxy_BH_m_chiz };
       const REAL bbhxy_BH_M_chi[3] = {commondata->bbhxy_BH_M_chix, commondata->bbhxy_BH_M_chiy, commondata->bbhxy_BH_M_chiz };
@@ -233,7 +238,7 @@ set up initial_p_t and initial_p_r if not set in parfile.
   fprintf(stderr, "d_initial/M = %.15f, q = %.15f\n", commondata->initial_sep, commondata->mass_ratio);
   fprintf(stderr, "bbhxy_BH_m_chi = %.15f %.15f %.15f\n", commondata->bbhxy_BH_m_chix, commondata->bbhxy_BH_m_chiy, commondata->bbhxy_BH_m_chiz);
   fprintf(stderr, "bbhxy_BH_M_chi = %.15f %.15f %.15f\n", commondata->bbhxy_BH_M_chix, commondata->bbhxy_BH_M_chiy, commondata->bbhxy_BH_M_chiz);
-  fprintf(stderr, "|p_t| = %.15f, |p_r| = %.15f\n", fabs(commondata->initial_p_t), fabs(commondata->initial_p_r));
+  fprintf(stderr, "p_t = %.15f, p_r = %.15f\n", commondata->initial_p_t, commondata->initial_p_r);
   fprintf(stderr, "TP resolution: %d  %d  %d\n", par->npoints_A, par->npoints_B, par->npoints_phi);
   fprintf(stderr, "#################################\n");
 """

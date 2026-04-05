@@ -68,6 +68,7 @@ def register_CFunction_diagnostic_gfs_set(
     gri.register_gridfunctions(names="DIAG_MSQUARED", desc="M^2", group="DIAG")
     gri.register_gridfunctions(names="DIAG_LAPSE", desc="Lapse", group="DIAG")
     gri.register_gridfunctions(names="DIAG_W", desc="Conformal_factor_W", group="DIAG")
+    gri.register_gridfunctions(names="DIAG_GRIDINDEX", desc="GridIndex", group="DIAG")
     if enable_psi4:
         gri.register_gridfunctions(names="DIAG_PSI4_RE", desc="Psi4_Re", group="DIAG")
         gri.register_gridfunctions(names="DIAG_PSI4_IM", desc="Psi4_Im", group="DIAG")
@@ -180,6 +181,7 @@ def register_CFunction_diagnostic_gfs_set(
       const int idx3 = IDX3(i0, i1, i2);
       diagnostic_gfs[grid][IDX4pt(DIAG_LAPSEGF, idx3)] = y_n_gfs[IDX4pt(ALPHAGF, idx3)];
       diagnostic_gfs[grid][IDX4pt(DIAG_WGF, idx3)] = y_n_gfs[IDX4pt(CFGF, idx3)];
+      diagnostic_gfs[grid][IDX4pt(DIAG_GRIDINDEXGF, idx3)] = (REAL)grid;
     } // END LOOP over all gridpoints to set lapse/W diagnostics
   } // END LOOP over grids
 """

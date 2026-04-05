@@ -98,6 +98,7 @@ def generate_CFunction_psi4_tetrad(
         lhss,
         verbose=False,
         enable_cse=True,
+        cse_sorting="none",
         include_braces=False,
     )
 
