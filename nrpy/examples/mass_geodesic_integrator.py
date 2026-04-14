@@ -1,18 +1,24 @@
+# nrpy/examples/mass_geodesic_integrator.py
 r"""
-Module constructs a complete C project for integrating massive geodesics in curved spacetime.
+Defines a C project for integrating massive geodesics in curved spacetime.
 
-The script produces a standalone C application that evolves the trajectory
+The script provides a standalone C application that evolves the trajectory
 of a massive test particle. It coordinates the registration of spacetime-specific
-physics kernels and links them with the GNU Scientific Library (GSL) for
-high-order time integration.
+physics kernels and links them with the GNU Scientific Library for time integration.
+Structure of Arrays (SoA) layouts provide universal memory compatibility for shared
+physics kernels. Struct mapping establishes the layout required by downstream conserved
+quantities kernels. Calculating the metric at the initial position solves the
+Hamiltonian constraint, and evaluating the final metric constraint deviation at the
+boundary limit tracks accuracy.
 
 The simulation solves the geodesic equation for a particle with non-zero mass:
-    $d(u^\\mu)/d(\\tau) = -\\Gamma^\\mu_{\\alpha \\beta} u^\\alpha u^\\beta$
-subject to the normalization constraint $u^\\mu u_\\mu = -1$.
+    $d(u^\mu)/d(\tau) = -\Gamma^\mu_{\alpha \beta} u^\alpha u^\beta$
+subject to the normalization constraint $u^\mu u_\mu = -1$.
 
 Numerical fidelity is validated by monitoring constants of motion
 associated with the spacetime's symmetries, including Killing vectors and tensors.
-Author: Dalton J. Moone.
+
+Author: Dalton Moone.
 """
 
 import os
@@ -68,7 +74,6 @@ def register_struct_definitions() -> None:
     // ==========================================
     // Flattened SoA Struct (Master Storage)
     // ==========================================
-    // Hardware Justification: This Structure of Arrays (SoA) provides universal memory compatibility for shared physics kernels.
     typedef struct {
         double *f;            // Flattened state vector mapping components $t, x, y, z, u_t, u_x, u_y, u_z$.
         double *affine_param; // Current proper time $\\tau$ for the trajectory.
@@ -79,7 +84,7 @@ def register_struct_definitions() -> None:
 
 def main_c(spacetime: str, particle: str) -> None:
     """
-    Generate the main() function for the massive geodesic integrator using GSL.
+    Define the main() function for the massive geodesic integrator.
 
     :param spacetime: The specific background spacetime descriptor.
     :param particle: The type of test particle being integrated.
@@ -97,26 +102,30 @@ def main_c(spacetime: str, particle: str) -> None:
 
     desc = """@brief Main driver function for the massive geodesic integrator.
     Detailed algorithm: Initializes memory for a single ray and executes continuous 
-    integration via the GNU Scientific Library (GSL) adaptive RKF45 stepper. Evaluates 
-    boundary constraints and verifies the numerical fidelity using Hamiltonian constraints 
-    and conserved quantities."""
+    integration via the adaptive RKF45 stepper. Evaluates boundary constraints and 
+    verifies the numerical fidelity using Hamiltonian constraints and conserved 
+    quantities."""
 
     cfunc_type = "int"
     name = "main"
     params = "int argc, const char *argv[]"
 
     body = f"""
-    // --- Step 1: Structural Setup & Parameters ---
+    // ==========================================
+    // STRUCTURAL SETUP & PARAMETERS
+    // ==========================================
     commondata_struct commondata; // Global parameters struct governing spacetime and numerics.
     commondata_struct_set_to_default(&commondata);
     
     commondata.M_scale = 1.0; // The mass $M$ of the central black hole.
     commondata.a_spin = 0.9; // The dimensionless spin $a$ of the central black hole.
 
-    printf("Starting Mass Geodesic Integrator (CPU)...\\n");
+    printf("Starting Mass Geodesic Integrator...\\n");
     printf("spacetime: {spacetime}, M=%.2f, a=%.2f\\n", commondata.M_scale, commondata.a_spin);
 
-    // --- Step 2: Global Memory & Initial Conditions ---
+    // ==========================================
+    // GLOBAL MEMORY & INITIAL CONDITIONS
+    // ==========================================
     const double p_t_max = 1000;
     const double r_squared_max = 1e4;
     long int num_rays = 1; // Total number of global particle trajectories.
@@ -133,14 +142,12 @@ def main_c(spacetime: str, particle: str) -> None:
 
     double tau = 0.0; // Tracks the proper time $\\tau$ accumulated by the massive particle.
 
-    // Hardware Justification: Struct mapping establishes the SoA layout required by the downstream conserved quantities kernel.
     PhotonStateSoA all_particles; // Master struct holding array pointers for the global dataset.
     all_particles.f = y; // Pointer to the flattened state vector $y$.
     all_particles.affine_param = &tau; // Pointer to the proper time $\\tau$.
 
     double g4DD_local[10]; // Flat array holding the 10 independent components of the symmetric metric $g_{{\\mu\\nu}}$.
 
-    // Hardware Justification: Calculate metric at initial position $y$ to solve the Hamiltonian constraint.
     g4DD_metric_{spacetime}(&commondata, y, g4DD_local);
 
     double u0_val = 0.0; // Variable to store the computed time-component of the 4-velocity $u^t$.
@@ -151,14 +158,18 @@ def main_c(spacetime: str, particle: str) -> None:
     printf("  Pos: (%.4f, %.4f, %.4f)\\n", y[1], y[2], y[3]);
     printf("  Vel: (%.4f, %.4f, %.4f, %.4f)\\n", y[4], y[5], y[6], y[7]);
 
-    // --- Step 3: Pre-Integration Diagnostics ---
+    // ==========================================
+    // PRE-INTEGRATION DIAGNOSTICS
+    // ==========================================
     conserved_quantities_t cq_init; // Struct instance to store the baseline constants of motion.
     calculate_conserved_quantities_universal_{spacetime}_{particle}(&commondata, &all_particles, num_rays, &cq_init);
 
     printf("Initial Conserved Quantities:\\n");
     printf("  E = %.8f, Lz = %.8f, Q = %.8f\\n", cq_init.E, cq_init.Lz, cq_init.Q);
 
-    // --- Step 4: GSL Integrator Setup ---
+    // ==========================================
+    // GSL INTEGRATOR SETUP
+    // ==========================================
     const gsl_odeiv2_step_type *T = gsl_odeiv2_step_rkf45; // GSL stepper type utilizing the RKF45 method.
     gsl_odeiv2_step *s = gsl_odeiv2_step_alloc(T, 8); // GSL stepper object dynamically allocated for an 8-dimensional state vector.
     gsl_odeiv2_control *c = gsl_odeiv2_control_y_new(1e-9, 0.0); // GSL control object to maintain local truncation error limits.
@@ -169,7 +180,9 @@ def main_c(spacetime: str, particle: str) -> None:
     double tau_max = 20000.0; // The predefined boundary limit for proper time $\\tau$ integration.
     double h = 1e-3; // Initial step size guess $h$ provided to the adaptive GSL routines.
 
-    // --- Step 5: File Output Setup ---
+    // ==========================================
+    // FILE OUTPUT SETUP
+    // ==========================================
     FILE *fp = fopen("trajectory.txt", "w"); // File pointer directed to write trajectory data.
     if (fp == NULL) {{
         fprintf(stderr, "Error opening trajectory.txt\\n");
@@ -177,7 +190,9 @@ def main_c(spacetime: str, particle: str) -> None:
     }}
     fprintf(fp, "# tau t x y z u^t u^x u^y u^z\\n");
 
-    // --- Step 6: Integration Loop ---
+    // ==========================================
+    // INTEGRATION LOOP
+    // ==========================================
     int steps = 0; // Counter incremented per successful step to prevent runaway loops.
     int max_steps = 2000000; // Absolute hard ceiling on integration iterations.
 
@@ -208,14 +223,15 @@ def main_c(spacetime: str, particle: str) -> None:
     fclose(fp);
     printf("Integration finished after %d steps. Final tau = %.4f\\n", steps, tau);
 
-    // --- Step 7: Post-Integration Diagnostics ---
+    // ==========================================
+    // POST-INTEGRATION DIAGNOSTICS
+    // ==========================================
     conserved_quantities_t cq_final; // Struct holding constants of motion evaluated at the trajectory boundary.
     calculate_conserved_quantities_universal_{spacetime}_{particle}(&commondata, &all_particles, num_rays, &cq_final);
     
     g4DD_metric_{spacetime}(&commondata, y, g4DD_local);
     
     normalization_constraint_t norm_final; // Struct tracking the residual of the Hamiltonian constraint $u^\\mu u_\\mu = -1$.
-    // Hardware Justification: Evaluates final metric constraint deviation at the boundary limit.
     normalization_constraint_{particle}(y, g4DD_local, &norm_final, 1, 0);
 
     printf("Final Normalization Constraint Evaluation (Massive particle):\\n");
@@ -235,7 +251,9 @@ def main_c(spacetime: str, particle: str) -> None:
     printf("  Delta Lz = %.4e\\n", Lz_err);
     printf("  Delta Q  = %.4e\\n", Q_err);
 
-    // --- Memory Cleanup ---
+    // ==========================================
+    // MEMORY CLEANUP
+    // ==========================================
     gsl_odeiv2_evolve_free(e); // Free GSL evolution object.
     gsl_odeiv2_control_free(c); // Free GSL control object.
     gsl_odeiv2_step_free(s); // Free GSL step object.

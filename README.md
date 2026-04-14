@@ -38,6 +38,18 @@ pip install nrpy
     ```
     python3 -m nrpy.examples.nrpyelliptic_conformally_flat
     ```
+  - **Massive particle geodesic integrator**:
+    ```
+    python3 -m nrpy.examples.mass_geodesic_integrator
+    ```
+  - **Photon geodesic integrator**:
+    ```
+    python3 -m nrpy.examples.photon_geodesic_integrator
+    ```
+  - **Photon geodesic batch integrator (with visualization)**:
+    ```
+    python3 -m nrpy.examples.photon_geodesic_batch_integrator
+    ```
 
 ### Einstein Toolkit infrastructure: Choose a project to build, run the provided command. Check the `examples/et_*` directory for a ThornList and parameter file. Thorns will be output to `project/`
 

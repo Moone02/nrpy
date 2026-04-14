@@ -2,9 +2,9 @@
 #include "BHaH_function_prototypes.h"
 
 #define LOOP_ALL_GFS_GPS(ii)                                                                                                                         \
-  _Pragma("omp parallel for") for (int(ii) = 0;                                                                                                      \
-                                   (ii) < params->Nxx_plus_2NGHOSTS0 * params->Nxx_plus_2NGHOSTS1 * params->Nxx_plus_2NGHOSTS2 * NUM_EVOL_GFS;       \
-                                   (ii)++)
+  _Pragma("omp parallel for simd") for (int(ii) = 0;                                                                                                 \
+                                        (ii) < params->Nxx_plus_2NGHOSTS0 * params->Nxx_plus_2NGHOSTS1 * params->Nxx_plus_2NGHOSTS2 * NUM_EVOL_GFS;  \
+                                        (ii)++)
 
 /**
  * Kernel: rk_substep_1_host.

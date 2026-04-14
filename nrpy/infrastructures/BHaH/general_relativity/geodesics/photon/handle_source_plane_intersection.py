@@ -1,13 +1,24 @@
+# nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/handle_source_plane_intersection.py
 """
-Module computes the impact parameters on the physical emission plane.
+Defines the computation for impact parameters on the physical emission plane.
 
-Executing within thread-local registers and constant memory.
-Author: Dalton J. Moone.
+This module constructs the C engine responsible for evaluating terminal interactions
+with the accretion disk. It accepts the fully interpolated nine-component tensor
+state and affine parameter at the exact boundary crossing alongside a pointer to the
+output blueprint structure. The mathematical mechanism constructs a local orthonormal
+basis using the parameterized source plane normal and up-vectors, with a fallback
+strategy for degenerate cross products. The global Cartesian intersection coordinates
+are projected into this local two-dimensional coordinate system and filtered against
+the minimum and maximum radial disk bounds. Valid impacts are stored persistently in
+the blueprint structures. It relies on constant memory caching to process physical
+impact parameters.
+
+Author: Dalton Moone.
 """
 
 import nrpy.c_function as cfc
+import nrpy.helpers.parallelization.utilities as parallel_utils
 import nrpy.params as par
-from nrpy.helpers.parallelization.utilities import get_commondata_access
 
 
 def handle_source_plane_intersection() -> None:
@@ -15,7 +26,7 @@ def handle_source_plane_intersection() -> None:
     parallelization = par.parval_from_str("parallelization")
 
     # Add the access variable
-    cd_access = get_commondata_access(parallelization)
+    cd_access = parallel_utils.get_commondata_access(parallelization)
 
     # Register core parameters for the emission plane geometry
     par.register_CodeParameters(
@@ -71,14 +82,18 @@ def handle_source_plane_intersection() -> None:
     include_CodeParameters_h = False
 
     body = r"""
-    // --- UNPACK INTERSECTION STATE ---
+    //==========================================
+    // UNPACK INTERSECTION STATE
+    //==========================================
     // Reads intersection data from thread-local registers, circumventing global reads.
     const double t_intersect = source_event_f_intersect[0]; // Coordinate time $t$ at intersection.
     const double x_intersect = source_event_f_intersect[1]; // Cartesian $x^1$ at intersection.
     const double y_intersect = source_event_f_intersect[2]; // Cartesian $x^2$ at intersection.
     const double z_intersect = source_event_f_intersect[3]; // Cartesian $x^3$ at intersection.
 
-    // --- RECONSTRUCT SOURCE PLANE BASIS ---
+    //==========================================
+    // RECONSTRUCT SOURCE PLANE BASIS
+    //==========================================
     // Forces routing via the constant cache to minimize global memory transaction latency.
     const double s_z[3] = { d_commondata.source_plane_normal_x, d_commondata.source_plane_normal_y, d_commondata.source_plane_normal_z }; // Normal vector $s_z$ defining the plane orientation.
     const double source_up[3] = { d_commondata.source_up_vec_x, d_commondata.source_up_vec_y, d_commondata.source_up_vec_z }; // Upward vector for basis alignment.
@@ -107,7 +122,9 @@ def handle_source_plane_intersection() -> None:
     s_y[1] = s_z[2]*s_x[0] - s_z[0]*s_x[2];
     s_y[2] = s_z[0]*s_x[1] - s_z[1]*s_x[0];
 
-    // --- PROJECT INTO LOCAL SOURCE COORDINATES ---
+    //==========================================
+    // PROJECT INTO LOCAL SOURCE COORDINATES
+    //==========================================
     // Projects the global Cartesian intersection state into the local 2D source plane.
     const double relative_pos[3] = {
         x_intersect - d_commondata.source_plane_center_x,
@@ -118,7 +135,9 @@ def handle_source_plane_intersection() -> None:
     const double local_y_s = relative_pos[0]*s_x[0] + relative_pos[1]*s_x[1] + relative_pos[2]*s_x[2]; // Projected local $y$ coordinate on the source plane.
     const double local_z_s = relative_pos[0]*s_y[0] + relative_pos[1]*s_y[1] + relative_pos[2]*s_y[2]; // Projected local $z$ coordinate on the source plane.
 
-    // --- RADIAL FILTERING AND TERMINATION ---
+    //==========================================
+    // RADIAL FILTERING AND TERMINATION
+    //==========================================
     // Filters photons that fall outside the physical bounds of the accretion disk.
     const double r_sq = local_y_s*local_y_s + local_z_s*local_z_s; // Squared radial distance $r^2$ from the source center.
     const double r_min_sq = d_commondata.source_r_min * d_commondata.source_r_min; // Squared minimum disk radius $r_{min}^2$.

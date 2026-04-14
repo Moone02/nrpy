@@ -1,16 +1,21 @@
+# nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/interpolation_kernel.py
 r"""
 Provides the global memory kernel and orchestrator for the interpolation engine.
 
-This module evaluates the spacetime metric $g_{\mu\nu}$ and Christoffel symbols
-$\Gamma^{\alpha}_{\beta\gamma}$ for a batch of photons. It operates on Structure
-of Arrays (SoA) bundles.
+This module registers a C function that orchestrates the parallel evaluation of the
+spacetime metric and Christoffel symbols for a batch of photons. It generates execution
+code for the active parallelization framework, launching threads or distributing
+tasks. The kernel maps data to the memory hierarchy by operating on Structure of
+Arrays (SoA) bundles. It unpacks photon state vectors from global memory into
+registers, invokes the numerical evaluators for the metric and connection components,
+and writes the computed tensor components back into their respective memory bundles.
 
-Author: Dalton J. Moone.
+Author: Dalton Moone.
 """
 
 import nrpy.c_function as cfc
+import nrpy.helpers.parallelization.utilities as parallel_utils
 import nrpy.params as par
-from nrpy.helpers.parallelization.utilities import generate_kernel_and_launch_code
 
 
 def interpolation_kernel(spacetime_name: str) -> None:
@@ -56,7 +61,9 @@ def interpolation_kernel(spacetime_name: str) -> None:
 
     if parallelization == "cuda":
         loop_preamble = """
-    // --- CUDA THREAD IDENTIFICATION ---
+    //==========================================
+    // CUDA THREAD IDENTIFICATION
+    //==========================================
     // The identifier $i$ represents the global thread index mapped to a specific photon ray.
     const long int i = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -67,7 +74,9 @@ def interpolation_kernel(spacetime_name: str) -> None:
         loop_postamble = ""
     else:
         loop_preamble = """
-    // --- OPENMP LOOP ARCHITECTURE ---
+    //==========================================
+    // OPENMP LOOP ARCHITECTURE
+    //==========================================
     // Distribute photon rays across available CPU threads for parallel evaluation.
     #pragma omp parallel for
     for(long int i = 0; i < chunk_size; i++) {
@@ -76,7 +85,9 @@ def interpolation_kernel(spacetime_name: str) -> None:
         loop_postamble = "    } // End OpenMP loop"
 
     core_math = rf"""
-    // --- MACRO DEFINITIONS FOR BUNDLE ACCESS ---
+    //==========================================
+    // MACRO DEFINITIONS FOR BUNDLE ACCESS
+    //==========================================
     // IDX_F maps a component to the flattened state bundle using SoA layout.
     #define IDX_F(c, ray_id) ((c) * BUNDLE_CAPACITY + (ray_id))
     // IDX_METRIC maps a component to the flattened symmetric metric bundle.
@@ -84,7 +95,9 @@ def interpolation_kernel(spacetime_name: str) -> None:
     // IDX_CONN maps a component to the flattened Christoffel connection bundle.
     #define IDX_CONN(c, ray_id) ((c) * BUNDLE_CAPACITY + (ray_id))
 
-// --- STATE UNPACKING ---
+    //==========================================
+    // STATE UNPACKING
+    //==========================================
     double f_local[9]; // Local register array storing the 9-component state vector $f^{{\mu}}$.
     int comp; // Loop index for iterating over the tensor components.
     for (comp = 0; comp < 9; ++comp) {{
@@ -92,18 +105,24 @@ def interpolation_kernel(spacetime_name: str) -> None:
         f_local[comp] = d_f_bundle[IDX_F(comp, i)]; // Component of the photon state vector $f^{{\mu}}$.
     }}
 
-    // --- METRIC TENSOR EVALUATION ---
+    //==========================================
+    // METRIC TENSOR EVALUATION
+    //==========================================
     double metric_local[10]; // Local register array storing the 10 upper-triangular components of $g_{{\mu\nu}}$.
 
     // Evaluate the spacetime metric geometry.
     {metric_worker}({cd_ptr}, f_local, metric_local);
-    // --- GLOBAL MEMORY WRITE (METRIC) ---
+    //==========================================
+    // GLOBAL MEMORY WRITE (METRIC)
+    //==========================================
     for (comp = 0; comp < 10; ++comp) {{
         // Write the computed metric components $g_{{\mu\nu}}$ back to the global memory bundle.
         d_metric_bundle[IDX_METRIC(comp, i)] = metric_local[comp]; // Component of the spacetime metric $g_{{\mu\nu}}$.
     }}
 
-    // --- CHRISTOFFEL CONNECTION EVALUATION ---
+    //==========================================
+    // CHRISTOFFEL CONNECTION EVALUATION
+    //==========================================
     // Conditional logic skips connection calculation during the initialization phase if the pointer is NULL.
     if (d_connection_bundle != NULL) {{
         // Local register array storing the 40 components of $\Gamma^{{\alpha}}_{{\beta\gamma}}$.
@@ -112,14 +131,18 @@ def interpolation_kernel(spacetime_name: str) -> None:
         // Evaluate the Christoffel symbols.
         {conn_worker}({cd_ptr}, f_local, Gamma_local);
 
-        // --- GLOBAL MEMORY WRITE (CONNECTION) ---
+        //==========================================
+        // GLOBAL MEMORY WRITE (CONNECTION)
+        //==========================================
         for (comp = 0; comp < 40; ++comp) {{
             // Write the computed connection components $\Gamma^{{\alpha}}_{{\beta\gamma}}$ to the global memory bundle.
             d_connection_bundle[IDX_CONN(comp, i)] = Gamma_local[comp];
         }}
     }}
 
-    // --- MACRO CLEANUP ---
+    //==========================================
+    // MACRO CLEANUP
+    //==========================================
     // Undefine macros to ensure hermetic compilation and prevent redefinition errors.
     #undef IDX_F
     #undef IDX_METRIC
@@ -134,7 +157,7 @@ def interpolation_kernel(spacetime_name: str) -> None:
         "stream": "stream_idx",
     }
 
-    prefunc_kernel, launch_code = generate_kernel_and_launch_code(
+    prefunc_kernel, launch_code = parallel_utils.generate_kernel_and_launch_code(
         kernel_name=f"interpolation_kernel_{spacetime_name}",
         kernel_body=kernel_body,
         arg_dict_cuda=arg_dict_cuda,

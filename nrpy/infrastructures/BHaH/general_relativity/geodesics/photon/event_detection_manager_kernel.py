@@ -1,17 +1,23 @@
+# nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/event_detection_manager_kernel.py
 """
 Provides the C orchestrator for geometric event detection.
 
-This module provides the high-level logic for detecting crossings of the
-observer window and the source emission plane.
-Author: Dalton J. Moone.
+This module provides the high-level logic for detecting crossings of the observer
+window and the source emission plane. It generates a C kernel that reads the current
+and historical integration state bundles from global device memory into local arrays
+to evaluate temporal explosion limits and celestial escape bounds before verifying
+physical plane intersections. The geometric boundaries remain mathematically immutable
+across all rendered tiles, ensuring consistent hit detection depth. The kernel calls
+downstream interpolation routines to resolve precise boundary crossing coordinates
+and outputs the filtered physical intersections to persistent blueprint structures
+while shifting the valid trajectory history arrays to stage the next solver step.
+
+Author: Dalton Moone.
 """
 
 import nrpy.c_function as cfc
+import nrpy.helpers.parallelization.utilities as parallel_utils
 import nrpy.params as par
-from nrpy.helpers.parallelization.utilities import (
-    generate_kernel_and_launch_code,
-    get_commondata_access,
-)
 
 
 def event_detection_manager_kernel() -> None:
@@ -26,7 +32,7 @@ def event_detection_manager_kernel() -> None:
     )
 
     parallelization = par.parval_from_str("parallelization")
-    cd_access = get_commondata_access(parallelization)
+    cd_access = parallel_utils.get_commondata_access(parallelization)
 
     find_event_c_code = cfc.CFunction_dict["find_event_time_and_state"].full_function
     window_c_code = cfc.CFunction_dict["handle_window_plane_intersection"].full_function
@@ -79,7 +85,9 @@ def event_detection_manager_kernel() -> None:
 
     if parallelization == "cuda":
         loop_preamble = """
-    // --- CUDA THREAD IDENTIFICATION ---
+    //==========================================
+    // CUDA THREAD IDENTIFICATION
+    //==========================================
     // Thread ID maps to a unique photon index $i$ within the execution chunk.
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= chunk_size) return;
@@ -87,7 +95,9 @@ def event_detection_manager_kernel() -> None:
         loop_postamble = ""
     else:
         loop_preamble = """
-    // --- OPENMP LOOP ARCHITECTURE ---
+    //==========================================
+    // OPENMP LOOP ARCHITECTURE
+    //==========================================
     // Distribute photon rays across available CPU threads for parallel evaluation.
     #pragma omp parallel for
     for(long int i = 0; i < chunk_size; i++) {
@@ -98,12 +108,16 @@ def event_detection_manager_kernel() -> None:
     // Resolves the absolute global memory index $m_{{idx}}$ of the trajectory to bypass local array overwriting.
     const long int master_idx = d_chunk_buffer[i];
 
-    // --- MACROS ---
+    //==========================================
+    // MACROS
+    //==========================================
     // IDX_F maps a component to the flattened state bundle using SoA layout.
     // Memory Striding strictly uses BUNDLE_CAPACITY, preventing bounds failure on remainders.
     #define IDX_F(c, ray_id) ((c) * BUNDLE_CAPACITY + (ray_id))
 
-    // --- TEMPORAL EXPLOSION CHECK ---
+    //==========================================
+    // TEMPORAL EXPLOSION CHECK
+    //==========================================
     // Reads $p_t$ directly from global memory to terminate doomed rays before register hydration.
     const double p_t = ReadCUDA(&d_f_bundle[IDX_F(4, i)]);
 
@@ -115,7 +129,9 @@ def event_detection_manager_kernel() -> None:
     // Terminated photons cleanly bypass the geometric evaluation logic.
     if (d_status_bundle[i] != ACTIVE) {escape_statement}
 
-    // --- LOCAL REGISTER HYDRATION ---
+    //==========================================
+    // LOCAL REGISTER HYDRATION
+    //==========================================
     // 1-Pass read from global memory bundles into thread-local arrays to respect hardware register limits.
     double f_local[9], f_p_local[9], f_p_p_local[9]; // Thread-local arrays holding the state vector $f^\mu$ and its history.
     {pragma_unroll}
@@ -134,7 +150,9 @@ def event_detection_manager_kernel() -> None:
     const double y = f_local[2]; // Extracts the local Cartesian coordinate $y$.
     const double z = f_local[3]; // Extracts the local Cartesian coordinate $z$.
 
-    // --- CELESTIAL ESCAPE CHECK ---
+    //==========================================
+    // CELESTIAL ESCAPE CHECK
+    //==========================================
     // Evaluates if the photon has exceeded the coordinate escape radius $r_{{escape}}$.
     const double r_sq = x*x + y*y + z*z; // Computes the squared radial distance $r^2$ from the origin.
     if (r_sq > ({cd_access}r_escape * {cd_access}r_escape)) {{
@@ -142,32 +160,44 @@ def event_detection_manager_kernel() -> None:
         {escape_statement}
     }}
 
-    // --- EVENT DETECTION & TERMINATION CHECKS ---
+    //==========================================
+    // EVENT DETECTION & TERMINATION CHECKS
+    //==========================================
     // Evaluates physical plane intersections strictly using localized variables.
 
     // Window plane logic is guarded to lock the intersection coordinates permanently.
     if (!d_window_event_found[i]) {{
-        double w_normal[3]; // 3D geometric unit normal vector $n_i$ of the observer window.
-        w_normal[0] = {cd_access}window_center_x - {cd_access}camera_pos_x; // Computes the $x$ component of the window normal.
-        w_normal[1] = {cd_access}window_center_y - {cd_access}camera_pos_y; // Computes the $y$ component of the window normal.
-        w_normal[2] = {cd_access}window_center_z - {cd_access}camera_pos_z; // Computes the $z$ component of the window normal.
+        //==========================================
+        // GLOBAL WINDOW PLANE RECONSTRUCTION
+        //==========================================
+
+        double w_normal[3]; // 3D geometric unit normal vector $n_i$ of the global observer window.
+        w_normal[0] = {cd_access}original_window_center_x - {cd_access}camera_pos_x; // Computes the $x$ component of the global window normal.
+        w_normal[1] = {cd_access}original_window_center_y - {cd_access}camera_pos_y; // Computes the $y$ component of the global window normal.
+        w_normal[2] = {cd_access}original_window_center_z - {cd_access}camera_pos_z; // Computes the $z$ component of the global window normal.
 
         const double mag_inv = 1.0 / SqrtCUDA(w_normal[0]*w_normal[0] + w_normal[1]*w_normal[1] + w_normal[2]*w_normal[2]); // Computes the inverse magnitude $1/|n|$ for normalization.
         w_normal[0] *= mag_inv; // Normalizes the $x$ component.
         w_normal[1] *= mag_inv; // Normalizes the $y$ component.
         w_normal[2] *= mag_inv; // Normalizes the $z$ component.
 
-        const double w_dist = {cd_access}window_center_x*w_normal[0] + {cd_access}window_center_y*w_normal[1] + {cd_access}window_center_z*w_normal[2]; // Calculates orthogonal distance $d_w$ to the window plane.
-        const double w_val = x*w_normal[0] + y*w_normal[1] + z*w_normal[2] - w_dist; // Evaluates the plane equation $E_w$ for the current position.
+        // Calculates orthogonal distance $d_w$ from the origin to the global window plane.
+        const double w_dist = {cd_access}original_window_center_x*w_normal[0] + {cd_access}original_window_center_y*w_normal[1] + {cd_access}original_window_center_z*w_normal[2];
+        
+        // Evaluates the global plane equation $E_w$ for the photon's current spatial position.
+        const double w_val = x*w_normal[0] + y*w_normal[1] + z*w_normal[2] - w_dist; 
 
-        const bool on_pos_win_curr = (w_val > 1e-10); // Checks if the photon is on the positive side of the window.
+        const bool on_pos_win_curr = (w_val > 1e-10); // Checks if the photon is on the positive side of the global window.
         const bool on_pos_win_prev = d_on_pos_window_prev[i]; // Retrieves the previous integration step's window side evaluation.
 
-        if (on_pos_win_curr != on_pos_win_prev) {{ // Triggers intersection event if the plane was crossed.
+        if (on_pos_win_curr != on_pos_win_prev) {{ // Triggers intersection event if the physical plane was crossed.
             double f_int[9];  // Reconstructed $9$-component state vector $f^\mu$ at the intersection.
             double lam_event; // Interpolated affine parameter $\lambda$ of the exact boundary crossing.
             find_event_time_and_state(f_local, f_p_local, f_p_p_local, lam_local, lam_p_local, lam_p_p_local, w_normal, w_dist, &lam_event, f_int); // Calculates the exact mathematical boundary crossing state.
+
             // Writes the physical intersection to the persistent master index array slot via global mapping.
+            // The downstream function handle_window_plane_intersection safely handles mapping the global
+            // spatial coordinates to the local tile offsets.
             // Window plane function call to pass commondata conditionally.
             if (handle_window_plane_intersection(f_int, lam_event, &d_results_buffer[master_idx]{commondata_arg})) {{
                 d_window_event_found[i] = true;
@@ -198,7 +228,9 @@ def event_detection_manager_kernel() -> None:
         d_on_pos_source_prev[i] = on_pos_src_curr; // Updates the source evaluation history for the next step.
     }}
 
-    // --- HISTORY SHIFT ---
+    //==========================================
+    // HISTORY SHIFT
+    //==========================================
     // Memory bundles are updated only for active trajectories to stage the next RKF45 step.
     if (d_status_bundle[i] == ACTIVE) {{
         WriteCUDA(&d_affine_pre_prev[i], lam_p_local); // Shifts the previous affine parameter $\lambda_{{n-1}}$ to the pre-previous slot $\lambda_{{n-2}}$.
@@ -221,7 +253,7 @@ def event_detection_manager_kernel() -> None:
         "stream": "stream_idx",
     }
 
-    prefunc_kernel, body = generate_kernel_and_launch_code(
+    prefunc_kernel, body = parallel_utils.generate_kernel_and_launch_code(
         kernel_name="event_detection_manager_kernel",
         kernel_body=kernel_body,
         arg_dict_cuda=arg_dict_cuda,

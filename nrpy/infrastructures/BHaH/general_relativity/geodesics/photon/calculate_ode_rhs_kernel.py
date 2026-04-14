@@ -1,11 +1,17 @@
+# nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/calculate_ode_rhs_kernel.py
 r"""
-Module defines the global kernel and host-side orchestrator for computing the photon geodesic ODE right-hand sides.
+Provides the kernel generation logic for computing photon geodesic derivatives.
 
-Module evaluates the spatial and temporal derivatives $\dot{f}$ required during
-the RKF45 integration step. It reads pre-calculated metric and connection tensors
-from global memory bundles.
+This module defines the Python function that constructs and registers the host-side
+orchestrator and global kernel required during the RKF45 integration step for photon
+geodesics. It translates SymPy expressions for spatial and temporal derivatives into
+C code and incorporates parallelism macros. The generated kernel maps global memory
+bundle data into thread-local registers to evaluate the right-hand sides of the
+geodesic equations. A boundary guard prevents out-of-bounds memory access for
+threads exceeding the active chunk. The stage index dictates the offset for memory
+alignment.
 
-Author: Dalton J. Moone.
+Author: Dalton Moone.
 """
 
 from typing import List
@@ -14,22 +20,25 @@ import sympy as sp
 
 import nrpy.c_codegen as ccg
 import nrpy.c_function as cfc
+import nrpy.helpers.parallelization.utilities as parallel_utils
 import nrpy.params as par
-from nrpy.helpers.parallelization.utilities import generate_kernel_and_launch_code
 
 
 def calculate_ode_rhs_kernel(
     geodesic_rhs_expressions: List[sp.Expr], coordinate_symbols: List[sp.Symbol]
 ) -> None:
     r"""
-    Register the global kernel to compute the ODE right-hand side.
+    Provide the global kernel registration for computing the ODE right-hand side.
 
     The generated kernel maps memory tensor data into thread-local registers matching
-    the symbols expected by the generated geodesic equations. It computes the $9$
-    derivative components and writes them to the specific stage offset in the
-    RKF45 derivative bundle.
+    the symbols expected by the generated geodesic equations. It computes the nine
+    derivative components and writes them to the stage offset in the RKF45 derivative
+    bundle. A boundary guard prevents out-of-bounds memory access for threads
+    exceeding the active chunk. The stage index dictates the offset for memory
+    alignment.
 
-    :param geodesic_rhs_expressions: The mathematical right-hand side evaluations representing the geodesic equations.
+    :param geodesic_rhs_expressions: The mathematical right-hand side evaluations
+        representing the geodesic equations.
     :param coordinate_symbols: The spatial and temporal coordinate variables in order.
     :raises ValueError: If the provided geodesic expression list is empty.
     """
@@ -67,7 +76,9 @@ def calculate_ode_rhs_kernel(
     # Build the memory data unpacking block.
     # This maps global memory directly to the local scalar registers expected by ccg.c_codegen.
     preamble_lines = [
-        "// --- STATE VECTOR & COORDINATE UNPACKING ---",
+        "//==========================================",
+        "// STATE VECTOR & COORDINATE UNPACKING",
+        "//==========================================",
         "// Load spacetime coordinates $x^{\\mu}$ from the global state bundle.",
     ]
 
@@ -79,7 +90,7 @@ def calculate_ode_rhs_kernel(
 
     preamble_lines.extend(
         [
-            "\n    // --- MOMENTUM UNPACKING ---",
+            "\n    //==========================================\n    // MOMENTUM UNPACKING\n    //==========================================",
             "// Load contravariant four-momenta $p^{\\mu}$ from the global state bundle.",
         ]
     )
@@ -91,7 +102,7 @@ def calculate_ode_rhs_kernel(
 
     preamble_lines.extend(
         [
-            "\n    // --- METRIC TENSOR UNPACKING ---",
+            "\n    //==========================================\n    // METRIC TENSOR UNPACKING\n    //==========================================",
             "// Load the symmetric covariant metric $g_{\\mu\\nu}$ from the pre-calculated memory bundle.",
         ]
     )
@@ -107,7 +118,7 @@ def calculate_ode_rhs_kernel(
 
     preamble_lines.extend(
         [
-            "\n    // --- CHRISTOFFEL CONNECTION UNPACKING ---",
+            "\n    //==========================================\n    // CHRISTOFFEL CONNECTION UNPACKING\n    //==========================================",
             "// Load Christoffel symbols $\\Gamma^{\\alpha}_{\\mu\\nu}$ from the pre-calculated memory bundle.",
         ]
     )
@@ -140,11 +151,13 @@ def calculate_ode_rhs_kernel(
 
     if parallelization == "cuda":
         loop_preamble = """
-    // --- CUDA THREAD IDENTIFICATION ---
+    //==========================================
+    // CUDA THREAD IDENTIFICATION
+    //==========================================
     // The identifier $i$ represents the global thread index mapped to a specific photon ray.
     const long int i = blockIdx.x * blockDim.x + threadIdx.x; // Thread ID maps to unique photon index.
 
-    // Hardware Justification: Guard prevents out-of-bounds memory access for threads exceeding the active chunk.
+    // Guard prevents out-of-bounds memory access for threads exceeding the active chunk.
     if (i >= chunk_size) return;
     """
         loop_postamble = ""
@@ -152,7 +165,9 @@ def calculate_ode_rhs_kernel(
         body_math = raw_c_code.replace("SIMD", "CUDA")
     else:
         loop_preamble = """
-    // --- OPENMP LOOP ARCHITECTURE ---
+    //==========================================
+    // OPENMP LOOP ARCHITECTURE
+    //==========================================
     // Distribute photon rays across available CPU threads for parallel evaluation.
     #pragma omp parallel for
     for(long int i = 0; i < chunk_size; i++) {
@@ -161,7 +176,9 @@ def calculate_ode_rhs_kernel(
         body_math = raw_c_code
 
     core_math = rf"""
-    // --- MACRO DEFINITIONS FOR BUNDLE ACCESS ---
+    //==========================================
+    // MACRO DEFINITIONS FOR BUNDLE ACCESS
+    //==========================================
     // IDX_F maps a component to the flattened state bundle using SoA layout.
     #define IDX_F(c, ray_id) ((c) * BUNDLE_CAPACITY + (ray_id)) // Computes the 1D index for the state bundle.
     // IDX_METRIC maps a component to the flattened symmetric metric bundle.
@@ -169,19 +186,22 @@ def calculate_ode_rhs_kernel(
     // IDX_CONN maps a component to the flattened Christoffel connection bundle.
     #define IDX_CONN(c, ray_id) ((c) * BUNDLE_CAPACITY + (ray_id)) // Computes the 1D index for the connection bundle.
     // IDX_K maps a stage and component triplet to the flattened derivative bundle.
-    // Hardware Justification: The stage index dictates the massive offset $stage \\times 9 \\times Capacity$.
     #define IDX_K(s, c, ray_id) (((s) - 1) * 9 * BUNDLE_CAPACITY + (c) * BUNDLE_CAPACITY + (ray_id)) // Computes the 1D index for the RKF45 derivative bundle.
 
     {preamble_unpacking_str}
 
-    // --- GEODESIC RHS EVALUATION ---
+    //==========================================
+    // GEODESIC RHS EVALUATION
+    //==========================================
     // Local register declarations to capture the evaluated derivatives $\dot{{f}}$.
     double k_out_0, k_out_1, k_out_2, k_out_3, k_out_4, k_out_5, k_out_6, k_out_7, k_out_8; // Thread-local registers allocate memory for the $9$ derivative outputs.
 
     // Evaluate the derivatives $dx^{{\mu}}/d\lambda$ and $dp^{{\mu}}/d\lambda$ using hardware FMA instructions.
     {body_math}
 
-    // --- GLOBAL MEMORY WRITE ---
+    //==========================================
+    // GLOBAL MEMORY WRITE
+    //==========================================
     // Write the computed derivatives to the correct RKF45 stage offset within the massive derivative bundle.
     d_k_bundle[IDX_K(stage, 0, i)] = k_out_0; // Write derivative component $0$ to memory.
     d_k_bundle[IDX_K(stage, 1, i)] = k_out_1; // Write derivative component $1$ to memory.
@@ -193,7 +213,9 @@ def calculate_ode_rhs_kernel(
     d_k_bundle[IDX_K(stage, 7, i)] = k_out_7; // Write derivative component $7$ to memory.
     d_k_bundle[IDX_K(stage, 8, i)] = k_out_8; // Write derivative component $8$ to memory.
 
-    // --- MACRO CLEANUP ---
+    //==========================================
+    // MACRO CLEANUP
+    //==========================================
     #undef IDX_F
     #undef IDX_METRIC
     #undef IDX_CONN
@@ -209,7 +231,7 @@ def calculate_ode_rhs_kernel(
         "stream": "stream_idx",
     }
 
-    prefunc_kernel, launch_code = generate_kernel_and_launch_code(
+    prefunc_kernel, launch_code = parallel_utils.generate_kernel_and_launch_code(
         kernel_name="calculate_ode_rhs_kernel",
         kernel_body=kernel_body,
         arg_dict_cuda=arg_dict_cuda,
@@ -220,7 +242,7 @@ def calculate_ode_rhs_kernel(
         thread_tiling_macro_suffix="RKF45",
     )
 
-    # --- CANONICAL MASTER ORDER SEQUENCE ---
+    # Step 1: Canonical sequence
     prefunc = prefunc_kernel
 
     includes = ["BHaH_defines.h", "BHaH_function_prototypes.h"]
@@ -255,7 +277,7 @@ def calculate_ode_rhs_kernel(
 
     body = launch_code
 
-    # Register the complete C function using the canonical Master Order sequence.
+    # Register the complete C function
     cfc.register_CFunction(
         prefunc=prefunc,
         includes=includes,
