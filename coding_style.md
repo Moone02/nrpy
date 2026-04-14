@@ -35,6 +35,12 @@ For any modified Python file, also run `.github/single_file_static_analysis.sh <
 | Constants | UPPER_SNAKE_CASE or leading underscore | `_UNSET_DEFAULT`, `_VALID_NRPY_PARAM_TYPES` |
 | Private helpers | Leading underscore | `_format_c_offset_str()`, `_flatten_and_unique_str()`, `_parse_array_spec()` |
 
+For boolean or boolean-like parameters, use **positive names** so the common `False` case reads cleanly:
+
+- Prefer `enable_feature`, `include_header`, `allow_resize`, or `has_ghost_zones`.
+- Avoid negatively named flags such as `disable_feature`, `omit_header`, `forbid_resize`, or `no_ghost_zones`.
+- Rationale: `disable_feature = false` is a double-negative and takes more effort to parse than `enable_feature = false`.
+
 ### Import Organization
 
 Imports follow `isort` conventions, organized in the following order:
