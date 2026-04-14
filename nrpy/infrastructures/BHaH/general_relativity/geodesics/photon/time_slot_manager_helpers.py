@@ -1,13 +1,14 @@
+# nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/time_slot_manager_helpers.py
 """
-Module generating the C data structures and helpers for the Time Slot Manager.
+Defines the C data structures and helpers for the Time Slot Manager.
 
-This module sets up a lock-free Arena Allocator for Host-side orchestration
-of batched photon trajectories based on their physical coordinate time $t$.
-By binning photons temporally on the Host, this structure enforces the strict
-Split-Pipeline Architecture required for relativistic ray tracing on Numerical Spacetimes.
-It prepares discrete VRAM Scratchpad Bundles for specialized kernels.
+This module sets up a lock-free arena allocator for the orchestration of batched
+photon trajectories based on their physical coordinate time. Binning photons
+temporally enforces the split-pipeline architecture required for relativistic ray
+tracing. Atomic operations and speculative memory writes guarantee thread safety and
+mathematical consistency during concurrent orchestration.
 
-Author: Dalton J. Moone.
+Author: Dalton Moone.
 """
 
 from nrpy.infrastructures.BHaH import BHaH_defines_h as Bdefines_h
@@ -32,7 +33,9 @@ def time_slot_manager_helpers() -> None:
         long int *slot_counts; // Array tracking the active number of photons currently residing in each time slot.
     } TimeSlotManager;
 
-    // --- ARENA ALLOCATION & INITIALIZATION ---
+    //==========================================
+    // ARENA ALLOCATION & INITIALIZATION
+    //==========================================
     // @brief Initializes the temporal arena structures for photon binning.
     static inline void slot_manager_init(TimeSlotManager *tsm, double t_min, double t_max, double delta_t_slot, long int num_rays) {
         tsm->t_min = t_min;
@@ -60,7 +63,9 @@ def time_slot_manager_helpers() -> None:
         }
     }
 
-    // --- ARENA DEALLOCATION ---
+    //==========================================
+    // ARENA DEALLOCATION
+    //==========================================
     // @brief Frees all dynamically allocated host-side memory tied to the temporal arena.
     static inline void slot_manager_free(TimeSlotManager *tsm) {
         if (!tsm) return;
@@ -69,30 +74,35 @@ def time_slot_manager_helpers() -> None:
         free(tsm->slot_counts);
     }
 
-    // --- TEMPORAL INDEXING ---
+    //==========================================
+    // TEMPORAL INDEXING
+    //==========================================
     // @brief Computes the designated slot index for a given physical coordinate time $t$.
     static inline int slot_get_index(const TimeSlotManager *tsm, double t) {
         if (isnan(t) || t < tsm->t_min || t >= tsm->t_max) return -1;
         return (int)floor((t - tsm->t_min) / tsm->delta_t_slot);
     }
 
-    // --- PHOTON REGISTRATION ---
+    //==========================================
+    // PHOTON REGISTRATION
+    //==========================================
     // @brief Atomically pushes a photon's global index into the appropriate temporal bin.
-    /* Algorithmic Step: Implements a lock-free linked list insertion using a Compare-and-Swap (CAS) loop.
-       Hardware Justification: Speculatively writing the next pointer before publishing the head ensures that any concurrent Host thread reading the slot always traverses a mathematically consistent state, preventing list severance. */
+    // Implements a lock-free linked list insertion using a Compare-and-Swap (CAS) loop.
     static inline void slot_add_photon(TimeSlotManager *tsm, int slot_idx, long int photon_idx) {
-        // Architectural Guard: Prevent index propagation beyond the pre-allocated manager capacity.
+        // Prevent index propagation beyond the pre-allocated manager capacity.
         if (photon_idx >= tsm->max_capacity) return;
 
         // Variable representing the expected head of the linked list during the atomic evaluation.
         long int expected_head;
 
-        // --- LOCK-FREE LINKED LIST INSERTION ---
+        //==========================================
+        // LOCK-FREE LINKED LIST INSERTION
+        //==========================================
         do {
             // Capture the current head to use as the speculative $photon_next_ptrs$ link.
             expected_head = tsm->slot_heads[slot_idx];
 
-            // Functional Justification: Enforcing the Link-Before-Publish invariant ensures atomicity across the Host CPU threads.
+            // Enforcing the Link-Before-Publish invariant ensures atomicity across the Host CPU threads.
             tsm->photon_next_ptrs[photon_idx] = expected_head;
 
             // Atomic Operation: Update the slot head only if it remains equal to the captured $expected\_head$.
@@ -102,10 +112,11 @@ def time_slot_manager_helpers() -> None:
         __sync_fetch_and_add(&tsm->slot_counts[slot_idx], 1L);
     }
 
-    // --- PHOTON EXTRACTION ---
+    //==========================================
+    // PHOTON EXTRACTION
+    //==========================================
     // @brief Atomically pops a specific number of photons from a designated time slot into a contiguous buffer.
-    /* Algorithmic Step: Utilizes a CAS-based pop mechanism to safely extract the head of the linked list.
-       Hardware Justification: Ensuring the extraction is atomic prevents multiple threads from claiming the same $photon_idx$ during high-throughput Host orchestration. */
+    // Utilizes a CAS-based pop mechanism to safely extract the head of the linked list.
     static inline void slot_remove_chunk(TimeSlotManager *tsm, int slot_idx, long int *chunk_buffer, long int chunk_size) {
         // Iterator tracking the current number of successfully extracted photons.
         long int i;
@@ -115,7 +126,9 @@ def time_slot_manager_helpers() -> None:
             // Variable representing the subsequent node to promote to the new head.
             long int next_node;
 
-            // --- LOCK-FREE LINKED LIST EXTRACTION ---
+            //==========================================
+            // LOCK-FREE LINKED LIST EXTRACTION
+            //==========================================
                         do {
                 // Capture the current head of the linked list.
                 current_head = tsm->slot_heads[slot_idx];

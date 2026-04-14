@@ -1,17 +1,17 @@
+# nrpy/infrastructures/BHaH/general_relativity/geodesics/massive/calculate_ode_rhs_massive.py
 r"""
-Define C function for computing massive particle geodesic ODE right-hand sides.
+Provides the infrastructure for computing massive particle geodesic right-hand sides.
 
-This module defines the 'calculate_ode_rhs_massive' C function, which evaluates
-the right-hand sides (RHS) of the coupled system of 8 first-order ODEs governing
-massive particle geodesics.
+This module defines the Python function that constructs and registers the C kernel
+evaluating the right-hand sides (RHS) of the eight first-order ordinary differential
+equations governing massive particle geodesics. The mathematical system derives from
+the geodesic equations $dx^\mu/d\tau = u^\mu$ and
+$du^\mu/d\tau = -\Gamma^\mu_{\alpha\beta} u^\alpha u^\beta$. The code generation
+process translates SymPy expressions into C code. Caching values into local scalars
+and reading from local arrays organizes memory access. Common Subexpression Elimination
+(CSE) reduces floating-point operations during the derivative calculation.
 
-It utilizes a thread-local architecture for maximum CPU register efficiency,
-discarding the previous SoA block indexing methodology.
-
-The system is derived from:
-    $dx^\mu/d\tau = u^\mu$
-    $du^\mu/d\tau = -\Gamma^\mu_{\alpha\beta} u^\alpha u^\beta$
-Author: Dalton J. Moone.
+Author: Dalton Moone.
 """
 
 import sys
@@ -26,11 +26,14 @@ import nrpy.c_function as cfc
 def calculate_ode_rhs_massive(
     geodesic_rhs_expressions: List[sp.Expr], coordinate_symbols: List[sp.Symbol]
 ) -> None:
-    """
+    r"""
     Define the C engine for the massive particle geodesic ODE right-hand sides.
 
-    This function processes the SymPy expressions into highly optimized, thread-local
-    C code for execution on CPU architectures.
+    This function processes the SymPy expressions into thread-local C code. Caching
+    values into local scalars and reading from thread-local arrays organizes data
+    transfer and memory allocation. Common Subexpression Elimination (CSE) reduces
+    floating-point operations and increases register reuse during the derivative
+    calculation.
 
     :param geodesic_rhs_expressions: List of 8 symbolic expressions for the RHS.
     :param coordinate_symbols: List of 4 symbolic coordinates (e.g., [t, x, y, z]).
@@ -42,9 +45,10 @@ def calculate_ode_rhs_massive(
 
     # Construct the thread-local unpacking preamble
     preamble_lines = [
-        "  // --- THREAD-LOCAL STATE UNPACKING ---",
-        "  // Algorithmic Step: Extract spatial coordinates $x^i$ and 4-velocity $u^\\mu$ from the local state vector.",
-        "  // Hardware Justification: Caching these values into local scalars forces the compiler to allocate fast hardware registers.",
+        "  //==========================================",
+        "  // THREAD-LOCAL STATE UNPACKING",
+        "  //==========================================",
+        "  // Extract spatial coordinates $x^i$ and 4-velocity $u^\\mu$ from the local state vector.",
     ]
 
     for i, sym in enumerate(coordinate_symbols):
@@ -59,12 +63,11 @@ def calculate_ode_rhs_massive(
                 f"  const double uU{i} = f_local[{i+4}]; // Unpack 4-velocity component $u^{i}$."
             )
 
-    preamble_lines.append("\n  // --- METRIC AND CONNECTION UNPACKING ---")
     preamble_lines.append(
-        "  // Algorithmic Step: Extract pre-computed metric $g_{\\mu\\nu}$ and Christoffel symbols $\\Gamma^\\alpha_{\\mu\\nu}$."
+        "\n  //==========================================\n  // METRIC AND CONNECTION UNPACKING\n  //=========================================="
     )
     preamble_lines.append(
-        "  // Hardware Justification: Reading from the thread-local arrays guarantees L1 cache hits."
+        "  // Extract pre-computed metric $g_{\\mu\\nu}$ and Christoffel symbols $\\Gamma^\\alpha_{\\mu\\nu}$."
     )
 
     curr_idx = 0
@@ -96,14 +99,14 @@ def calculate_ode_rhs_massive(
         geodesic_rhs_expressions, k_array_outputs, enable_cse=True, include_braces=False
     )
 
-    # Define C-function arguments and metadata in Master Order
+    # Define C-function arguments and metadata
     includes = ["BHaH_defines.h"]
 
-    desc = r"""@brief Portable CPU derivatives for the massive geodesic ODE system.
+    desc = r"""@brief Portable derivatives for the massive geodesic ODE system.
 
     Calculates $dx^\mu/d\tau$ and $du^\mu/d\tau$ using the provided state vector and
-    pre-computed Christoffel symbols $\Gamma^\mu_{\alpha\beta}$. Uses thread-local arrays to guarantee
-    intermediate values remain in hardware registers.
+    pre-computed Christoffel symbols $\Gamma^\mu_{\alpha\beta}$. Thread-local arrays
+    organize intermediate values during the calculation.
 
     @param f_local Local state vector $[t, x, y, z, u^t, u^x, u^y, u^z]$.
     @param metric_local Thread-local flattened metric array $g_{\mu\nu}$.
@@ -124,9 +127,10 @@ def calculate_ode_rhs_massive(
     include_CodeParameters_h = False
 
     body = "\n".join(preamble_lines) + "\n\n"
-    body += "  // --- GEODESIC EQUATION EVALUATION ---\n"
-    body += "  // Algorithmic Step: Evaluate the SymPy-generated Common Subexpression Elimination (CSE) block for the ODE RHS.\n"
-    body += "  // Hardware Justification: CSE minimizes total FLOPs and maximizes register reuse during derivative calculation.\n"
+    body += "  //==========================================\n"
+    body += "  // GEODESIC EQUATION EVALUATION\n"
+    body += "  //==========================================\n"
+    body += "  // Evaluate the SymPy-generated Common Subexpression Elimination (CSE) block for the ODE RHS.\n"
     body += f"  {kernel}"
 
     # Register the function, omitting empty kwargs to prevent bloat

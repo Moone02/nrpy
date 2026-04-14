@@ -1,11 +1,19 @@
+# nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/find_event_time_and_state.py
 """
-Module contains the high-precision event-finding C kernel.
+Defines the event-finding C kernel.
 
-Module resolves exact coordinate intersections when a plane
-crossing is detected. It utilizes second-order quadratic interpolation
-for root-finding and Lagrange interpolation for state reconstruction at
-the intersection boundaries.
-Author: Dalton J. Moone.
+This module resolves exact coordinate intersections when a boundary plane crossing is
+detected by evaluating historical trajectory points against the target plane equation.
+It accepts the thread-local state arrays and affine parameters from the current and
+two previous integration steps, along with the geometric unit normal and orthogonal
+distance of the target plane. The algorithm executes a fallback linear seed followed
+by second-order quadratic interpolation to resolve the exact affine root. The full
+tensor state is then reconstructed at the boundary using three-point Lagrange
+polynomials. Mapping this logic directly to local memory space minimizes global data
+transfers and maintains all intermediate state reconstructions within local hardware
+threads.
+
+Author: Dalton Moone.
 """
 
 import nrpy.c_function as cfc
@@ -31,9 +39,8 @@ def find_event_time_and_state() -> None:
     integration steps to construct a quadratic model of the trajectory relative
     to the target plane. The intersection $\lambda$ is solved via the quadratic formula
     and the full state $f^\mu$ is reconstructed via Lagrange polynomials.
-    Mapping logic directly to thread-local registers preserves the strict sm_86 architecture limits by
-    bypassing global memory fetches and keeping all intermediates within the 255
-    registers per thread."""
+    Mapping logic directly to thread-local registers minimizes global memory fetches
+    and keeps all intermediates within hardware register limits."""
     cfunc_type = "BHAH_HD_INLINE void"
     name = "find_event_time_and_state"
     params = (
@@ -50,7 +57,9 @@ def find_event_time_and_state() -> None:
     )
     include_CodeParameters_h = False
     body = r"""
-    // --- TEMPORAL AND GEOMETRIC STATE UNPACKING ---
+    //==========================================
+    // TEMPORAL AND GEOMETRIC STATE UNPACKING
+    //==========================================
     // Evaluates the geometric plane equation $n_i x^i - d$ at the historical steps.
     // Executing this via thread-local registers minimizes instruction latency.
 
@@ -58,7 +67,9 @@ def find_event_time_and_state() -> None:
     const double f1 = f_p_local[1]*normal[0] + f_p_local[2]*normal[1] + f_p_local[3]*normal[2] - dist;     // Plane evaluation at step $n-1$.
     const double f2 = f_local[1]*normal[0] + f_local[2]*normal[1] + f_local[3]*normal[2] - dist;           // Plane evaluation at step $n$.
 
-    // --- STEP 1: LINEAR SEED CALCULATION ---
+    //==========================================
+    // STEP 1: LINEAR SEED CALCULATION
+    //==========================================
     // Provides a fallback value if the quadratic interpolation fails or is unnecessary.
     // Uses linear interpolation $\frac{y_2 x_1 - y_1 x_2}{y_2 - y_1}$ for numerical stability.
 
@@ -71,7 +82,9 @@ def find_event_time_and_state() -> None:
         t_linear = lam_p;
     }
 
-    // --- STEP 2: QUADRATIC INTERPOLATION (SECOND-ORDER ACCURACY) ---
+    //==========================================
+    // STEP 2: QUADRATIC INTERPOLATION (SECOND-ORDER ACCURACY)
+    //==========================================
     const double h0 = lam_p - lam_p_p; // Interval size $\Delta\lambda$ between step $n-2$ and $n-1$.
     const double h1 = lam - lam_p;     // Interval size $\Delta\lambda$ between step $n-1$ and $n$.
     double lambda_event = t_linear;    // The resulting affine parameter $\lambda$ for the crossing.
@@ -97,7 +110,9 @@ def find_event_time_and_state() -> None:
         }
     }
 
-    // --- STEP 3: LAGRANGE STATE RECONSTRUCTION ---
+    //==========================================
+    // STEP 3: LAGRANGE STATE RECONSTRUCTION
+    //==========================================
     // Reconstruct the full 9-component state vector $f^\mu$ at the exact $\lambda_{event}$.
     const double t = lambda_event; // Local copy of the event parameter $\lambda_{event}$.
     double L0, L1, L2; // Lagrange basis polynomials $L_i(t)$ mapped to the thread-local state.

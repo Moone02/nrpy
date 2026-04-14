@@ -1,19 +1,24 @@
-# nrpy/equations/general_relativity/geodesics/geodesic_diagnostics/normalization_constraint.py
+# nrpy/infrastructures/BHaH/general_relativity/geodesics/normalization_constraint.py
 r"""
-Evaluate the normalization constraint along trajectories using a streaming bundle architecture.
+Defines the normalization constraint evaluated along particle trajectories.
 
-This module implements a pure mathematical execution kernel to compute the scalar invariant $C = g_{\mu\nu} v^\mu v^\nu$.
+This module implements an execution kernel to compute the scalar invariant
+$C = g_{\mu\nu} v^\mu v^\nu$ for massive particles or photons. It defines unpacking
+logic for the spatial velocity components and the symmetric metric tensor. A Structure
+of Arrays (SoA) definition ensures uniform memory mapping. The module registers a C
+function that maps SymPy expressions to a bounded kernel architecture, utilizing the
+configured parallelization strategy.
 
-Author: Dalton J. Moone.
+Author: Dalton Moone.
 """
 
 import sympy as sp
 
 import nrpy.c_codegen as ccg
 import nrpy.c_function as cfc
+import nrpy.helpers.parallelization.utilities as parallel_utils
 import nrpy.infrastructures.BHaH.BHaH_defines_h as Bdefines_h
 import nrpy.params as par
-import nrpy.helpers.parallelization.utilities as parallel_utils
 
 
 def normalization_constraint(norm_expr: sp.Expr, PARTICLE: str) -> None:
@@ -33,13 +38,14 @@ def normalization_constraint(norm_expr: sp.Expr, PARTICLE: str) -> None:
     else:
         raise ValueError(f"Unsupported PARTICLE: {PARTICLE}")
 
-    # --- ARCHITECTURE DETECTION ---
+    # Step 1: Architecture detection
     parallelization = par.parval_from_str("parallelization")
 
     norm_struct_def = r"""
-    // --- NORMALIZATION CONSTRAINT STRUCTURE ---
+    //==========================================
+    // NORMALIZATION CONSTRAINT STRUCTURE
+    //==========================================
     // Defines the physical normalization constraint evaluated along a trajectory.
-    // Hardware Justification: This Structure of Arrays (AoS) definition is injected into the global BHaH_defines.h header to ensure uniform memory mapping across the Host orchestrator and computational threads.
     typedef struct {
         double C;   // Scalar invariant $C = g_{\\mu\\nu} v^\\mu v^\\nu$.
     } normalization_constraint_t;
@@ -71,8 +77,9 @@ def normalization_constraint(norm_expr: sp.Expr, PARTICLE: str) -> None:
 
     # Dynamically generate the unpacking logic based on the specific vector coordinates.
     preamble_lines = [
-        "    // --- COMPONENT HYDRATION ---",
-        "    // Hardware Justification: Unpack 4-vector and metric components using strict SoA macros directly from the memory bundle.",
+        "    //==========================================",
+        "    // COMPONENT HYDRATION",
+        "    //==========================================",
     ]
 
     for i in range(4):
@@ -97,10 +104,12 @@ def normalization_constraint(norm_expr: sp.Expr, PARTICLE: str) -> None:
 
     preamble = "\n".join(preamble_lines)
 
-    # --- THE KERNEL SANDWICH ---
+    # Step 2: The kernel
     if parallelization == "cuda":
         loop_preamble = """
-    // --- CUDA THREAD IDENTIFICATION ---
+    //==========================================
+    // CUDA THREAD IDENTIFICATION
+    //==========================================
     // The identifier $c$ maps directly to a unique particle index in the global VRAM batch.
     const long int c = blockIdx.x * blockDim.x + threadIdx.x; // Global thread evaluation index $c$.
 
@@ -110,7 +119,9 @@ def normalization_constraint(norm_expr: sp.Expr, PARTICLE: str) -> None:
         loop_postamble = ""
     else:
         loop_preamble = """
-    // --- OPENMP LOOP ARCHITECTURE ---
+    //==========================================
+    // OPENMP LOOP ARCHITECTURE
+    //==========================================
     // Distribute particle trajectories across available CPU threads for parallel evaluation.
     #pragma omp parallel for
     for(long int c = 0; c < current_chunk_size; c++) {
@@ -118,7 +129,9 @@ def normalization_constraint(norm_expr: sp.Expr, PARTICLE: str) -> None:
         loop_postamble = "    } // End OpenMP loop"
 
     core_math = f"""
-    // --- MACRO DEFINITIONS ---
+    //==========================================
+    // MACRO DEFINITIONS
+    //==========================================
     // IDX_LOCAL maps a component to the flattened state bundle using SoA layout.
     // Layout: [Component][RayID]
     #ifndef IDX_LOCAL
@@ -127,7 +140,9 @@ def normalization_constraint(norm_expr: sp.Expr, PARTICLE: str) -> None:
 
     {preamble}
 
-    // --- CONSTRAINT EVALUATION ---
+    //==========================================
+    // CONSTRAINT EVALUATION
+    //==========================================
     // Evaluates the analytic SymPy expression for the normalization constraint.
     {math_kernel}
     """

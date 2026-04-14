@@ -1,38 +1,37 @@
-"""STATIC IMAGE RENDERING ENGINE."""
+# nrpy/examples/geodesic_visualizations/render_lensed_image.py
+"""
+Defines the static image rendering engine.
+
+Translates raw geodesic data (blueprints) into visual images. Performs texture mapping
+for the celestial sphere (background stars) and the accretion disk. Uses an
+accumulator-based approach to map ray endpoints from curved spacetime onto a 2D
+pixel grid via the camera's local window coordinates.
+
+Author: Dalton Moone.
+"""
 
 import os
 import zipfile
-from typing import Union, Tuple, Optional
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from typing import Optional, Tuple, Union
 
+import numba as nb  # type: ignore
 import numpy as np
 import numpy.typing as npt
-import numba as nb
 
 from nrpy.examples.geodesic_visualizations import config_and_types as cfg
 
-# STATIC IMAGE RENDERING ENGINE
-# This script translates raw geodesic data (blueprints) into visual images. It performs
-# texture mapping for the celestial sphere (background stars) and the accretion disk.
-# The core logic utilizes an accumulator-based approach to map ray endpoints from
-# curved spacetime onto a 2D pixel grid via the camera's local window coordinates.
-
-
-# Global variables for zero-copy memory sharing across Linux fork() workers
+# Global variables for zero-copy memory sharing across process workers
 _WORKER_SOURCE_TEX: Optional[npt.NDArray[np.float64]] = None
 _WORKER_SPHERE_TEX: Optional[npt.NDArray[np.float64]] = None
 
 
-def _init_linux_worker(
+def _init_worker(
     source_tex: npt.NDArray[np.float64], sphere_tex: npt.NDArray[np.float64]
 ) -> None:
-    """
-    Initialize global textures for a worker process.
-
-    On Linux, the ProcessPoolExecutor uses fork(). This allows the OS to grant 
-    workers instant, zero-copy read access to these global arrays without any 
-    IPC serialization or pickling overhead.
-    """
+    # pylint: disable=global-statement
+    # ProcessPoolExecutor grants workers instant, zero-copy read access to these global
+    # arrays without any IPC serialization or pickling overhead.
     global _WORKER_SOURCE_TEX, _WORKER_SPHERE_TEX
     _WORKER_SOURCE_TEX = source_tex
     _WORKER_SPHERE_TEX = sphere_tex
@@ -52,7 +51,7 @@ def _load_texture(
     :raises TypeError: Raised if the input is not a string or NumPy array.
     """
     # pylint: disable=import-outside-toplevel
-    from PIL import Image  # type: ignore
+    from PIL import Image
 
     if isinstance(image_input, str):
         if not os.path.exists(image_input):
@@ -90,7 +89,7 @@ def generate_source_disk_array(
     :return: A uint8 RGB NumPy array of the generated accretion disk texture.
     """
     # pylint: disable=import-outside-toplevel, import-error
-    import matplotlib.pyplot as plt  # type: ignore
+    import matplotlib.pyplot as plt
 
     half_width = disk_physical_width / 2.0
     # Create coordinate grid representing the flat source plane
@@ -126,31 +125,40 @@ def generate_source_disk_array(
     return final_colors
 
 
-@nb.njit(nogil=True, fastmath=True)
+@nb.njit(nogil=True, fastmath=True)  # type: ignore
 def _accumulate_ray_hits_jit(
-    rays_y_w: npt.NDArray, rays_z_w: npt.NDArray, rays_term_type: npt.NDArray,
-    rays_y_s: npt.NDArray, rays_z_s: npt.NDArray,
-    rays_phi: npt.NDArray, rays_theta: npt.NDArray,
-    y_w_min: float, y_w_max: float, z_w_min: float, z_w_max: float,
-    window_y_range: float, window_z_range: float,
-    output_pixel_width: int, output_pixel_height: int,
+    rays_y_w: npt.NDArray[np.float64],
+    rays_z_w: npt.NDArray[np.float64],
+    rays_term_type: npt.NDArray[np.int32],
+    rays_y_s: npt.NDArray[np.float64],
+    rays_z_s: npt.NDArray[np.float64],
+    rays_phi: npt.NDArray[np.float64],
+    rays_theta: npt.NDArray[np.float64],
+    y_w_min: float,
+    y_w_max: float,
+    z_w_min: float,
+    z_w_max: float,
+    window_y_range: float,
+    window_z_range: float,
+    output_pixel_width: int,
+    output_pixel_height: int,
     source_image_width: float,
-    source_tex: npt.NDArray[np.float64], sphere_tex: npt.NDArray[np.float64],
-    local_pixel_acc: npt.NDArray[np.float64], local_count_acc: npt.NDArray[np.int32],
-    term_source: int, term_sphere: int
+    source_tex: npt.NDArray[np.float64],
+    sphere_tex: npt.NDArray[np.float64],
+    local_pixel_acc: npt.NDArray[np.float64],
+    local_count_acc: npt.NDArray[np.int32],
+    term_source: int,
+    term_sphere: int,
 ) -> None:
-    """
-    JIT-compiled core math loop for mapping rays to pixels.
-    Bypasses the GIL and executes in optimized C-level machine code.
-    Maintains float64 precision internally to avoid catastrophic cancellation.
-    """
+    # JIT-compiled core math loop for mapping rays to pixels.
+    # Bypasses the GIL and executes in optimized machine code.
+    # Maintains float64 precision internally to avoid catastrophic cancellation.
     source_h = source_tex.shape[0]
     source_w = source_tex.shape[1]
     sphere_h = sphere_tex.shape[0]
     sphere_w = sphere_tex.shape[1]
 
-    for i in range(len(rays_y_w)):
-        y_w = rays_y_w[i]
+    for i, y_w in enumerate(rays_y_w):
         z_w = rays_z_w[i]
 
         # Filter out rays that don't hit the camera window bounds
@@ -160,7 +168,7 @@ def _accumulate_ray_hits_jit(
         # Convert local window coordinates to discrete pixel indices
         px = int((y_w - y_w_min) / window_y_range * (output_pixel_width - 1))
         py = int((z_w_max - z_w) / window_z_range * (output_pixel_height - 1))
-        
+
         term = rays_term_type[i]
 
         # --- CASE 1: Source Plane Hits (Accretion Disk) ---
@@ -169,13 +177,13 @@ def _accumulate_ray_hits_jit(
             z_s = rays_z_s[i]
             norm_y = (y_s + (source_image_width / 2.0)) / source_image_width
             norm_z = (z_s + (source_image_width / 2.0)) / source_image_width
-            
+
             px_s = int(norm_y * (source_w - 1))
             py_s = int((1.0 - norm_z) * (source_h - 1))
-            
+
             px_s = max(0, min(px_s, source_w - 1))
             py_s = max(0, min(py_s, source_h - 1))
-            
+
             local_pixel_acc[py, px, 0] += source_tex[py_s, px_s, 0]
             local_pixel_acc[py, px, 1] += source_tex[py_s, px_s, 1]
             local_pixel_acc[py, px, 2] += source_tex[py_s, px_s, 2]
@@ -185,16 +193,16 @@ def _accumulate_ray_hits_jit(
         elif term == term_sphere:
             phi = rays_phi[i]
             theta = rays_theta[i]
-            
+
             norm_phi = (phi / (2 * np.pi)) % 1.0
             norm_theta = theta / np.pi
-            
+
             px_sph = int(norm_phi * (sphere_w - 1))
             py_sph = int(norm_theta * (sphere_h - 1))
-            
+
             px_sph = max(0, min(px_sph, sphere_w - 1))
             py_sph = max(0, min(py_sph, sphere_h - 1))
-            
+
             local_pixel_acc[py, px, 0] += sphere_tex[py_sph, px_sph, 0]
             local_pixel_acc[py, px, 1] += sphere_tex[py_sph, px_sph, 1]
             local_pixel_acc[py, px, 2] += sphere_tex[py_sph, px_sph, 2]
@@ -213,53 +221,76 @@ def _process_blueprint_tile(
     output_pixel_width: int,
     output_pixel_height: int,
     source_image_width: float,
-) -> Tuple[npt.NDArray[np.int64], npt.NDArray[np.int64], npt.NDArray[np.float32], npt.NDArray[np.int32]]:
-    """
-    Worker function to process a blueprint tile archive and return sparse arrays.
-    Reads binary chunks, passes arrays to the JIT-compiled math function, 
-    and compresses the result to avoid IPC memory death spirals.
-    """
+) -> Tuple[
+    npt.NDArray[np.int64],
+    npt.NDArray[np.int64],
+    npt.NDArray[np.float32],
+    npt.NDArray[np.int32],
+]:
+    # Worker function to process a blueprint tile archive and return sparse arrays.
+    # Reads binary chunks, passes arrays to the JIT-compiled math function,
+    # and compresses the result to avoid IPC memory overhead.
     if _WORKER_SOURCE_TEX is None or _WORKER_SPHERE_TEX is None:
-        raise RuntimeError("Worker globals not initialized. Ensure initializer is set in ProcessPoolExecutor.")
+        raise RuntimeError(
+            "Worker globals not initialized. Ensure initializer is set in ProcessPoolExecutor."
+        )
 
     # High-precision float64 arrays strictly for internal math
-    local_pixel_acc = np.zeros((output_pixel_height, output_pixel_width, 3), dtype=np.float64)
-    local_count_acc = np.zeros((output_pixel_height, output_pixel_width), dtype=np.int32)
+    local_pixel_acc = np.zeros(
+        (output_pixel_height, output_pixel_width, 3), dtype=np.float64
+    )
+    local_count_acc = np.zeros(
+        (output_pixel_height, output_pixel_width), dtype=np.int32
+    )
 
-    with zipfile.ZipFile(zip_filename, 'r') as zf:
-        bin_files = [name for name in zf.namelist() if name.endswith('.bin')]
+    with zipfile.ZipFile(zip_filename, "r") as zf:
+        bin_files = [name for name in zf.namelist() if name.endswith(".bin")]
         if not bin_files:
             return np.array([]), np.array([]), np.array([]), np.array([])
-            
-        with zf.open(bin_files[0], 'r') as f:
+
+        with zf.open(bin_files[0], "r") as f:
             while True:
                 raw_bytes = f.read(chunk_bytes)
                 if not raw_bytes:
                     break
-                    
+
                 chunk_data = np.frombuffer(raw_bytes, dtype=cfg.BLUEPRINT_DTYPE)
 
                 # Pass 1D slices of the structured array to the JIT compiler
                 _accumulate_ray_hits_jit(
-                    chunk_data["y_w"], chunk_data["z_w"], chunk_data["termination_type"],
-                    chunk_data["y_s"], chunk_data["z_s"], 
-                    chunk_data["final_phi"], chunk_data["final_theta"],
-                    y_w_min, y_w_max, z_w_min, z_w_max,
-                    window_y_range, window_z_range,
-                    output_pixel_width, output_pixel_height, source_image_width,
-                    _WORKER_SOURCE_TEX, _WORKER_SPHERE_TEX,
-                    local_pixel_acc, local_count_acc,
-                    cfg.TERM_SOURCE_PLANE, cfg.TERM_SPHERE
+                    chunk_data["y_w"],
+                    chunk_data["z_w"],
+                    chunk_data["termination_type"],
+                    chunk_data["y_s"],
+                    chunk_data["z_s"],
+                    chunk_data["final_phi"],
+                    chunk_data["final_theta"],
+                    y_w_min,
+                    y_w_max,
+                    z_w_min,
+                    z_w_max,
+                    window_y_range,
+                    window_z_range,
+                    output_pixel_width,
+                    output_pixel_height,
+                    source_image_width,
+                    _WORKER_SOURCE_TEX,
+                    _WORKER_SPHERE_TEX,
+                    local_pixel_acc,
+                    local_count_acc,
+                    cfg.TERM_SOURCE_PLANE,
+                    cfg.TERM_SPHERE,
                 )
 
     # --- SPARSE MAP-REDUCE COMPRESSION ---
     # Downcast the output payload to float32 only AFTER the float64 math is done
     hit_mask = local_count_acc > 0
     flat_y, flat_x = np.nonzero(hit_mask)
-    flat_colors = local_pixel_acc[hit_mask].astype(np.float32) 
+    flat_colors = local_pixel_acc[hit_mask].astype(np.float32)
     flat_counts = local_count_acc[hit_mask]
 
     return flat_y, flat_x, flat_colors, flat_counts
+
 
 def generate_static_lensed_image(
     output_filename: str,
@@ -277,9 +308,10 @@ def generate_static_lensed_image(
     """
     Generate a static lensed image from geodesic blueprint data.
 
-    The function reads binary blueprints streaming from compressed archives, identifies where each ray 
-    terminated, and maps that endpoint to a pixel on the final image. Uses a process pool executor
-    to process individual blueprint tiles in parallel to drastically improve loading speeds.
+    Reads binary blueprints streaming from compressed archives, identifies where each
+    ray terminated, and maps that endpoint to a pixel on the final image. Uses a
+    process pool executor to process individual blueprint tiles in parallel to improve
+    loading speeds.
 
     :param output_filename: Path where the final rendered image will be saved.
     :param output_pixel_width: Desired width of the output image in pixels.
@@ -312,22 +344,28 @@ def generate_static_lensed_image(
     sphere_texture = _load_texture(sphere_image)
 
     # Accumulators allow for averaging colors if multiple rays map to one pixel
-    pixel_accumulator = np.zeros((output_pixel_height, output_pixel_width, 3), dtype=np.float64)
-    count_accumulator = np.zeros((output_pixel_height, output_pixel_width), dtype=np.int32)
+    pixel_accumulator = np.zeros(
+        (output_pixel_height, output_pixel_width, 3), dtype=np.float64
+    )
+    count_accumulator = np.zeros(
+        (output_pixel_height, output_pixel_width), dtype=np.int32
+    )
 
     record_size_bytes = cfg.BLUEPRINT_DTYPE.itemsize
     chunk_bytes = chunk_size * record_size_bytes
 
-    # Hardware-Aware I/O Throttling
-    # Cap workers to prevent disk thrashing (Default to 8 for fast NVMe, lower if needed)
+    # I/O Throttling
+    # Cap workers to prevent disk thrashing.
     max_io_workers = min(8, (os.cpu_count() or 4))
-    
-    print(f"  -> Dispatching {len(blueprint_filenames)} tiles for Linux-optimized parallel processing ({max_io_workers} workers)...")
-    
+
+    print(
+        f"  -> Dispatching {len(blueprint_filenames)} tiles for parallel processing ({max_io_workers} workers)..."
+    )
+
     with ProcessPoolExecutor(
         max_workers=max_io_workers,
-        initializer=_init_linux_worker,
-        initargs=(source_texture, sphere_texture)
+        initializer=_init_worker,
+        initargs=(source_texture, sphere_texture),
     ) as executor:
         futures = []
         for zip_filename in blueprint_filenames:
@@ -351,7 +389,7 @@ def generate_static_lensed_image(
         # Merge the sparse 1D local accumulators back into the main global accumulator
         for i, future in enumerate(as_completed(futures)):
             flat_y, flat_x, flat_colors, flat_counts = future.result()
-            
+
             if len(flat_counts) > 0:
                 np.add.at(pixel_accumulator, (flat_y, flat_x), flat_colors)
                 np.add.at(count_accumulator, (flat_y, flat_x), flat_counts)

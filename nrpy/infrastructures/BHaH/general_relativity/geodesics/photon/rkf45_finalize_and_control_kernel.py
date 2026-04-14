@@ -1,17 +1,27 @@
+# nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/rkf45_finalize_and_control_kernel.py
 r"""
-Provides the native kernel and host-side orchestrator for the RKF45 Finalize & Control step (Kernel 6).
+Defines the native kernel and host-side orchestrator for the RKF45 Finalize step.
 
-Project Singularity-Axiom: Dual-Architecture (CPU/GPU) Portability.
-This module provides the global memory kernel responsible for computing the final 5th-order
-solution, estimating the local truncation error, and executing the adaptive step-size
-controller logic.
+This module provides the computational kernel responsible for calculating the final
+5th-order solution, estimating the local truncation error, and executing the adaptive
+step-size controller logic. The kernel bounds local memory usage by calculating the
+5th-order candidate and error component-by-component for all 9 tensor components. The
+L1 momentum floor is calculated using the initial state to prevent redundant reads
+during the main loop, while scalar loads map directly to local memory. It calculates
+physical state updates using exact double-precision coefficients, explicitly checking
+for numerical singularities to reject corrupted trajectory steps. Additionally,
+truncation errors are calculated directly via coefficient deltas to avoid catastrophic
+floating-point cancellation against the anchor state. Upon step acceptance, the kernel
+commits the updated state, advances the affine parameter, resets the retry counter,
+and sets the ray status to active; otherwise, it increments the retries and sets a
+rejected or failure status.
 
-Author: Dalton J. Moone.
+Author: Dalton Moone.
 """
 
 import nrpy.c_function as cfc
-import nrpy.params as par
 import nrpy.helpers.parallelization.utilities as parallel_utils
+import nrpy.params as par
 
 
 def rkf45_finalize_and_control_kernel() -> None:
@@ -72,7 +82,9 @@ def rkf45_finalize_and_control_kernel() -> None:
 
     if parallelization == "cuda":
         loop_preamble = """
-    // --- CUDA THREAD IDENTIFICATION ---
+    //==========================================
+    // CUDA THREAD IDENTIFICATION
+    //==========================================
     // The identifier $i$ represents the global thread index mapped to a specific photon ray.
     const long int i = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -82,7 +94,9 @@ def rkf45_finalize_and_control_kernel() -> None:
         loop_postamble = ""
     else:
         loop_preamble = """
-    // --- OPENMP LOOP ARCHITECTURE ---
+    //==========================================
+    // OPENMP LOOP ARCHITECTURE
+    //==========================================
     // Distribute photon rays across available CPU threads for parallel evaluation.
     #pragma omp parallel for
     for(long int i = 0; i < chunk_size; i++) {
@@ -90,25 +104,33 @@ def rkf45_finalize_and_control_kernel() -> None:
         loop_postamble = "    } // End OpenMP loop"
 
     core_math = rf"""
-    // --- MACRO DEFINITIONS FOR BUNDLE ACCESS ---
+    //==========================================
+    // MACRO DEFINITIONS FOR BUNDLE ACCESS
+    //==========================================
     // IDX_F maps a component to the flattened state bundle using SoA layout.
     #define IDX_F(c, ray_id) ((c) * BUNDLE_CAPACITY + (ray_id))
     // IDX_K maps a component to the flattened derivative bundle.
     #define IDX_K(s, c, ray_id) ((s) * 9 * BUNDLE_CAPACITY + (c) * BUNDLE_CAPACITY + (ray_id))
 
-    // --- PARAMETER LOAD ---
+    //==========================================
+    // PARAMETER LOAD
+    //==========================================
     // Load tolerances and state variables from global memory and constant memory structs.
     const double rtol = {cd_access}rkf45_error_tolerance; // Relative tolerance bounds.
     const double atol = {cd_access}rkf45_absolute_error_tolerance; // Absolute tolerance bounds.
     double h_local = ReadCUDA(&d_h[i]); // Local step size $h$.
     const int retries = ReadCUDA(&d_retries[i]); // Current count of failed adaptation attempts.
 
-    // --- COMPUTE & CACHE LOOP ---
+    //==========================================
+    // COMPUTE & CACHE LOOP
+    //==========================================
     // We compute the 5th order candidate and error component-by-component to bound register usage.
     double f_5th_cache[9]; // Thread-local register cache for the evaluated 5th-order state $f^{{\mu}}$.
     double err_norm = 0.0; // Accumulator for the maximum normalized truncation error norm $L_\infty$.
 
-    // --- L1 MOMENTUM FLOOR ---
+    //==========================================
+    // L1 MOMENTUM FLOOR
+    //==========================================
     // Evaluates the $L_1$ momentum floor using the initial state to avoid redundant memory reads inside the main loop.
     double p_L1 = 0.0; // Intermediate accumulator for the $L_1$ momentum floor.
     {{
@@ -119,7 +141,9 @@ def rkf45_finalize_and_control_kernel() -> None:
     }}
 
     for (int comp = 0; comp < 9; ++comp) {{
-        // --- BASE STATE AND DERIVATIVE COMPONENT LOAD ---
+        //==========================================
+        // BASE STATE AND DERIVATIVE COMPONENT LOAD
+        //==========================================
         // Scalar loads mapped directly to registers for the current tensor component.
         const double f_n = ReadCUDA(&d_f_start[IDX_F(comp, i)]);     // Base state tensor component $f_n$.
         const double k0  = ReadCUDA(&d_k_bundle[IDX_K(0, comp, i)]); // Stage 0 derivative vector $k_0$.
@@ -129,8 +153,10 @@ def rkf45_finalize_and_control_kernel() -> None:
         const double k4  = ReadCUDA(&d_k_bundle[IDX_K(4, comp, i)]); // Stage 4 derivative vector $k_4$.
         const double k5  = ReadCUDA(&d_k_bundle[IDX_K(5, comp, i)]); // Stage 5 derivative vector $k_5$.
 
-        // --- 5TH ORDER CANDIDATE EVALUATION & STATE CORRUPTION SAFEGUARD ---
-        /* Evaluates the physical state update $f^\mu_{{n+1}}$ utilizing exact double-precision Runge-Kutta coefficients to catch non-linear tensor interactions near event horizons before memory persistence. */
+        //==========================================
+        // 5TH ORDER CANDIDATE EVALUATION & STATE CORRUPTION SAFEGUARD
+        //==========================================
+        // Evaluates the physical state update $f^\mu_{{n+1}}$ utilizing exact double-precision Runge-Kutta coefficients to catch non-linear tensor interactions near event horizons before memory persistence.
         double update = MulCUDA(16.0 / 135.0, k0); // Intermediate accumulator for the 5th order step update.
         update = FusedMulAddCUDA(6656.0 / 12825.0, k2, update); // Accumulates the stage 2 derivative vector $k_2$.
         update = FusedMulAddCUDA(28561.0 / 56430.0, k3, update); // Accumulates the stage 3 derivative vector $k_3$.
@@ -145,8 +171,10 @@ def rkf45_finalize_and_control_kernel() -> None:
             err_norm = 1e30; // Forces an artificially massive error norm $L_\infty$ to guarantee step rejection.
         }}
 
-        // --- TRUNCATION ERROR EVALUATION ---
-        /* Evaluates the truncation error directly via coefficient deltas ($C_5 - C_4$) to prevent catastrophic floating-point cancellation against the anchor state $f_n$. */
+        //==========================================
+        // TRUNCATION ERROR EVALUATION
+        //==========================================
+        // Evaluates the truncation error directly via coefficient deltas ($C_5 - C_4$) to prevent catastrophic floating-point cancellation against the anchor state $f_n$.
         double err_val = MulCUDA(1.0 / 360.0, k0); // Intermediate accumulator for the truncation error.
         err_val = FusedMulAddCUDA(-128.0 / 4275.0, k2, err_val); // Accumulates the stage 2 error coefficient delta.
         err_val = FusedMulAddCUDA(-2197.0 / 75240.0, k3, err_val); // Accumulates the stage 3 error coefficient delta.
@@ -155,9 +183,11 @@ def rkf45_finalize_and_control_kernel() -> None:
 
         const double err_abs = AbsCUDA(MulCUDA(h_local, err_val)); // The absolute magnitude of the local truncation error.
 
-        // --- ERROR NORMALIZATION & L-INFINITY NORM ---
+        //==========================================
+        // ERROR NORMALIZATION & L-INFINITY NORM
+        //==========================================
         // Evaluates the normalized error for each tensor component to dictate the RKF45 adaptive step size $h$.
-        if (comp < 8) {{ // Excludes the affine parameter $\lambda$ (index 8) from the error check.
+        if (comp < 8) {{ // Excludes the distance traveled (index 8) from the error check.
             double scale = 0.0; // The bounded tolerance scale limit for the current tensor component.
 
             if (comp == 0) {{
@@ -185,7 +215,9 @@ def rkf45_finalize_and_control_kernel() -> None:
         }}
     }}
 
-    // --- UNIFIED ADAPTIVE CONTROL LOGIC ---
+    //==========================================
+    // UNIFIED ADAPTIVE CONTROL LOGIC
+    //==========================================
     // Evaluates the mathematically optimal adaptive step size $h$ for subsequent integration.
     double safety = {cd_access}rkf45_safety_factor; // Safety factor for step-size scaling.
     double factor = (err_norm > 1e-15) ? pow(DivCUDA(1.0, err_norm), 0.2) : 2.0; // Growth or shrink factor for the adaptive step $h$.
@@ -195,7 +227,9 @@ def rkf45_finalize_and_control_kernel() -> None:
     h_new = fmin(h_new, {cd_access}rkf45_h_max); // Enforces the maximum step size $h_{{max}}$ bound.
 
     if (err_norm <= 1.0) {{
-        // --- ACCEPTED STEP MEMORY COMMIT ---
+        //==========================================
+        // ACCEPTED STEP MEMORY COMMIT
+        //==========================================
         // Commits the local register cache to persistent global memory.
         {pragma_unroll}
         for (int comp = 0; comp < 9; ++comp) {{
@@ -213,7 +247,9 @@ def rkf45_finalize_and_control_kernel() -> None:
         // Commit the newly adapted step size $h$ to memory.
         WriteCUDA(&d_h[i], h_new); // Commits the newly adapted step size $h$ to memory.
     }} else {{
-        // --- REJECTED STEP HANDLING ---
+        //==========================================
+        // REJECTED STEP HANDLING
+        //==========================================
         // Increment Retry Counter.
         const int new_retries = retries + 1; // Updated retry count for the current step.
         WriteCUDA(&d_retries[i], new_retries); // Commits the incremented retry count to memory.
@@ -229,7 +265,9 @@ def rkf45_finalize_and_control_kernel() -> None:
         WriteCUDA(&d_h[i], h_new); // Commits the scaled retry step size $h$ to memory.
     }}
 
-    // --- MACRO CLEANUP ---
+    //==========================================
+    // MACRO CLEANUP
+    //==========================================
     // Undefine macros to ensure hermetic compilation and prevent redefinition errors.
     #undef IDX_F
     #undef IDX_K

@@ -1,19 +1,31 @@
+# nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/set_initial_conditions_kernel.py
 """
-Module for generating the native C/CUDA kernel and host-side orchestrator for photon initialization.
+Defines the C kernel and orchestrator for photon initialization.
 
-Module generates a C function that initializes photon trajectories in Cartesian coordinates.
-It allocates a staging buffer to process rays in batches, initializing the spatial positions
-, spatial momenta, and adaptive step sizes, while explicitly setting the temporal momentum to
-zero for downstream constraint solving.
+This module provides a C function that initializes photon trajectories in Cartesian
+coordinates. It allocates a staging buffer to process rays in batches, initializing
+the spatial positions, spatial momenta, and adaptive step sizes. It sets the temporal
+momentum to zero for downstream constraint solving. The implementation orchestrates
+asynchronous data transfers and hardware synchronization.
 
-Author: Dalton J. Moone.
+Single coalesced memory writes prevent thread serialization and ensure aligned cache
+access. An explicit hardware error synchronization trap prevents silent link-time
+symbol failures caused by compiling with -rdc=true. Hydrating pinned memory via data
+bus seeds the Time Slot Manager. Evaluating the initial side of the observer and
+source planes natively prevents redundant device memory allocation and data transfers.
+Thread identification boundaries prevent out-of-bounds access for threads exceeding
+the active chunk. Parallelized batch processing distributes execution across threads.
+Processing memory in static bundles protects hardware limits. A synchronization
+transfer updates the master Structure of Arrays state.
+
+Author: Dalton Moone.
 """
 
 import nrpy.c_function as cfc
+import nrpy.helpers.parallelization.utilities as parallel_utils
 import nrpy.infrastructures.BHaH.BHaH_defines_h as Bdefines_h
 import nrpy.params as par
 from nrpy.helpers.loop import loop
-import nrpy.helpers.parallelization.utilities as parallel_utils
 
 # Define the C-structs required for the simulation pipeline.
 # These are registered here to ensure they appear in BHaH_defines.h before
@@ -104,7 +116,6 @@ def set_initial_conditions_kernel(spacetime_name: str) -> None:
             "window_center_y",
             "window_center_z",
         ],
-
         [50.0, 0.0, 0.0],
         commondata=True,
         add_to_parfile=False,
@@ -126,7 +137,6 @@ def set_initial_conditions_kernel(spacetime_name: str) -> None:
             "window_height",
             "t_start",
         ],
-
         [50.0, 0.0, 0.0, 51.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 100.0],
         commondata=True,
         add_to_parfile=True,
@@ -154,38 +164,48 @@ def set_initial_conditions_kernel(spacetime_name: str) -> None:
     if parallelization != "cuda":
         arg_dict["commondata"] = "const commondata_struct *restrict"
 
-    # --- ARCHITECTURE-SPECIFIC KERNEL PREAMBLE/POSTAMBLE (The Sandwich) ---
+    # ==========================================
+    # ARCHITECTURE-SPECIFIC KERNEL PREAMBLE/POSTAMBLE
+    # ==========================================
     if parallelization == "cuda":
         loop_preamble = r"""
-    // --- THREAD IDENTIFICATION & BOUNDARY CHECKS ---
+    //==========================================
+    // THREAD IDENTIFICATION & BOUNDARY CHECKS
+    //==========================================
     // Thread ID maps to a unique photon index within the current bundle batch via the identifier $c$.
     const long int c = blockIdx.x * blockDim.x + threadIdx.x;
 
-    // Hardware Justification: Guard prevents out-of-bounds VRAM access for threads exceeding the active chunk.
     if (c >= chunk_size) return;
     """
         loop_postamble = ""
     else:
         loop_preamble = r"""
-    // --- OPENMP LOOP ARCHITECTURE ---
-    // Hardware Justification: OpenMP parallelizes the batch processing across available CPU cores.
+    //==========================================
+    // OPENMP LOOP ARCHITECTURE
+    //==========================================
     #pragma omp parallel for
     for (long int c = 0; c < chunk_size; c++) {
     """
         loop_postamble = "} // End OpenMP loop"
 
-    # --- CORE MATH (Hardware Agnostic) ---
+    # ==========================================
+    # CORE MATH (Hardware Agnostic)
+    # ==========================================
     core_math = rf"""
     // The identifier $i$ represents the global ray index within the master $num\_rays$ SoA.
     const long int i = start_idx + c;
 
-    // --- MACRO DEFINITIONS FOR BUNDLE ACCESS ---
+    //==========================================
+    // MACRO DEFINITIONS FOR BUNDLE ACCESS
+    //==========================================
     // IDX_F maps a component to the flattened state bundle using SoA layout aligned to the active BUNDLE_CAPACITY.
     #define IDX_F(comp, ray_id) ((comp) * BUNDLE_CAPACITY + (ray_id))
     // IDX_H maps to the 1D adaptive step size bundle.
     #define IDX_H(ray_id) (ray_id)
 
-    // --- PIXEL MAPPING & GEOMETRY ---
+    //==========================================
+    // PIXEL MAPPING & GEOMETRY
+    //==========================================
     // Vertical pixel coordinate index within the virtual observer's projection frame.
     const int row = i / {cd_access}scan_density;
     // Horizontal pixel coordinate index within the virtual observer's projection frame.
@@ -203,11 +223,10 @@ def set_initial_conditions_kernel(spacetime_name: str) -> None:
         {cd_access}window_center_z + x_pix*nx_2 + y_pix*ny_2
     }};
 
-    // --- INITIAL STATE POPULATION ---
-    // Algorithmic Step: Write the starting position and spatial momentum explicitly to the VRAM bundle.
-    // Algorithmic Step: Write the starting position and spatial momentum explicitly to the VRAM bundle.
-
-    // Hardware Justification: Single coalesced memory writes prevent warp serialization on sm_86 and ensure aligned cache access on CPUs.
+    //==========================================
+    // INITIAL STATE POPULATION
+    //==========================================
+    // Write the starting position and spatial momentum explicitly to the VRAM bundle.
     d_f_bundle[IDX_F(0, c)] = {cd_access}t_start; // Coordinate time $t$
     d_f_bundle[IDX_F(1, c)] = {cd_access}camera_pos_x; // Spatial position $x$
     d_f_bundle[IDX_F(2, c)] = {cd_access}camera_pos_y; // Spatial position $y$
@@ -220,7 +239,7 @@ def set_initial_conditions_kernel(spacetime_name: str) -> None:
     // Vector component $V^z$ for the unnormalized geometric trajectory.
     const double V_z = target_pos[2] - {cd_access}camera_pos_z;
 
-    // Functional Justification: Normalization ensures initial 4-momentum $p^\mu$ satisfies null trajectory constraints.
+    // Normalization ensures initial 4-momentum $p^\mu$ satisfies null trajectory constraints.
     const double inv_mag_V = 1.0 / sqrt(V_x*V_x + V_y*V_y + V_z*V_z);
 
     // Explicitly set the temporal momentum $p^t = 0$ for downstream Hamiltonian constraint solving.
@@ -236,9 +255,9 @@ def set_initial_conditions_kernel(spacetime_name: str) -> None:
     // Initialize the adaptive step size $h$ for the RKF45 integrator.
     d_h_bundle[IDX_H(c)] = {cd_access}numerical_initial_h;
 
-    // --- MACRO CLEANUP ---
-
-    // --- MACRO CLEANUP ---
+    //==========================================
+    // MACRO CLEANUP
+    //==========================================
     #undef IDX_F
     #undef IDX_H
     """
@@ -269,11 +288,14 @@ def set_initial_conditions_kernel(spacetime_name: str) -> None:
         cfunc_decorators="__global__" if parallelization == "cuda" else "",
     )
 
-    # --- MEMORY BRIDGE ARCHITECTURE ---
+    # ==========================================
+    # MEMORY BRIDGE ARCHITECTURE
+    # ==========================================
     if parallelization == "cuda":
         sync_and_transfer_code = r"""
-        // --- EXPLICIT HARDWARE ERROR SYNCHRONIZATION ---
-        // Hardware Justification: This trap is critical because -rdc=true can cause silent link-time symbol failures.
+        //==========================================
+        // EXPLICIT HARDWARE ERROR SYNCHRONIZATION
+        //==========================================
         #ifdef DEBUG
         cudaDeviceSynchronize();
         cudaError_t err = cudaGetLastError();
@@ -284,9 +306,10 @@ def set_initial_conditions_kernel(spacetime_name: str) -> None:
         }
         #endif
 
-        // --- 9-STRIDED BRIDGE TRANSFER (DEVICE-TO-HOST) ---
-        // Algorithmic Step: Transfer initialized state vectors $f^\mu$ from VRAM back to host RAM.
-        // Hardware Justification: Pinned memory on the host is hydrated via PCIe to seed the Time Slot Manager.
+        //==========================================
+        // 9-STRIDED BRIDGE TRANSFER (DEVICE-TO-HOST)
+        //==========================================
+        // Transfer initialized state vectors $f^\mu$ from VRAM back to host RAM.
         for(int m=0; m<9; m++) {
             cudaMemcpy(all_photons->f + (m * num_rays) + start_idx,
                     d_f_bundle + (m * BUNDLE_CAPACITY),
@@ -294,9 +317,10 @@ def set_initial_conditions_kernel(spacetime_name: str) -> None:
                     cudaMemcpyDeviceToHost);
         }
 
-        // --- 1-STRIDED BRIDGE TRANSFER (DEVICE-TO-HOST) ---
-        // Algorithmic Step: Transfer initialized adaptive step sizes $h$ from VRAM back to host RAM.
-        // Hardware Justification: Device-to-Host transfer required to synchronize the master SoA state.
+        //==========================================
+        // 1-STRIDED BRIDGE TRANSFER (DEVICE-TO-HOST)
+        //==========================================
+        // Transfer initialized adaptive step sizes $h$ from VRAM back to host RAM.
         cudaMemcpy(all_photons->h + start_idx,
                    d_h_bundle,
                    sizeof(double) * chunk_size,
@@ -304,18 +328,20 @@ def set_initial_conditions_kernel(spacetime_name: str) -> None:
         """
     else:
         sync_and_transfer_code = r"""
-        // --- 9-STRIDED BRIDGE TRANSFER (HOST-TO-HOST) ---
-        // Algorithmic Step: Transfer initialized state vectors $f^\mu$ from staging buffer to master SoA.
-        // Hardware Justification: Memory is copied locally in RAM to seed the Time Slot Manager.
+        //==========================================
+        // 9-STRIDED BRIDGE TRANSFER (HOST-TO-HOST)
+        //==========================================
+        // Transfer initialized state vectors $f^\mu$ from staging buffer to master SoA.
         for(int m=0; m<9; m++) {
             memcpy(all_photons->f + (m * num_rays) + start_idx,
                    d_f_bundle + (m * BUNDLE_CAPACITY),
                    sizeof(double) * chunk_size);
         }
 
-        // --- 1-STRIDED BRIDGE TRANSFER (HOST-TO-HOST) ---
-        // Algorithmic Step: Transfer initialized adaptive step sizes $h$ from staging buffer to master SoA.
-        // Hardware Justification: Local memory copy to synchronize the master SoA state.
+        //==========================================
+        // 1-STRIDED BRIDGE TRANSFER (HOST-TO-HOST)
+        //==========================================
+        // Transfer initialized adaptive step sizes $h$ from staging buffer to master SoA.
         memcpy(all_photons->h + start_idx,
                d_h_bundle,
                sizeof(double) * chunk_size);
@@ -341,8 +367,10 @@ def set_initial_conditions_kernel(spacetime_name: str) -> None:
     )
 
     body = rf"""
-    // --- HOST-SIDE GEOMETRY SETUP ---
-    // Algorithmic Step: Pre-calculate the projection plane basis vectors to save device registers.
+    //==========================================
+    // HOST-SIDE GEOMETRY SETUP
+    //==========================================
+    // Pre-calculate the projection plane basis vectors to save device registers.
     // Calculations use the static original window center to maintain consistent projection framing across all local tiles.
     const double cam_x = commondata->camera_pos_x; // The $x$-coordinate of the camera.
     const double cam_y = commondata->camera_pos_y; // The $y$-coordinate of the camera.
@@ -367,13 +395,13 @@ def set_initial_conditions_kernel(spacetime_name: str) -> None:
     const double guide_up[3] = {{commondata->window_up_vec_x, commondata->window_up_vec_y, commondata->window_up_vec_z}};
 
     // Basis vector $n_x^i$ describing the horizontal camera axis.
-    double n_x[3] = {{guide_up[1]*n_z[2] - guide_up[2]*n_z[1], 
-                     guide_up[2]*n_z[0] - guide_up[0]*n_z[2], 
+    double n_x[3] = {{guide_up[1]*n_z[2] - guide_up[2]*n_z[1],
+                     guide_up[2]*n_z[0] - guide_up[0]*n_z[2],
                      guide_up[0]*n_z[1] - guide_up[1]*n_z[0]}};
     // Magnitude of the horizontal basis vector $n_x^i$.
     double mag_n_x = sqrt(n_x[0]*n_x[0] + n_x[1]*n_x[1] + n_x[2]*n_x[2]);
 
-    // Functional Justification: Fallback logic prevents cross-product singularities at geometric poles for numerical stability.
+    // Fallback logic prevents cross-product singularities at geometric poles for numerical stability.
     if (mag_n_x < 1e-9) {{
         // Alternative upward reference vector to avoid cross-product singularities.
         double alternative_up[3] = {{0.0, 1.0, 0.0}};
@@ -407,9 +435,10 @@ def set_initial_conditions_kernel(spacetime_name: str) -> None:
     const double ny_1 = n_y[1];
     const double ny_2 = n_y[2];
 
-    // --- DYNAMIC GEOMETRIC PLANE INITIALIZATION ---
-    // Algorithmic Step: Evaluate the initial side of the observer and source planes natively on the CPU.
-    // Hardware Justification: Computed efficiently exactly once to prevent redundant VRAM allocation and PCIe transfers.
+    //==========================================
+    // DYNAMIC GEOMETRIC PLANE INITIALIZATION
+    //==========================================
+    // Evaluate the initial side of the observer and source planes natively on the CPU.
     // Evaluates against the original global window to correctly flag observer window crossings regardless of tile offset.
     const double val_window = n_z[0] * (cam_x - owc_x) +
                               n_z[1] * (cam_y - owc_y) +
@@ -432,20 +461,25 @@ def set_initial_conditions_kernel(spacetime_name: str) -> None:
         all_photons->on_positive_side_of_source_prev[plane_i] = init_source_side;
     }}
 
-    // --- VRAM STAGING ALLOCATION ---
+    //==========================================
+    // VRAM STAGING ALLOCATION
+    //==========================================
     // Device pointer for the chunked VRAM state staging buffer d_f_bundle.
     double *d_f_bundle;
     // Device pointer for the chunked VRAM step size staging buffer d_h_bundle.
     double *d_h_bundle;
 
-    // Hardware Justification: Memory is processed in bundles to protect the 10GB hardware limit.
     BHAH_MALLOC_DEVICE(d_f_bundle, sizeof(double) * 9 * BUNDLE_CAPACITY);
     BHAH_MALLOC_DEVICE(d_h_bundle, sizeof(double) * BUNDLE_CAPACITY);
 
-    // --- HOST-SIDE PAGINATION LOOP ---
+    //==========================================
+    // HOST-SIDE PAGINATION LOOP
+    //==========================================
     {host_loop_code}
 
-    // --- VRAM DEALLOCATION ---
+    //==========================================
+    // VRAM DEALLOCATION
+    //==========================================
     BHAH_FREE_DEVICE(d_f_bundle);
     BHAH_FREE_DEVICE(d_h_bundle);
     """
@@ -489,7 +523,7 @@ def set_initial_conditions_kernel(spacetime_name: str) -> None:
 
     include_CodeParameters_h = False
 
-    # Register the complete C function using the canonical Master Order.
+    # Register the complete C function
     cfc.register_CFunction(
         prefunc=prefunc,
         includes=includes,

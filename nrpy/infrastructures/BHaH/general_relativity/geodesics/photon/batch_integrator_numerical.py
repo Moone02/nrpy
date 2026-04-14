@@ -1,14 +1,26 @@
+# nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/batch_integrator_numerical.py
 r"""
-Orchestration module for the Project Singularity-Axiom numerical integration pipeline.
+Defines the orchestration module for the numerical integration pipeline.
 
-This module structures the high-level C orchestrator responsible for managing the
-life cycle of photon trajectories $x^\mu$ in numerical spacetimes. It implements a
-Split-Pipeline architecture, decoupling the Runge-Kutta-Fehlberg 4(5) integration
-kernels. Intermediate tensors and state vectors are persisted in Global VRAM via
-flattened Structure of Arrays (SoA) scratchpad bundles. This design avoids register
-spilling and cache thrashing on the hardware by trading maximum VRAM bandwidth for
-register stability.
-Author: Dalton J. Moone.
+This module structures the C orchestrator responsible for managing the life cycle of
+photon trajectories $x^\mu$ in numerical spacetimes. It implements a split-pipeline
+architecture, decoupling the Runge-Kutta-Fehlberg 4(5) integration kernels.
+Intermediate tensors and state vectors are persisted in flattened Structure of Arrays
+bundles. The orchestrator manages asynchronous data transfers and parallel execution
+streams.
+
+Double-buffered streams hide data transfer latency behind the integration compute
+time. The primary execution stream dynamically computes the metric and checks the
+normalization constraint without persistent memory allocation. Pinned memory increases
+transfer bandwidth for diagnostic arrays. Evaluating relative numerical drift natively
+prevents device memory bottlenecks. Pre-computing states prior to the temporal loop
+enables coalesced memory access during iterative integration. Diagnostic probes verify
+that the logic populated coordinates and zeroed the temporal momentum and distance
+traveled components. Intercepting unphysical spacetime regions after calculation
+ensures constraint solver convergence. Evaluating conserved quantities establishes a
+data baseline before the pipeline mutates the state vectors.
+
+Author: Dalton Moone.
 """
 
 import nrpy.c_function as cfc
@@ -112,14 +124,16 @@ def batch_integrator_numerical(spacetime_name: str) -> None:
         results_memcpy = "cudaMemcpy(results_buffer, d_results_buffer, sizeof(blueprint_data_t) * num_rays, cudaMemcpyDeviceToHost);"
         calc_blueprint = "calculate_and_fill_blueprint_data_universal(&all_photons_host, num_rays, results_buffer, 0);"
         set_intitial_con = f" set_initial_conditions_kernel_{spacetime_name}(commondata, num_rays, &all_photons_host, window_center_out, n_x_out, n_y_out, n_z_out,0);"
-        stream_destroy = "cudaStreamDestroy(streams[s]); // Hardware Resource Free: Purges the hardware stream execution context."
+        stream_destroy = "cudaStreamDestroy(streams[s]); // Purges the hardware stream execution context."
         free_device = "BHAH_FREE_DEVICE"
         free_pinned = "BHAH_FREE_PINNED"
     else:
         results_memcpy = "memcpy(results_buffer, d_results_buffer, sizeof(blueprint_data_t) * num_rays);"
         calc_blueprint = "calculate_and_fill_blueprint_data_universal(&all_photons_host, num_rays, results_buffer, 0);"
         set_intitial_con = f" set_initial_conditions_kernel_{spacetime_name}(commondata, num_rays, &all_photons_host, window_center_out, n_x_out, n_y_out, n_z_out);"
-        stream_destroy = "// Hardware Justification: Stream destruction natively omitted for synchronous CPU execution."
+        stream_destroy = (
+            "// Stream destruction natively omitted for synchronous CPU execution."
+        )
         free_device = "BHAH_FREE"
         free_pinned = "BHAH_FREE"
 
@@ -137,12 +151,6 @@ def batch_integrator_numerical(spacetime_name: str) -> None:
 
         stream_arg = ", 0"
         free_pinned = "BHAH_FREE_PINNED"
-
-        h2d_f_comment = r"// Hardware Justification: Asynchronously pushes strictly bounded initial states to VRAM on stream 0 to minimize PCIe latency."
-        d2h_metric_comment = r"// Hardware Justification: Retrieves the symmetric metric tensor $g_{\mu\nu}$ to Host memory for inspection restricted to the active chunk."
-        sync_metric_comment = r"// Hardware Justification: Hard synchronization barrier on stream 0 to inspect the payload prior to constraint solving."
-        d2h_f_comment = r"// Hardware Justification: Retrieves strictly bounded constrained state vectors back to CPU RAM on stream 0."
-        sync_f_comment = r"// Hardware Justification: Hard synchronization barrier on stream 0 to guarantee PCIe transfer completion before Host unpacking."
     else:
         # Generates synchronous Host memory copies for native OpenMP architectures.
         def memcpy_async(
@@ -153,23 +161,19 @@ def batch_integrator_numerical(spacetime_name: str) -> None:
 
         def stream_sync(stream: str) -> str:
             # pylint: disable=unused-argument
-            return r"// Hardware Justification: Stream synchronization is natively omitted for synchronous CPU execution."
+            return r"// Stream synchronization is natively omitted for synchronous CPU execution."
 
         stream_arg = ", 0"
         free_pinned = "BHAH_FREE"
-
-        h2d_f_comment = r"// Hardware Justification: Duplicates strictly bounded initial states to localized pipeline arrays using standard memory copies."
-        d2h_metric_comment = r"// Hardware Justification: Duplicates the symmetric metric tensor $g_{\mu\nu}$ to diagnostic bridges via standard memory copies."
-        sync_metric_comment = r"// Hardware Justification: Barrier omitted for synchronous Host execution prior to constraint solving."
-        d2h_f_comment = r"// Hardware Justification: Retrieves localized constrained state vectors back to the primary Host bridge using standard memory copies."
-        sync_f_comment = r"// Hardware Justification: Barrier omitted for synchronous Host execution before unpacking."
 
     # Define stream args for CUDA
     stream_arg_current = ", current" if parallelization == "cuda" else ", current"
     stream_arg_next = ", next" if parallelization == "cuda" else ", next"
 
     body = rf"""
-    // --- 1. HOST & DEVICE ALLOCATION ---
+    //==========================================
+    // 1. HOST & DEVICE ALLOCATION
+    //==========================================
 
     // The master host-side Structure of Arrays (SoA) tracking all photons $f^\mu$.
     PhotonStateSoA all_photons_host;
@@ -203,7 +207,9 @@ def batch_integrator_numerical(spacetime_name: str) -> None:
 
     {stream_setup_str}
 
-    // --- DOUBLE-BUFFERED BRIDGE ARRAYS ---
+    //==========================================
+    // DOUBLE-BUFFERED BRIDGE ARRAYS
+    //==========================================
     // Extraction buffer used by the TimeSlotManager to map sparse indices to contiguous execution blocks.
     long int *chunk_buffer[2];
     // Bridge array staging the state vector $f^\mu$ for memory transfers.
@@ -233,7 +239,9 @@ def batch_integrator_numerical(spacetime_name: str) -> None:
     // Bridge array staging the source emission event lock for memory transfers.
     bool *source_event_found_bridge[2];
 
-    // --- DOUBLE-BUFFERED VRAM SCRATCHPADS ---
+    //==========================================
+    // DOUBLE-BUFFERED VRAM SCRATCHPADS
+    //==========================================
     // Scratchpad array holding the physical normalization diagnostic outputs.
     normalization_constraint_t *d_norm_bundle[2];
     // Scratchpad tracking the current state vector $f^\mu$ bounding the RKF45 step.
@@ -326,7 +334,9 @@ def batch_integrator_numerical(spacetime_name: str) -> None:
     // Initializes the temporal manager strictly on the CPU to coordinate the Split-Pipeline batches.
     slot_manager_init(&tsm, commondata->slot_manager_t_min, commondata->t_start + 1.0, commondata->slot_manager_delta_t, num_rays);
 
-    // --- DIAGNOSTIC MEMORY ALLOCATION ---
+    //==========================================
+    // DIAGNOSTIC MEMORY ALLOCATION
+    //==========================================
     // Host pointer tracking the initial conserved quantities prior to integration.
     conserved_quantities_t *initial_cq_host = NULL;
     // Host pointer tracking the terminal conserved quantities post integration.
@@ -340,19 +350,23 @@ def batch_integrator_numerical(spacetime_name: str) -> None:
     }}
 
 
-    /* Algorithmic Step: Evaluate initial coordinate states and map global spacetime metrics to memory bounds. Hardware Justification: This pre-computation stage occurs prior to the temporal loop to maximize coalesced memory access during iterative integration. */
-    // --- 2. INITIALIZATION PHASE ---
+    //==========================================
+    // 2. INITIALIZATION PHASE
+    //==========================================
+    // Evaluate initial coordinate states and map global spacetime metrics to memory bounds.
 
     double window_center_out[3]; // 3D array storing the spatial Cartesian coordinates $x^i$ of the observer window center.
     double n_x_out[3]; // 3D orthonormal basis vector pointing along the $x$-axis of the local window geometry.
     double n_y_out[3]; // 3D orthonormal basis vector pointing along the $y$-axis of the local window geometry.
     double n_z_out[3]; // 3D orthonormal basis vector pointing along the $z$-axis of the local window geometry.
 
-    // Hardware Justification: Operates synchronously as the primary state array must be fully populated before pipeline dispatch.
+    // Operates synchronously as the primary state array must be fully populated before pipeline dispatch.
     {set_intitial_con}
 
-    /* Algorithmic Step: Scans the master Host SoA immediately following the initialization kernel call. Hardware Justification: This architectural step verifies that the Host-side logic has correctly populated the starting coordinates $x^\mu$ and zeroed the temporal momentum $p_t$ and affine parameter $\lambda$ components. */
-    // --- DIAGNOSTIC PROBE: DETAILED INITIAL POSITION & PLACEHOLDER ALIGNMENT ---
+    //==========================================
+    // DIAGNOSTIC PROBE: DETAILED INITIAL POSITION & PLACEHOLDER ALIGNMENT
+    //==========================================
+    // Scans the master Host SoA immediately following the initialization kernel call.
 
     long int init_mismatch_count = 0; // Accumulator tracking the total number of physical state initializations that failed structural validation.
     long int mismatch_t = 0; // Counter tracking validation failures for the temporal coordinate $t$.
@@ -360,7 +374,7 @@ def batch_integrator_numerical(spacetime_name: str) -> None:
     long int mismatch_y = 0; // Counter tracking validation failures for the spatial coordinate $y$.
     long int mismatch_z = 0; // Counter tracking validation failures for the spatial coordinate $z$.
     long int mismatch_pt = 0; // Counter tracking validation failures for the temporal momentum $p_t$.
-    long int mismatch_lam = 0; // Counter tracking validation failures for the affine parameter $\lambda$.
+    long int mismatch_lam = 0; // Counter tracking validation failures for the distance traveled.
 
     for (long int p = 0; p < num_rays; p++) {{ // Loop iterator index $p$ mapping to a unique photon trajectory $x^\mu$ during diagnostic validation.
         const double t_check = all_photons_host.f[0 * num_rays + p]; // Evaluates the current temporal coordinate $t$ from the Host SoA.
@@ -368,21 +382,21 @@ def batch_integrator_numerical(spacetime_name: str) -> None:
         const double y_check = all_photons_host.f[2 * num_rays + p]; // Evaluates the current spatial coordinate $y$ from the Host SoA.
         const double z_check = all_photons_host.f[3 * num_rays + p]; // Evaluates the current spatial coordinate $z$ from the Host SoA.
         const double pt_check = all_photons_host.f[4 * num_rays + p]; // Evaluates the initial temporal momentum $p_t$ from the Host SoA.
-        const double lam_check = all_photons_host.f[8 * num_rays + p]; // Evaluates the initial affine parameter $\lambda$ from the Host SoA.
+        const double lam_check = all_photons_host.f[8 * num_rays + p]; // Evaluates the initial distance traveled from the Host SoA.
 
         bool fail_t = fabs(t_check - commondata->t_start) > 1e-10; // Boolean flag indicating temporal coordinate $t$ validation failure.
         bool fail_x = fabs(x_check - commondata->camera_pos_x) > 1e-10; // Boolean flag indicating spatial coordinate $x$ validation failure.
         bool fail_y = fabs(y_check - commondata->camera_pos_y) > 1e-10; // Boolean flag indicating spatial coordinate $y$ validation failure.
         bool fail_z = fabs(z_check - commondata->camera_pos_z) > 1e-10; // Boolean flag indicating spatial coordinate $z$ validation failure.
         bool fail_pt = fabs(pt_check) > 1e-15; // Boolean flag indicating temporal momentum $p_t$ validation failure.
-        bool fail_lam = fabs(lam_check) > 1e-15; // Boolean flag indicating affine parameter $\lambda$ validation failure.
+        bool fail_lam = fabs(lam_check) > 1e-15; // Boolean flag indicating distance traveled validation failure.
 
         if (fail_t) mismatch_t++; // Increments the validation failure counter for temporal coordinate $t$.
         if (fail_x) mismatch_x++; // Increments the validation failure counter for spatial coordinate $x$.
         if (fail_y) mismatch_y++; // Increments the validation failure counter for spatial coordinate $y$.
         if (fail_z) mismatch_z++; // Increments the validation failure counter for spatial coordinate $z$.
         if (fail_pt) mismatch_pt++; // Increments the validation failure counter for temporal momentum $p_t$.
-        if (fail_lam) mismatch_lam++; // Increments the validation failure counter for affine parameter $\lambda$.
+        if (fail_lam) mismatch_lam++; // Increments the validation failure counter for the distance traveled.
 
         if (fail_t || fail_x || fail_y || fail_z || fail_pt || fail_lam) {{
             init_mismatch_count++; // Increments the total accumulation of trajectory structural validation failures.
@@ -391,7 +405,7 @@ def batch_integrator_numerical(spacetime_name: str) -> None:
 
     if (init_mismatch_count > 0) {{
         const double mismatch_percent = ((double)init_mismatch_count / (double)num_rays) * 100.0; // Calculates the failure rate percentage for the initial state alignment.
-        // Hardware Justification: This is a soft warning to surface initialization inconsistencies without halting execution.
+        // This is a soft warning to surface initialization inconsistencies without halting execution.
         printf("[DIAGNOSTIC] Initialization Alignment Check: %ld out of %ld rays (%.2f%%) fail coordinate/placeholder validation.\n", init_mismatch_count, num_rays, mismatch_percent);
     }}
 
@@ -409,25 +423,25 @@ def batch_integrator_numerical(spacetime_name: str) -> None:
         }}
 
         for (int c_k = 0; c_k < 9; ++c_k) {{ // Loop index $c_k$ orchestrating the memory transfer of the 9 state vector $f^\mu$ components.
-            {h2d_f_comment}
             {memcpy_async("d_f_bundle[0] + c_k * BUNDLE_CAPACITY", "f_bridge[0] + c_k * BUNDLE_CAPACITY", "sizeof(double) * chunk_size", "cudaMemcpyHostToDevice", "streams[0]")}
         }}
 
-        // Hardware Justification: Calculates symmetric metric tensor $g_{{\mu\nu}}$ strictly on the primary operational pipeline for the Hamiltonian constraint.
+        // Calculates symmetric metric tensor $g_{{\mu\nu}}$ strictly on the primary operational pipeline for the Hamiltonian constraint.
         interpolation_kernel_{spacetime_name}(commondata,d_f_bundle[0], d_metric_bundle[0], NULL, chunk_size{stream_arg});
 
-        /* Algorithmic Step: Extracts metric payload to confirm numerical stability prior to momentum solving. Hardware Justification: Ensures constraint solver convergence by intercepting unphysical spacetime regions immediately after calculation. */
-        // --- DIAGNOSTIC PROBE: METRIC INTEGRITY CHECK ---
+        //==========================================
+        // DIAGNOSTIC PROBE: METRIC INTEGRITY CHECK
+        //==========================================
+        // Extracts metric payload to confirm numerical stability prior to momentum solving.
 
         double *metric_diag_bridge; // Pointer storing temporary metric data to validate the interpolation sequence.
-        {malloc_pinned}(metric_diag_bridge, sizeof(double) * 10 * BUNDLE_CAPACITY); // Memory allocation: Temporary bridge mapped to maximize throughput for the metric $g_{{\mu\nu}}$ diagnostic sequence.
+        // Memory allocation: Temporary bridge mapped to maximize throughput for the metric $g_{{\mu\nu}}$ diagnostic sequence.
+        {malloc_pinned}(metric_diag_bridge, sizeof(double) * 10 * BUNDLE_CAPACITY);
 
         for (int m_k = 0; m_k < 10; ++m_k) {{
             // Loop index $m_k$ orchestrating memory transfer of the 10 metric tensor $g_{{\mu\nu}}$ components.
-            {d2h_metric_comment}
             {memcpy_async("metric_diag_bridge + m_k * BUNDLE_CAPACITY", "d_metric_bundle[0] + m_k * BUNDLE_CAPACITY", "sizeof(double) * chunk_size", "cudaMemcpyDeviceToHost", "streams[0]")}
         }}
-        {sync_metric_comment}
         {stream_sync('streams[0]')}
 
         long int metric_nan_count = 0; // Accumulator tracking the total number of metric tensor evaluations containing non-finite values.
@@ -444,19 +458,18 @@ def batch_integrator_numerical(spacetime_name: str) -> None:
         }}
 
         if (metric_nan_count > 0) {{
-            // Hardware Justification: This is a soft warning to highlight numerical metric singularities without aborting the physics engine.
+            // This is a soft warning to highlight numerical metric singularities without aborting the physics engine.
             printf("[DIAGNOSTIC] Init Batch %ld: %ld rays have invalid Metric G_mu_nu before p_t solve.\n", init_batch, metric_nan_count);
         }}
-        {free_pinned}(metric_diag_bridge); // Memory Free: Purges the diagnostic bridge utilized for metric integrity checks.
+        // Memory Free: Purges the diagnostic bridge utilized for metric integrity checks.
+        {free_pinned}(metric_diag_bridge);
 
-        // Hardware Justification: Solves the constraint $p_\mu p^\mu = 0$ to find the temporal momentum $p_t$ natively on the active pipeline.
+        // Solves the constraint $p_\mu p^\mu = 0$ to find the temporal momentum $p_t$ natively on the active pipeline.
         p0_reverse_kernel(d_f_bundle[0], d_metric_bundle[0], chunk_size{stream_arg});
 
         for (int c_k = 0; c_k < 9; ++c_k) {{ // Loop index $c_k$ orchestrating memory transfer of the 9 constrained state vector $f^\mu$ components.
-            {d2h_f_comment}
             {memcpy_async("f_bridge[0] + c_k * BUNDLE_CAPACITY", "d_f_bundle[0] + c_k * BUNDLE_CAPACITY", "sizeof(double) * chunk_size", "cudaMemcpyDeviceToHost", "streams[0]")}
         }}
-        {sync_f_comment}
         {stream_sync('streams[0]')}
 
         long int nan_count = 0; // Accumulator tracking the total number of physical states $f^\mu$ containing NaN values post-constraint solving.
@@ -472,16 +485,18 @@ def batch_integrator_numerical(spacetime_name: str) -> None:
         }}
 
         if (nan_count > 0) {{
-            // Hardware Justification: This is a soft warning alerting to unresolved constraints $p_\mu p^\mu = 0$ for isolated trajectories.
+            // This is a soft warning alerting to unresolved constraints $p_\mu p^\mu = 0$ for isolated trajectories.
             printf("[DIAGNOSTIC] Init Batch %ld: %ld rays contain NaN in state f^mu after p_t solve.\n", init_batch, nan_count);
         }}
     }}
 
-    /* Algorithmic Step: Evaluate initial conserved quantities immediately after generating valid physical null states. Hardware Justification: This baselines the data via chunked pipeline kernels before the Split-Pipeline begins mutating the state vectors. */
-    // --- BASELINE CONSERVED QUANTITIES ---
+    //==========================================
+    // BASELINE CONSERVED QUANTITIES
+    //==========================================
+    // Evaluate initial conserved quantities immediately after generating valid physical null states.
 
     if (commondata->perform_conservation_check) {{
-        // Hardware Justification: Executes global conserved quantities natively via chunked device parameters before pipeline processing.
+        // Executes global conserved quantities natively via chunked device parameters before pipeline processing.
         calculate_conserved_quantities_universal_{spacetime_name}_photon(commondata, &all_photons_host, num_rays, initial_cq_host);
     }}
 
@@ -517,7 +532,9 @@ def batch_integrator_numerical(spacetime_name: str) -> None:
     // Allocates vertical terminal space for the dynamic multi-line progress dashboard.
     printf("\n\n\n\n\n\n\n");
 
-    // --- 3. TEMPORAL LOOP (The Engine) ---
+    //==========================================
+    // 3. TEMPORAL LOOP (The Engine)
+    //==========================================
     // Integer tracking the global number of active photon trajectories to allow early loop termination.
     long int total_active_photons = num_rays;
 
@@ -532,8 +549,10 @@ def batch_integrator_numerical(spacetime_name: str) -> None:
         int next = 1; // Integer index tracking the secondary hardware stream preparing the upcoming payload.
         long int active_chunks[2] = {{ 0, 0}}; // 1D array storing the total number of trajectories queued for each operational stream.
 
-        /* Algorithmic Step: Populate the first bridge and launch asynchronous integration on the primary stream. Hardware Justification: Initializes the pipeline to allow subsequent Host-side packing to overlap with GPU compute. */
-        // --- PHASE A: PRIME THE PUMP (Stream 0) ---
+        //==========================================
+        // PHASE A: PRIME THE PUMP (Stream 0)
+        //==========================================
+        // Populate the first bridge and launch asynchronous integration on the primary stream.
 
         active_chunks[current] = MIN((long int)BUNDLE_CAPACITY, tsm.slot_counts[slot_idx]); // Evaluates the active chunk size bounding the PCIe transfer to avoid VRAM overflow.
 
@@ -647,8 +666,10 @@ def batch_integrator_numerical(spacetime_name: str) -> None:
             {memcpy_async("source_event_found_bridge[current]", "d_source_event_found[current]", "sizeof(bool) * active_chunks[current]", "cudaMemcpyDeviceToHost", "streams[current]")}
         }}
 
-        /* Algorithmic Step: Continuously alternate between streams, packing the next payload while syncing the current. Hardware Justification: Completely hides PCIe DMA transfer latency behind the active RKF45 integration compute time. */
-        // --- PHASE B: THE OVERLAP LOOP ---
+        //==========================================
+        // PHASE B: THE OVERLAP LOOP
+        //==========================================
+        // Continuously alternate between streams, packing the next payload while syncing the current.
 
         while (active_chunks[current] > 0 || tsm.slot_counts[slot_idx] > 0) {{
 
@@ -777,8 +798,8 @@ def batch_integrator_numerical(spacetime_name: str) -> None:
                 }}
 
                 // 2. Unpack 1D arrays sequentially
-                for (int fin_i = 0; fin_i < active_chunks[current]; ++fin_i) {{  
-                    long int m_idx = chunk_buffer[current][fin_i]; 
+                for (int fin_i = 0; fin_i < active_chunks[current]; ++fin_i) {{
+                    long int m_idx = chunk_buffer[current][fin_i];
                     all_photons_host.h[m_idx] = h_bridge[current][fin_i]; // Unpacks the synchronized step size $h$ into the global Host matrix.
                     all_photons_host.status[m_idx] = status_bridge[current][fin_i]; // Unpacks the synchronized trajectory status into the global Host matrix.
                     all_photons_host.rejection_retries[m_idx] = retries_bridge[current][fin_i]; // Unpacks the synchronized rejection count into the global Host matrix.
@@ -793,7 +814,7 @@ def batch_integrator_numerical(spacetime_name: str) -> None:
 
                 // 3. TimeSlotManager State Update (Cache-hot, strictly sequential)
                 for (int fin_i = 0; fin_i < active_chunks[current]; ++fin_i) {{
-                    long int m_idx = chunk_buffer[current][fin_i]; 
+                    long int m_idx = chunk_buffer[current][fin_i];
                     if (status_bridge[current][fin_i] == ACTIVE) {{  // Evaluates the continuation logic if the trajectory remains within safe physical bounds.
                         int next_s_idx = slot_get_index(&tsm, all_photons_host.f[m_idx]); // Evaluates the updated temporal coordinate $t$ to determine the next operational bin.
                         if (next_s_idx != -1) {{  // Confirms the physical state has not exceeded the maximum simulation time bounds.
@@ -810,9 +831,10 @@ def batch_integrator_numerical(spacetime_name: str) -> None:
                 }}
             }}
 
-            /* Algorithmic Step: Evaluate computational throughput and temporal progress to update the terminal dashboard.
-               Hardware Justification: Natively processing metrics on the Host prevents VRAM bottlenecks while providing real-time engine diagnostics. */
-            // --- PROGRESS DASHBOARD ---
+            //==========================================
+            // PROGRESS DASHBOARD
+            //==========================================
+            // Evaluate computational throughput and temporal progress to update the terminal dashboard.
 
             // Captures the terminal hardware clock state for the current chunk.
             clock_gettime(CLOCK_MONOTONIC, &batch_end_time);
@@ -869,23 +891,25 @@ def batch_integrator_numerical(spacetime_name: str) -> None:
             // Resets the hardware clock state for the upcoming integration chunk.
             clock_gettime(CLOCK_MONOTONIC, &batch_start_time);
             // --------------------------
-            
+
             active_chunks[current] = 0; // Clears the execution queue tracker to indicate the active chunk has been fully processed.
             int temp = current; // Temporary integer scalar storing the primary stream index for logical pointer swapping.
             current = next; // Shifts the primary execution tracker to the alternate stream index.
             next = temp; // Assigns the cleared stream index back to the upcoming payload queue.
         }}
 
-       /* Algorithmic Step: Enforce a rigid hardware sync before advancing the physical time clock.
-        Hardware Justification: Prevents race conditions and ensures all coordinate states $f^\mu$
-        strictly adhere to the current temporal bin limits. */
-        // --- PHASE C: THE TIME BARRIER ---
+        //==========================================
+        // PHASE C: THE TIME BARRIER
+        //==========================================
+        // Enforce a rigid hardware sync before advancing the physical time clock.
         BHAH_DEVICE_SYNC(); // Synchronize global state convergence before advancing the central time engine.
 
      }}
 
-    /* Algorithmic Step: Process terminal photon trajectories and extract final geometric intersections. Hardware Justification: Memory transfers execute synchronously on the host to ensure all asynchronous execution pipelines have fully resolved. */
-    // --- 4. Conserved Values & CLEANUP & FINALIZATION ---
+    //==========================================
+    // 4. Conserved Values & CLEANUP & FINALIZATION
+    //==========================================
+    // Process terminal photon trajectories and extract final geometric intersections.
 
         // Device-to-Host transfer: Extracts validated device-native blueprints $b_i$ containing geometric plane intersections.
         {results_memcpy}
@@ -893,11 +917,13 @@ def batch_integrator_numerical(spacetime_name: str) -> None:
         // Kernel Launch: Processes escaped photons intersecting the celestial sphere $r > r_{{escape}}$.
         {calc_blueprint}
 
-        /* Algorithmic Step: Evaluate terminal normalization constraint. Hardware Justification: Reuses the primary execution stream to dynamically compute metric $g_{{\mu\nu}}$ and check the $p_\mu p^\mu$ invariant without persistent host memory. */
-        // --- TERMINAL NORMALIZATION DIAGNOSTIC ---
+        //==========================================
+        // TERMINAL NORMALIZATION DIAGNOSTIC
+        //==========================================
+        // Evaluate terminal normalization constraint.
         if (commondata->perform_conservation_check) {{
             normalization_constraint_t *norm_diag_bridge; // Host pointer for retrieving diagnostic normalization records.
-            {malloc_pinned}(norm_diag_bridge, sizeof(normalization_constraint_t) * BUNDLE_CAPACITY); // Hardware Justification: Pinned memory maximizes PCIe transfer bandwidth for diagnostic arrays.
+            {malloc_pinned}(norm_diag_bridge, sizeof(normalization_constraint_t) * BUNDLE_CAPACITY); // Pinned memory maximizes PCIe transfer bandwidth for diagnostic arrays.
 
             double max_err_norm = 0.0; // Scalar tracking the maximum absolute drift from the expected normalization constraint invariant $C$.
             long int worst_ray_norm = -1; // Absolute index identifying the trajectory $x^\mu$ with the highest constraint violation.
@@ -916,7 +942,6 @@ def batch_integrator_numerical(spacetime_name: str) -> None:
                 }}
 
                 for (int c_k = 0; c_k < 9; ++c_k) {{ // Loop index $c_k$ orchestrating the asynchronous memory transfer of the 9 state vector $f^\mu$ components.
-                    {h2d_f_comment}
                     {memcpy_async("d_f_bundle[0] + c_k * BUNDLE_CAPACITY", "f_bridge[0] + c_k * BUNDLE_CAPACITY", "sizeof(double) * chunk_size", "cudaMemcpyHostToDevice", "streams[0]")}
                 }}
 
@@ -991,8 +1016,10 @@ def batch_integrator_numerical(spacetime_name: str) -> None:
             {stream_destroy}
         }}
 
-        /* Algorithmic Step: Evaluate relative numerical drift on the CPU. Hardware Justification: Evaluating relative numerical drift natively on the CPU prevents VRAM bottlenecks and leverages complex print formatting. */
-        // --- CPU CONSERVATION DRIFT EVALUATION ---
+        //==========================================
+        // CPU CONSERVATION DRIFT EVALUATION
+        //==========================================
+        // Evaluate relative numerical drift on the CPU.
         if (commondata->perform_conservation_check) {{
             // Kernel Launch: Calculates terminal conserved quantities natively on the executing architecture.
             calculate_conserved_quantities_universal_{spacetime_name}_photon(commondata, &all_photons_host, num_rays, final_cq_host);
@@ -1019,7 +1046,7 @@ def batch_integrator_numerical(spacetime_name: str) -> None:
 
             // Loop iterator $i$ spanning the global dataset to calculate errors natively on the CPU.
             for (long int i = 0; i < num_rays; i++) {{
-            
+
                 double err_E = fabs((final_cq_host[i].E - initial_cq_host[i].E) / (initial_cq_host[i].E + 1e-15)); // Evaluates the relative numerical drift for energy $E$.
                 double err_Lz = fabs((final_cq_host[i].Lz - initial_cq_host[i].Lz) / (initial_cq_host[i].Lz + 1e-15)); // Evaluates the relative numerical drift for angular momentum $L_z$.
                 double err_Q = fabs((final_cq_host[i].Q - initial_cq_host[i].Q) / (initial_cq_host[i].Q + 1e-15)); // Evaluates the relative numerical drift for Carter constant $Q$.
@@ -1031,28 +1058,28 @@ def batch_integrator_numerical(spacetime_name: str) -> None:
                 if (err_E > max_err_E) {{
                     max_err_E = err_E; // Updates the maximum tracked relative error for energy $E$.
                     worst_ray_E = i; // Updates the absolute master index $m_{{idx}}$ for the maximum relative energy drift.
-                }} 
-                
+                }}
+
                 if (err_Lz > max_err_Lz) {{
                     max_err_Lz = err_Lz; // Updates the maximum tracked relative error for angular momentum $L_z$.
                     worst_ray_Lz = i; // Updates the absolute master index $m_{{idx}}$ for the maximum relative angular momentum drift.
-                }} 
-                
+                }}
+
                 if (err_Q > max_err_Q) {{
                     max_err_Q = err_Q; // Updates the maximum tracked relative error for Carter constant $Q$.
                     worst_ray_Q = i; // Updates the absolute master index $m_{{idx}}$ for the maximum relative Carter constant drift.
-                }} 
+                }}
 
                 if (abs_err_E > max_abs_err_E) {{
                     max_abs_err_E = abs_err_E; // Updates the maximum tracked absolute error for energy $E$.
                     worst_ray_abs_E = i; // Updates the absolute master index $m_{{idx}}$ for the maximum absolute energy drift.
                 }}
-                
+
                 if (abs_err_Lz > max_abs_err_Lz) {{
                     max_abs_err_Lz = abs_err_Lz; // Updates the maximum tracked absolute error for angular momentum $L_z$.
                     worst_ray_abs_Lz = i; // Updates the absolute master index $m_{{idx}}$ for the maximum absolute angular momentum drift.
                 }}
-                
+
                 if (abs_err_Q > max_abs_err_Q) {{
                     max_abs_err_Q = abs_err_Q; // Updates the maximum tracked absolute error for Carter constant $Q$.
                     worst_ray_abs_Q = i; // Updates the absolute master index $m_{{idx}}$ for the maximum absolute Carter constant drift.
@@ -1067,9 +1094,9 @@ def batch_integrator_numerical(spacetime_name: str) -> None:
 
             printf("  Max Relative Error (Carter Q): %e (Ray %ld)\n", max_err_Q, worst_ray_Q); // Output block printing the maximum relative error for Carter constant $Q$.
             printf("  Max Absolute Error (Carter Q): %e (Ray %ld)\n", max_abs_err_Q, worst_ray_abs_Q); // Output block printing the maximum absolute error for Carter constant $Q$.
-            
+
             printf("=================================================\n\n"); // Output block printing the terminal footer for the diagnostic sequence.
-            
+
             // Host Memory Free: Purges pinned diagnostic buffers.
             {free_pinned}(initial_cq_host); // Purges pinned initial diagnostic data buffer.
             {free_pinned}(final_cq_host); // Purges pinned final diagnostic data buffer.

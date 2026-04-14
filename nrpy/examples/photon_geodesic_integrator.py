@@ -1,7 +1,7 @@
 r"""
 Construct a complete C project for integrating photon geodesics in curved spacetime.
 
-Project: NRPy Standalone Geodesic Integrator (Split-Pipeline CPU)
+Project: NRPy Standalone Geodesic Integrator
 Description:
     This module is a standalone C application that evolves the trajectory
     of a massless photon test particle.
@@ -11,7 +11,7 @@ Physics Context:
         $d(p^\mu)/d(\lambda) = -\Gamma^\mu_{\alpha \beta} p^\alpha p^\beta$
     subject to the normalization constraint $p^\mu p_\mu = 0$.
 
-    Numerical fidelity is rigorously validated by monitoring constants of motion
+    Numerical fidelity is validated by monitoring constants of motion
     associated with the spacetime's symmetries (Killing vectors and tensors).
 
 Author: Dalton J. Moone.

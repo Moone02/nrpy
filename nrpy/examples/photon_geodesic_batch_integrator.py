@@ -221,6 +221,8 @@ if __name__ == "__main__":
     par.glb_code_params_dict["window_up_vec_y"].defaultvalue = 0.0
     par.glb_code_params_dict["window_up_vec_z"].defaultvalue = 1.0
     par.glb_code_params_dict["window_width"].defaultvalue = 1.0
+    par.glb_code_params_dict["window_tiles_width"].defaultvalue = 1
+    par.glb_code_params_dict["window_tiles_height"].defaultvalue = 1
 
     # RKF45 Adaptive Control Tolerances
     par.glb_code_params_dict["numerical_initial_h"].defaultvalue = 0.1
@@ -365,12 +367,22 @@ if __name__ == "__main__":
     c_window_height = float(par.glb_code_params_dict["window_height"].defaultvalue)
 
     # The terminal execution string now references the local copy of the script.
+    # Get tile dimensions to map the partitioned geometry blocks.
+    c_tiles_width = int(par.glb_code_params_dict["window_tiles_width"].defaultvalue)
+    c_tiles_height = int(par.glb_code_params_dict["window_tiles_height"].defaultvalue)
+
+    # Set the baseline pixel resolution for the output render.
+    c_pixel_width = 600
+
     vis_command = (
         f"python3 visualize_lensed_image.py "
         f"--source_r_min {c_r_min} "
         f"--source_r_max {c_r_max} "
         f"--window_width {c_window_width} "
-        f"--window_height {c_window_height}"
+        f"--window_height {c_window_height} "
+        f"--window_tiles_width {c_tiles_width} "
+        f"--window_tiles_height {c_tiles_height} "
+        f"--pixel_width {c_pixel_width}"
     )
 
     print(
@@ -380,7 +392,7 @@ if __name__ == "__main__":
     print(
         "    To generate the lensed image after running the C executable, ensure you have the required Python packages:"
     )
-    print("    pip install matplotlib numpy\n")
+    print("    pip install matplotlib numpy numba Pillow\n")
     print(
         "    Then, execute the visualization script directly from the project directory:"
     )

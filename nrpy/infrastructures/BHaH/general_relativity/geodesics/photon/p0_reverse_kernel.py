@@ -1,19 +1,26 @@
+# nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/p0_reverse_kernel.py
 r"""
-Evaluates the temporal momentum component and provides the host-side orchestrator.
+Defines the temporal momentum evaluation kernel and provides the host-side orchestrator.
 
-This module evaluates the quadratic Hamiltonian constraint to enforce physical null
-trajectories for a batch of photons. It operates to find the negative root of the
-constraint equation for $p^t$.
+This module provides the computational kernel that evaluates the quadratic Hamiltonian
+constraint to enforce physical null trajectories for a batch of photons. It operates to
+find the negative root of the constraint equation for the temporal momentum component by
+dynamically compiling a provided SymPy expression representing the analytical root
+directly into the C code. Spatial momenta and independent metric components are unpacked
+from memory directly into explicit local variables. The code generation process
+dynamically formats read and write macros, access patterns, and mathematical
+instructions based on the target architecture, mapping SIMD operations to native
+hardware intrinsics where applicable.
 
-Author: Dalton J. Moone.
+Author: Dalton Moone.
 """
 
 import sympy as sp
 
 import nrpy.c_codegen as ccg
 import nrpy.c_function as cfc
-import nrpy.params as par
 import nrpy.helpers.parallelization.utilities as parallel_utils
+import nrpy.params as par
 
 
 def p0_reverse_kernel(p0_expr: sp.Expr) -> None:
@@ -44,7 +51,9 @@ def p0_reverse_kernel(p0_expr: sp.Expr) -> None:
         write_fmt = "WriteCUDA(&{0}, {1})"
         enable_simd = True
         loop_preamble = """
-    // --- CUDA THREAD IDENTIFICATION ---
+    //==========================================
+    // CUDA THREAD IDENTIFICATION
+    //==========================================
     // The identifier $i$ maps directly to a unique photon ray index in the global VRAM batch.
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -57,7 +66,9 @@ def p0_reverse_kernel(p0_expr: sp.Expr) -> None:
         write_fmt = "{0} = {1}"
         enable_simd = False
         loop_preamble = """
-    // --- OPENMP LOOP ARCHITECTURE ---
+    //==========================================
+    // OPENMP LOOP ARCHITECTURE
+    //==========================================
     // Distribute photon rays across available CPU threads for parallel evaluation.
     #pragma omp parallel for
     for(int i = 0; i < chunk_size; i++) {
@@ -98,13 +109,17 @@ def p0_reverse_kernel(p0_expr: sp.Expr) -> None:
     p0_write = write_fmt.format("d_f_bundle[IDX_F(4, i)]", "p0_val")
 
     core_math = f"""
-    // --- MACRO DEFINITIONS FOR BUNDLE ACCESS ---
+    //==========================================
+    // MACRO DEFINITIONS FOR BUNDLE ACCESS
+    //==========================================
     // IDX_F maps a component to the flattened state bundle using SoA layout.
     #define IDX_F(c, ray_id) ((c) * BUNDLE_CAPACITY + (ray_id))
     // IDX_METRIC maps a component to the flattened symmetric metric bundle.
     #define IDX_METRIC(c, ray_id) ((c) * BUNDLE_CAPACITY + (ray_id))
 
-    // --- SPATIAL MOMENTUM UNPACKING ---
+    //==========================================
+    // SPATIAL MOMENTUM UNPACKING
+    //==========================================
     // Unpacking variables from device memory to local registers minimizes global memory transactions.
     // Contravariant spatial momentum component $p^x$.
     const double pU1 = {pU1_load};
@@ -113,21 +128,29 @@ def p0_reverse_kernel(p0_expr: sp.Expr) -> None:
     // Contravariant spatial momentum component $p^z$.
     const double pU3 = {pU3_load};
 
-    // --- METRIC TENSOR UNPACKING ---
+    //==========================================
+    // METRIC TENSOR UNPACKING
+    //==========================================
     // Load the 10 independent metric components $g_{{\\mu\\nu}}$ from memory into explicitly named registers.
     {metric_load_str}
 
-    // --- HAMILTONIAN CONSTRAINT ROOT FINDING ---
+    //==========================================
+    // HAMILTONIAN CONSTRAINT ROOT FINDING
+    //==========================================
     // Evaluate the algebraic solution for the temporal momentum $p^0$.
     // Local register storing the final evaluated negative root.
     double p0_val = 0.0;
     {body_math}
 
-    // --- GLOBAL MEMORY WRITE ---
+    //==========================================
+    // GLOBAL MEMORY WRITE
+    //==========================================
     // Write the resulting temporal momentum back to component index 4 of the state bundle in memory.
     {p0_write};
 
-    // --- MACRO CLEANUP ---
+    //==========================================
+    // MACRO CLEANUP
+    //==========================================
     // Undefine macros to ensure hermetic compilation and prevent redefinition errors.
     #undef IDX_F
     #undef IDX_METRIC

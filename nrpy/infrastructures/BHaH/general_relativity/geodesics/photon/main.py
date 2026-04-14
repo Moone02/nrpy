@@ -1,15 +1,25 @@
+# nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/main.py
 """
-Generates the main() C function for the Project Singularity-Axiom pipeline.
+Defines the main() C function for the geodesic integration pipeline.
 
-This module acts as the master orchestrator, handling the initialization of
-global simulation parameters, memory allocation for trajectory results, and
-the final serialization of the light blueprint to disk using a tiled approach.
+This module acts as the master orchestrator, handling the explicit population of
+RKF45 integrator configurations, simulation defaults, memory allocation for the
+trajectory results, and the final serialization of the light blueprint.
 
-Author: Dalton J. Moone
+The architecture implements spatial domain decomposition via tiling. Master parameters
+define the full global frame, referencing an immutable original center, while the tile
+orchestrator modifies the window center dynamically per tile. During the basis vector
+calculations, the system evaluates fallback logic for near-nadir camera angles to
+prevent coordinate degeneration. Finally, local 2D tile-space hits are translated back
+into the global window coordinate system by their spatial offsets before native binary
+serialization and archive compression.
+
+Author: Dalton Moone.
 """
 
 import logging
 import sys
+
 import nrpy.c_function as cfc
 import nrpy.params as par
 
@@ -17,21 +27,32 @@ import nrpy.params as par
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
 def main(spacetime_name: str) -> None:
     """
     Register the master orchestrator C function for the geodesic integrator.
-    
-    This version implements Spatial Domain Decomposition (Tiling) to allow 
-    high-resolution renders with low memory overhead.
+
+    This version implements Spatial Domain Decomposition (Tiling).
+
+    :param spacetime_name: Metric name for numerical integration.
     """
-    
-    # 1. Register Tiling Parameters
-    par.register_CodeParameter("int", __name__, "window_tiles_width", 1, commondata=True, add_to_parfile=True)
-    par.register_CodeParameter("int", __name__, "window_tiles_height", 1, commondata=True, add_to_parfile=True)
+    # Step 1: Register Tiling Parameters
+    par.register_CodeParameter(
+        "int", __name__, "window_tiles_width", 1, commondata=True, add_to_parfile=True
+    )
+    par.register_CodeParameter(
+        "int", __name__, "window_tiles_height", 1, commondata=True, add_to_parfile=True
+    )
 
-    includes = ["BHaH_defines.h", "BHaH_function_prototypes.h", "stdio.h", "stdlib.h", "math.h"]
+    includes = [
+        "BHaH_defines.h",
+        "BHaH_function_prototypes.h",
+        "stdio.h",
+        "stdlib.h",
+        "math.h",
+    ]
 
-    desc = f"""@brief Master entry point for the Project Singularity-Axiom integrator.
+    desc = f"""@brief Master entry point for the integrator.
 
     Algorithm:
     1. Initializes core data structures and sets default physical constants.
@@ -45,28 +66,36 @@ def main(spacetime_name: str) -> None:
     name = "main"
     params = "int argc, const char *argv[]"
 
-    # 2. Build the C body
+    # Step 2: Build the C body
     body = f"""
-    // --- CORE STRUCTURE INITIALIZATION ---
+    //==========================================
+    // CORE STRUCTURE INITIALIZATION
+    //==========================================
     // Populates the master structure with the base metric parameters.
     commondata_struct commondata; 
 
-    // --- PARAMETER PARSING ---
+    //==========================================
+    // PARAMETER PARSING
+    //==========================================
     // Sets default metric properties and overrides them based on host system input.
     commondata_struct_set_to_default(&commondata); 
     cmdline_input_and_parfile_parser(&commondata, argc, argv); 
 
-    // --- INITIALIZE DYNAMIC WINDOW CENTER ---
+    //==========================================
+    // INITIALIZE DYNAMIC WINDOW CENTER
+    //==========================================
     // The tile orchestrator modifies the window center dynamically per tile. 
     // We seed the active window center with the original master center provided by the configuration.
     commondata.window_center_x = commondata.original_window_center_x;
     commondata.window_center_y = commondata.original_window_center_y;
     commondata.window_center_z = commondata.original_window_center_z;
 
-    // --- TELEMETRY AND PARAMETER VERIFICATION ---
+    //==========================================
+    // TELEMETRY AND PARAMETER VERIFICATION
+    //==========================================
     // Outputs core physical and architectural variables to the standard output.
     printf("=============================================\\n");
-    printf("  Project Singularity-Axiom: Geodesic Engine  \\n");
+    printf("  Geodesic Engine  \\n");
     printf("=============================================\\n");
     printf("Spacetime Metric: {spacetime_name}\\n");
     
@@ -112,7 +141,9 @@ def main(spacetime_name: str) -> None:
            commondata.window_tiles_width, commondata.window_tiles_height, 
            commondata.scan_density, commondata.scan_density);
 
-    // --- TILING CALCULATIONS ---
+    //==========================================
+    // TILING CALCULATIONS
+    //==========================================
     // Master parameters define the full global frame, referencing the immutable original center.
     const double master_center_x = commondata.original_window_center_x;
     const double master_center_y = commondata.original_window_center_y;
@@ -123,10 +154,12 @@ def main(spacetime_name: str) -> None:
     const double tile_w = master_width  / (double)commondata.window_tiles_width;
     const double tile_h = master_height / (double)commondata.window_tiles_height;
 
-    // --- BASIS VECTOR CALCULATION ---
+    //==========================================
+    // BASIS VECTOR CALCULATION
+    //==========================================
     // n_z: The forward "Look" vector
-    double n_z[3] = {{master_center_x - commondata.camera_pos_x, 
-                     master_center_y - commondata.camera_pos_y, 
+    double n_z[3] = {{master_center_x - commondata.camera_pos_x,
+                     master_center_y - commondata.camera_pos_y,
                      master_center_z - commondata.camera_pos_z}};
     double mag_n_z = sqrt(n_z[0]*n_z[0] + n_z[1]*n_z[1] + n_z[2]*n_z[2]);
     for(int j=0; j<3; j++) n_z[j] /= mag_n_z;
@@ -134,11 +167,11 @@ def main(spacetime_name: str) -> None:
     // n_x: The "Right" vector (Horizontal)
     // Calculated as Up (guide_up) x Forward (n_z) to point Right.
     const double guide_up[3] = {{commondata.window_up_vec_x, commondata.window_up_vec_y, commondata.window_up_vec_z}};
-    double n_x[3] = {{guide_up[1]*n_z[2] - guide_up[2]*n_z[1], 
-                     guide_up[2]*n_z[0] - guide_up[0]*n_z[2], 
+    double n_x[3] = {{guide_up[1]*n_z[2] - guide_up[2]*n_z[1],
+                     guide_up[2]*n_z[0] - guide_up[0]*n_z[2],
                      guide_up[0]*n_z[1] - guide_up[1]*n_z[0]}};
     double mag_n_x = sqrt(n_x[0]*n_x[0] + n_x[1]*n_x[1] + n_x[2]*n_x[2]);
-    
+
     // Fallback logic for near-nadir camera angles (looking straight up or down)
     if (mag_n_x < 1e-10) {{
         double alt_up[3] = {{0.0, 1.0, 0.0}};
@@ -152,24 +185,28 @@ def main(spacetime_name: str) -> None:
 
     // n_y: The "Up" vector (Vertical)
     // Calculated as Forward (n_z) x Right (n_x) to point Up.
-    double n_y[3] = {{n_z[1]*n_x[2] - n_z[2]*n_x[1], 
-                     n_z[2]*n_x[0] - n_z[0]*n_x[2], 
+    double n_y[3] = {{n_z[1]*n_x[2] - n_z[2]*n_x[1],
+                     n_z[2]*n_x[0] - n_z[0]*n_x[2],
                      n_z[0]*n_x[1] - n_z[1]*n_x[0]}};
     double mag_n_y = sqrt(n_y[0]*n_y[0] + n_y[1]*n_y[1] + n_y[2]*n_y[2]);
     for(int j=0; j<3; j++) n_y[j] /= mag_n_y;
 
-    // --- RESOURCE ALLOCATION ---
-    const long int num_rays = (long int)commondata.scan_density * commondata.scan_density; 
+    //==========================================
+    // RESOURCE ALLOCATION
+    //==========================================
+    const long int num_rays = (long int)commondata.scan_density * commondata.scan_density;
     blueprint_data_t *restrict results_buffer = (blueprint_data_t *)malloc(sizeof(blueprint_data_t) * num_rays);
 
     if (results_buffer == NULL) {{
         fprintf(stderr, "FATAL: Failed to allocate %ld rays. Check system RAM.\\n", num_rays);
         exit(1);
     }}
-    // --- NESTED TILING LOOP ---
+    //==========================================
+    // NESTED TILING LOOP
+    //==========================================
     for (int ty = 0; ty < commondata.window_tiles_height; ty++) {{
         for (int tx = 0; tx < commondata.window_tiles_width; tx++) {{
-            
+
             // 1. Update Tile Dimensions
             commondata.window_width  = tile_w;
             commondata.window_height = tile_h;
@@ -182,7 +219,7 @@ def main(spacetime_name: str) -> None:
             commondata.window_center_y = master_center_y + offset_x * n_x[1] + offset_y * n_y[1];
             commondata.window_center_z = master_center_z + offset_x * n_x[2] + offset_y * n_y[2];
 
-            printf("[Tile %02d,%02d] Processing at Center (%.3f, %.3f, %.3f)...\\n", 
+            printf("[Tile %02d,%02d] Processing at Center (%.3f, %.3f, %.3f)...\\n",
                     tx, ty, commondata.window_center_x, commondata.window_center_y, commondata.window_center_z);
 
             // 3. Execute Numerical Integration Pipeline
@@ -220,13 +257,15 @@ def main(spacetime_name: str) -> None:
         }}
     }}
 
-    // --- FINAL CLEANUP & SHUTDOWN ---
+    //==========================================
+    // FINAL CLEANUP & SHUTDOWN
+    //==========================================
     free(results_buffer);
     printf("Simulation successful. Data stored in zipped tiles.\\n");
     return 0;
     """
 
-    # 3. Register the function with the NRPy environment
+    # Step 3: Register the function with the NRPy environment
     cfc.register_CFunction(
         includes=includes,
         desc=desc,

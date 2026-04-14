@@ -1,16 +1,23 @@
+# nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/rkf45_stage_update.py
 r"""
-Provides the native kernel and host-side orchestrator for the RKF45 Stage Update (Kernel 5).
+Provides the native kernel and host-side orchestrator for the RKF45 Stage Update.
 
-Project Singularity-Axiom: Dual-Architecture (CPU/GPU) Portability.
-This module provides the global memory kernel responsible for evaluating the intermediate
-stages of the Runge-Kutta-Fehlberg 4(5) algorithm for relativistic ray tracing on Numerical Spacetimes.
+This module provides the computational kernel responsible for evaluating the intermediate
+stages of the Runge-Kutta-Fehlberg 4(5) algorithm for relativistic ray tracing on
+numerical spacetimes. The step size is loaded into local variables, minimizing repeated
+memory accesses during the 9-component tensor loop. The implementation explicitly
+branches based on the RKF45 stage index, bypassing stage 6 to ensure OpenMP compliance.
+It utilizes fused multiply-add intrinsics to calculate the intermediate Runge-Kutta
+stages, ensuring exact IEEE 754 rounding behavior. Finally, writing the calculated
+update directly to memory enforces the split-pipeline communication constraint required
+for the architecture.
 
-Author: Dalton J. Moone.
+Author: Dalton Moone.
 """
 
 import nrpy.c_function as cfc
-import nrpy.params as par
 import nrpy.helpers.parallelization.utilities as parallel_utils
+import nrpy.params as par
 
 
 def rkf45_stage_update() -> None:
@@ -43,7 +50,9 @@ def rkf45_stage_update() -> None:
 
     if parallelization == "cuda":
         loop_preamble = """
-    // --- CUDA THREAD IDENTIFICATION ---
+    //==========================================
+    // CUDA THREAD IDENTIFICATION
+    //==========================================
     // Thread index $i$ maps to a unique photon ray to ensure coalesced VRAM access.
     const long int i = blockIdx.x * blockDim.x + threadIdx.x; // Global thread index $i$.
 
@@ -53,7 +62,9 @@ def rkf45_stage_update() -> None:
         loop_postamble = ""
     else:
         loop_preamble = """
-    // --- OPENMP LOOP ARCHITECTURE ---
+    //==========================================
+    // OPENMP LOOP ARCHITECTURE
+    //==========================================
     // Distribute photon rays across available CPU threads for parallel evaluation.
     #pragma omp parallel for
     for(long int i = 0; i < chunk_size; i++) { // Thread index $i$ maps to a unique photon ray.
@@ -61,18 +72,24 @@ def rkf45_stage_update() -> None:
         loop_postamble = "    } // End OpenMP loop"
 
     core_math = r"""
-    // --- MACRO DEFINITIONS FOR BUNDLE ACCESS ---
+    //==========================================
+    // MACRO DEFINITIONS FOR BUNDLE ACCESS
+    //==========================================
     // Mapping function for the state bundle layout $f^{\mu}$.
     #define IDX_F(c, ray_id) ((c) * BUNDLE_CAPACITY + (ray_id))
 
     // Mapping function for the derivative bundle layout $k^{\mu}$.
     #define IDX_K(s, c, ray_id) ((s) * 9 * BUNDLE_CAPACITY + (c) * BUNDLE_CAPACITY + (ray_id))
 
-    // --- STATE LOADING ---
+    //==========================================
+    // STATE LOADING
+    //==========================================
     // Loading step size $h$ into local registers minimizes repeated global memory accesses during the 9-component loop.
     const double h = ReadCUDA(&d_h[i]); // Local register for step size $h$.
 
-    // --- BUTCHER TABLEAU EVALUATION ---
+    //==========================================
+    // BUTCHER TABLEAU EVALUATION
+    //==========================================
     // Fused multiply-add intrinsics evaluate the intermediate Runge-Kutta stages to ensure exact IEEE 754 rounding behavior.
 
     // Bypass the computation entirely for stage 6 to ensure OpenMP compliance.
@@ -120,7 +137,9 @@ def rkf45_stage_update() -> None:
             break;
             }
 
-            // --- GLOBAL MEMORY WRITE ---
+            //==========================================
+            // GLOBAL MEMORY WRITE
+            //==========================================
             // Writing the computed update $f_{temp} = f_n + h \times update_val$ to global memory strictly enforces the split-pipeline communication constraint.
             const double f_result = FusedMulAddCUDA(h, update_val, f_n); // Computes the step update and stores it in $f_{result}$.
 
@@ -129,7 +148,9 @@ def rkf45_stage_update() -> None:
         }
     }
 
-    // --- MACRO CLEANUP ---
+    //==========================================
+    // MACRO CLEANUP
+    //==========================================
     // Undefine macros to ensure hermetic compilation and prevent redefinition errors.
     #undef IDX_F
     #undef IDX_K
@@ -185,7 +206,9 @@ def rkf45_stage_update() -> None:
     include_CodeParameters_h = False
 
     body = f"""
-    // --- HOST-SIDE ORCHESTRATION ---
+    //==========================================
+    // HOST-SIDE ORCHESTRATION
+    //==========================================
     // Wraps the generated launch code to initiate the execution kernel.
     {launch_code}
     """

@@ -1,13 +1,15 @@
+# nrpy/infrastructures/BHaH/general_relativity/geodesics/massive/u0_massive.py
 """
-Register the C function for computing the initial time component of 4-velocity.
+Defines the C function for computing the initial time component of 4-velocity.
 
-This module registers the 'u0_massive' C function. It enforces
-the 4-velocity normalization constraint for massive particles (u.u = -1) by solving
-the quadratic Hamiltonian constraint for the time component u^0.
+This module registers a C function to enforce the 4-velocity normalization constraint
+for massive particles by solving the quadratic Hamiltonian constraint for the time
+component. It utilizes SymPy and common subexpression elimination to define a math
+kernel. The module maps symmetric metric tensor components to a flattened
+one-dimensional array using local and global batch indexing for memory access. The
+kernel is wrapped with offloading pragmas to facilitate execution.
 
-It utilizes the flattened SoA architecture via local and global batch indexing.
-
-Author: Dalton J. Moone
+Author: Dalton Moone.
 """
 
 import sys
@@ -20,7 +22,7 @@ import nrpy.c_function as cfc
 
 def u0_massive(u0_expr: sp.Expr) -> None:
     """
-    Generate and register the C function to compute u^0 for a massive particle.
+    Define and register the C function to compute u^0 for a massive particle.
     Utilizes the flattened SoA architecture via local and global batch indexing.
 
     :param u0_expr: The SymPy expression for u^0.
@@ -37,7 +39,7 @@ def u0_massive(u0_expr: sp.Expr) -> None:
         metric_g4DD: Flattened array of metric components.
         all_photons_f: Global state vector array.
         num_rays: Total number of rays for global indexing.
-        batch_size: Size of the SIMD/GPU batch.
+        batch_size: Size of the SIMD/accelerator batch.
         particle_idx: Global index of the particle.
         batch_id: Local index within the current batch.
     Output:
