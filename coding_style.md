@@ -21,10 +21,8 @@ This document provides a comprehensive style guide for the NRPy project, a numer
 
 ### Formatting
 
-The project uses **Black** for automatic code formatting with the following configuration:
-- Line length: 88 characters
-- Indentation: 4 spaces
-- String quotes: Double quotes preferred
+The project uses **Black** for automatic code formatting. Follow Black's output
+for line wrapping and other formatting details.
 
 Run `black .` before committing to ensure consistent formatting.
 For any modified Python file, also run `.github/single_file_static_analysis.sh <path-to-file.py>` before committing.
@@ -34,8 +32,6 @@ For any modified Python file, also run `.github/single_file_static_analysis.sh <
 | Element | Convention | Examples |
 |---------|------------|----------|
 | Classes | PascalCase | `CCodeGen`, `NRPyParameter`, `CodeParameter`, `ReferenceMetric`, `BSSNRHSs` |
-| Functions/Methods | snake_case | `setup_FD_matrix__return_inverse_lowlevel()`, `register_CFunction_diagnostics()` |
-| Variables | snake_case | `cparam_type`, `glb_params_dict`, `enable_simd` |
 | Constants | UPPER_SNAKE_CASE or leading underscore | `_UNSET_DEFAULT`, `_VALID_NRPY_PARAM_TYPES` |
 | Private helpers | Leading underscore | `_format_c_offset_str()`, `_flatten_and_unique_str()`, `_parse_array_spec()` |
 
@@ -164,10 +160,11 @@ Rules:
 ### Type Hints
 
 - **Extensive use** of type hints throughout the codebase.
-- Uses the `typing` module: `Any`, `Dict`, `List`, `Optional`, `Tuple`, `Union`, `cast`.
+- Uses the `typing` module: `Dict`, `List`, `Optional`, `Tuple`, `Union`, `cast`.
 - Uses `typing_extensions.Literal` for constrained string values.
 - Return type annotations are always present, including `-> None`.
 - `# type: ignore` comments are used selectively for third-party imports lacking stubs (e.g., `from mpmath import mpf  # type: ignore`).
+- **Do not use `Any` in type hints** when a more specific type can be written. Prefer precise unions, protocols, `object`, or small helper aliases. Treat `Any` as last resort for unavoidable third-party typing gaps, and document the reason inline when it must appear.
 - **Do not use Python 3.9+ builtin generics** (`list[X]`, `dict[X, Y]`, `tuple[X, ...]`) or the `X | None` union shorthand. Always use `List[X]`, `Dict[X, Y]`, `Optional[X]`, `Union[X, Y]` from `typing` — zero occurrences of the newer syntax exist in the codebase.
 - **`from __future__ import annotations`** is used in ~14 files (mostly the `BHaH/rotation` submodule). It is not the codebase-wide standard; do not add it to files that do not already use it unless there is a specific reason (e.g., forward references in the same file).
 
@@ -904,7 +901,7 @@ This indicates the project enforces **very strict** coding standards with a near
 | Aspect | Python | C |
 |--------|--------|---|
 | Indentation | 4 spaces | 2 spaces |
-| Line length | 88 characters (black) | ~100 characters |
+| Line length | Determined by Black formatting | ~100 characters |
 | Naming | snake_case for functions, PascalCase for classes | snake_case for functions/variables, UPPER_CASE for macros |
 | Docstrings | Sphinx/reStructuredText-style with `:param:` / `:return:` | Doxygen-style with `@param` |
 | Type hints | Extensive | N/A (C language) |
