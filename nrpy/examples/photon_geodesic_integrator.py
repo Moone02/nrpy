@@ -1,10 +1,18 @@
+# nrpy/examples/photon_geodesic_integrator.py
 r"""
-Construct a complete C project for integrating photon geodesics in curved spacetime.
+Defines a complete C project for integrating photon geodesics in curved spacetime.
 
 Project: NRPy Standalone Geodesic Integrator
 Description:
     This module is a standalone C application that evolves the trajectory
-    of a massless photon test particle.
+    of a massless photon test particle. Structure of Arrays (SoA) layouts
+    minimize memory divergence during parallel execution. Memory is
+    dynamically allocated to mimic batch pipeline layouts. Struct mapping
+    establishes the SoA layout required by the downstream conserved
+    quantities kernel. Pre-computing the metric solves the quadratic
+    Hamiltonian constraint for temporal momentum. Deep copying preserves
+    the anchor state to prevent read-after-write hazards during the
+    RKF45 tableau evaluation.
 
 Physics Context:
     The simulation solves the geodesic equation for a photon:
@@ -14,7 +22,7 @@ Physics Context:
     Numerical fidelity is validated by monitoring constants of motion
     associated with the spacetime's symmetries (Killing vectors and tensors).
 
-Author: Dalton J. Moone.
+Author: Dalton Moone.
 """
 
 import os
@@ -64,7 +72,6 @@ def register_struct_definitions() -> None:
     // ==========================================
     // Flattened SoA Struct (Master Storage)
     // ==========================================
-    // Hardware Justification: This Structure of Arrays (SoA) minimizes memory divergence during parallel execution.
     typedef struct {
         double *f; // Flattened state vector mapping 9 components $t, x, y, z, p_t, p_x, p_y, p_z, \text{aux}$.
         double *affine_param; // Current affine parameter $\lambda$ for the trajectory.
@@ -75,24 +82,27 @@ def register_struct_definitions() -> None:
 
 def main_c(spacetime: str, particle: str) -> None:
     """
-    Generate the main() function orchestrating the single-ray Split-Pipeline RKF45 integrator.
+    Define the main() function orchestrating the single-ray RKF45 integrator.
 
-    :param spacetime: The specific background spacetime descriptor (e.g., KerrSchild_Cartesian).
-    :param particle: The type of test particle being integrated (e.g., photon).
+    :param spacetime: The specific background spacetime descriptor.
+    :param particle: The type of test particle being integrated.
     """
     includes = ["BHaH_defines.h", "BHaH_function_prototypes.h", "string.h", "stdlib.h"]
 
-    desc = """@brief Main driver function for the Split-Pipeline photon geodesic integrator.
-    Detailed algorithm: Initializes memory for a single ray using SoA layouts and executes the discrete
-    RKF45 stages via isolated kernels to prevent register spilling. Evaluates boundary constraints
-    and verifies the numerical fidelity using Hamiltonian constraints and conserved quantities."""
+    desc = """@brief Main driver function for the photon geodesic integrator.
+    Detailed algorithm: Initializes memory for a single ray using SoA layouts and
+    executes the discrete RKF45 stages via isolated kernels. Evaluates boundary
+    constraints and verifies the numerical fidelity using Hamiltonian constraints
+    and conserved quantities."""
 
     cfunc_type = "int"
     name = "main"
     params = "int argc, const char *argv[]"
 
     body = f"""
-    // --- Step 1: Structural Setup & Parameters ---
+    // ==========================================
+    // STRUCTURAL SETUP & PARAMETERS
+    // ==========================================
     commondata_struct commondata; // Global parameters struct governing spacetime and numerics.
     commondata_struct_set_to_default(&commondata);
     commondata.M_scale = 1.0; // The mass $M$ of the central black hole.
@@ -101,33 +111,35 @@ def main_c(spacetime: str, particle: str) -> None:
     double r_escape = 150.0; // The threshold radial boundary $r_{{escape}}$ for exiting the simulation.
     double p_t_max = 1000.0; // The upper limit for the temporal momentum $p_t$ to prevent numerical blowup.
 
-    printf("Starting Split-Pipeline Geodesic Integrator (CPU)...\\n");
+    printf("Starting Split-Pipeline Geodesic Integrator...\\n");
     printf("spacetime: {spacetime}, M=%.2f, a=%.2f\\n", commondata.M_scale, commondata.a_spin);
 
-    // --- Step 2: Global Memory Allocation (Host) ---
+    // ==========================================
+    // GLOBAL MEMORY ALLOCATION (HOST)
+    // ==========================================
     long int num_rays = 1; // Total number of global photon trajectories.
     long int chunk_size = 1; // Number of active rays in the current batch processing chunk.
     int stream_idx = 0; // Hardware stream index for synchronized execution.
 
-    // Hardware Justification: Memory is explicitly dynamically allocated to mimic the batch VRAM pipeline layout.
     double *f = (double *)malloc(9 * sizeof(double));            // Persistent 9-component state vector $f^\\mu$.
-    double *f_base = (double *)malloc(9 * sizeof(double));       // The pristine anchor state $f^\\mu_{{base}}$ preserved across all RKF45 stages.
+    double *f_base = (double *)malloc(9 * sizeof(double));       // The anchor state $f^\\mu_{{base}}$ preserved across all RKF45 stages.
     double *f_temp = (double *)malloc(9 * sizeof(double));       // Intermediate RKF45 state buffer $f^\\mu_{{temp}}$.
     double *metric = (double *)malloc(10 * sizeof(double)); // The 10 independent components of the symmetric metric $g_{{\\mu\\nu}}$.
     double *connection = (double *)malloc(40 * sizeof(double)); // The 40 independent Christoffel symbols $\\Gamma^\\alpha_{{\\beta\\gamma}}$.
-    double *k_bundle = (double *)malloc(6 * 9 * sizeof(double)); // The massive derivative bundle storing all 6 RKF45 $k_n$ stages.
+    double *k_bundle = (double *)malloc(6 * 9 * sizeof(double)); // The derivative bundle storing all 6 RKF45 $k_n$ stages.
 
     double *affine_param = (double *)malloc(sizeof(double)); // The affine parameter $\\lambda$ accumulated along the geodesic.
     double *h = (double *)malloc(sizeof(double)); // The adaptive integration step size $h$.
     int *rejection_retries = (int *)malloc(sizeof(int)); // Counter for step rejections due to truncation error limits.
     termination_type_t *status = (termination_type_t *)malloc(sizeof(termination_type_t)); // The integration status flag for the current ray.
 
-    // Hardware Justification: Struct mapping establishes the SoA layout required by the downstream conserved quantities kernel.
     PhotonStateSoA all_photons; // Master struct holding array pointers for the global dataset.
     all_photons.f = f;
     all_photons.affine_param = affine_param;
 
-    // --- Step 3: Initial Conditions ---
+    // ==========================================
+    // INITIAL CONDITIONS
+    // ==========================================
     f[0] = 0.0;   // The coordinate time $t$.
     f[1] = 4.0123;  // The spatial coordinate $x$.
     f[2] = 0.0;   // The spatial coordinate $y$.
@@ -143,8 +155,9 @@ def main_c(spacetime: str, particle: str) -> None:
     *rejection_retries = 0; // Reset error retries.
     *status = 0; // Set initial condition to ACTIVE.
 
-    // --- Step 4: Metric Interpolation & Temporal Momentum Reversal ---
-    // Hardware Justification: Pre-computes the metric to solve the quadratic Hamiltonian constraint for $p_t$.
+    // ==========================================
+    // METRIC INTERPOLATION & TEMPORAL MOMENTUM REVERSAL
+    // ==========================================
     interpolation_kernel_{spacetime}(&commondata, f, metric, NULL, chunk_size, stream_idx);
     p0_reverse_kernel(f, metric, chunk_size, stream_idx);
 
@@ -152,7 +165,9 @@ def main_c(spacetime: str, particle: str) -> None:
     printf("  Pos (%.4f, %.4f, %.4f)\\n", f[1], f[2], f[3]);
     printf("  Mom (%.4f, %.4f, %.4f, %.4f)\\n", f[4], f[5], f[6], f[7]);
 
-    // --- Step 5: Initial Conserved Quantities Extraction ---
+    // ==========================================
+    // INITIAL CONSERVED QUANTITIES EXTRACTION
+    // ==========================================
     conserved_quantities_t cq_init; // Struct instance to store the baseline constants of motion.
     calculate_conserved_quantities_universal_{spacetime}_{particle}(&commondata, &all_photons, num_rays, &cq_init);
 
@@ -163,19 +178,22 @@ def main_c(spacetime: str, particle: str) -> None:
     }}
     fprintf(fp, "# lambda t x y z p_t p_x p_y p_z aux\\n");
 
-    // --- Step 6: The Modular Split-Pipeline Integration Loop ---
+    // ==========================================
+    // MODULAR SPLIT-PIPELINE INTEGRATION LOOP
+    // ==========================================
     int steps = 0; // Iteration counter tracking successful integration steps.
     int max_steps = 200000; // Hard ceiling preventing runaway numerical loops.
 
     while (steps < max_steps) {{
 
-        // Hardware Justification: Deep copy preserves the uncorrupted anchor state $f^\\mu_{{base}}$ to prevent read-after-write hazards during the RKF45 tableau evaluation.
         for (int i = 0; i < 9; i++) {{
-        f_base[i] = f[i]; // The pristine anchor state component $f^\\mu_{{base}}$.
+        f_base[i] = f[i]; // The anchor state component $f^\\mu_{{base}}$.
         f_temp[i] = f[i]; // The intermediate scratchpad state component $f^\\mu_{{temp}}$.
         }}
 
-        // --- Execute 6-Stage RKF45 Tableau ---
+        // ==========================================
+        // EXECUTE 6-STAGE RKF45 TABLEAU
+        // ==========================================
         for (int stage = 1; stage <= 6; stage++) {{
             interpolation_kernel_{spacetime}(&commondata, f_temp, metric, connection, chunk_size, stream_idx);
             calculate_ode_rhs_kernel(f_temp, metric, connection, k_bundle, stage, chunk_size, stream_idx);
@@ -185,10 +203,14 @@ def main_c(spacetime: str, particle: str) -> None:
             }}
         }}
 
-        // --- Finalize Step and Control Adaptive Step Size ---
+        // ==========================================
+        // FINALIZE STEP AND CONTROL ADAPTIVE STEP SIZE
+        // ==========================================
         rkf45_finalize_and_control(&commondata, f, f_base, k_bundle, h, status, affine_param, rejection_retries, chunk_size, stream_idx);
 
-        // --- Write Output & Check Break Conditions ---
+        // ==========================================
+        // WRITE OUTPUT & CHECK BREAK CONDITIONS
+        // ==========================================
         if (*rejection_retries == 0) {{
             fprintf(fp, "%.15e %.15e %.15e %.15e %.15e %.15e %.15e %.15e %.15e %.15e\\n",
                     *affine_param, f[0], f[1], f[2], f[3], f[4], f[5], f[6], f[7], f[8]);
@@ -219,7 +241,9 @@ def main_c(spacetime: str, particle: str) -> None:
     fclose(fp);
     printf("Integration finished after %d steps. Final lambda = %.4f\\n", steps, *affine_param);
 
-    // --- Step 7: Post-Integration Error Diagnostics ---
+    // ==========================================
+    // POST-INTEGRATION ERROR DIAGNOSTICS
+    // ==========================================
     conserved_quantities_t cq_final; // Struct holding constants of motion evaluated at the trajectory boundary.
     calculate_conserved_quantities_universal_{spacetime}_{particle}(&commondata, &all_photons, num_rays, &cq_final);
 
@@ -233,7 +257,9 @@ def main_c(spacetime: str, particle: str) -> None:
     printf("  Delta Lz = %.4e\\n", fabs(cq_final.Lz - cq_init.Lz));
     printf("  Delta Q  = %.4e\\n", fabs(cq_final.Q - cq_init.Q));
 
-    // --- Memory Cleanup ---
+    // ==========================================
+    // MEMORY CLEANUP
+    // ==========================================
     free(f);
     free(f_base);
     free(f_temp);
@@ -334,7 +360,7 @@ if __name__ == "__main__":
         project_name=project_name
     )
 
-    # Required macros for Single-Ray CPU integration
+    # Required macros for single-ray integration
     macro_defs = """
     #ifndef BUNDLE_CAPACITY
     #define BUNDLE_CAPACITY 1
@@ -357,7 +383,7 @@ if __name__ == "__main__":
         "BHAH_HD_FUNC": "#define BHAH_HD_FUNC",
         "BHAH_HD_INLINE": "#define BHAH_HD_INLINE static inline",
         "BHAH_WARP_ATOMIC_ADD(ptr, val)": '#define BHAH_WARP_ATOMIC_ADD(ptr, val) _Pragma("omp atomic") *(ptr) += (val)\n',
-        "GLOBAL_COMMONDATA_EXTERN": "// CPU passes commondata by reference, no global needed.",
+        "GLOBAL_COMMONDATA_EXTERN": "// Commondata passed by reference, no global needed.",
         "BHAH_DEVICE_SYNC()": "#define BHAH_DEVICE_SYNC() do {} while(0)",
     }
 
