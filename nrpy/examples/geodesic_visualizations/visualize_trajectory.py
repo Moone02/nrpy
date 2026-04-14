@@ -35,8 +35,8 @@ def plot_trajectory(
     :param particle_type: String descriptor of the particle for plot labels.
     """
     # pylint: disable=import-outside-toplevel, import-error
-    import matplotlib.pyplot as plt
-    import numpy as np
+    import matplotlib.pyplot as plt  # type: ignore
+    import numpy as np  # type: ignore
 
     # Step 1: Descriptive Physical Variable Mapping.
     # Extract the spatial coordinates (x, y, z) from the dataset.
@@ -87,14 +87,21 @@ def plot_trajectory(
     ax.set_xlabel("x (M)")
     ax.set_ylabel("y (M)")
     ax.set_zlabel("z (M)")
-    ax.set_aspect('equal')
+    ax.set_aspect("equal")
     ax.set_title(
         f"{particle_type.capitalize()} Geodesic in Kerr-Schild Cartesian Spacetime"
     )
     ax.legend()
 
     # Visual disclaimer about the horizon approximation.
-    fig.text(0.5, 0.02, "* Horizon rendered as a sphere at r=2M. Visually approximate for a_spin = 0.", ha='center', fontsize=9, color='gray')
+    fig.text(
+        0.5,
+        0.02,
+        "* Horizon rendered as a sphere at r=2M. Visually approximate for a_spin = 0.",
+        ha="center",
+        fontsize=9,
+        color="gray",
+    )
 
     # Location to save the rendered matplotlib figure.
     plot_path = os.path.abspath("trajectory_plot.png")
@@ -118,7 +125,7 @@ def visualize_trajectory(
     :param particle_type: String representing the particle type for dynamic labeling.
     """
     # pylint: disable=import-outside-toplevel
-    import numpy as np
+    import numpy as np  # type: ignore
 
     if traj_path is None:
         # Default expectation: the script is executed in the output directory.

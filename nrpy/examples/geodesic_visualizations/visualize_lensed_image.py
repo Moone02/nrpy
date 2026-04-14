@@ -14,7 +14,7 @@ import math
 import os
 import sys
 
-import numpy as np
+import numpy as np  # type: ignore
 
 try:
     from nrpy.examples.geodesic_visualizations import config_and_types as cfg

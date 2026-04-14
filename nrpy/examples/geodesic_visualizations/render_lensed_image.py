@@ -16,8 +16,8 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import Optional, Tuple, Union
 
 import numba as nb  # type: ignore
-import numpy as np
-import numpy.typing as npt
+import numpy as np  # type: ignore
+import numpy.typing as npt  # type: ignore
 
 from nrpy.examples.geodesic_visualizations import config_and_types as cfg
 
@@ -51,7 +51,7 @@ def _load_texture(
     :raises TypeError: Raised if the input is not a string or NumPy array.
     """
     # pylint: disable=import-outside-toplevel
-    from PIL import Image
+    from PIL import Image  # type: ignore
 
     if isinstance(image_input, str):
         if not os.path.exists(image_input):
@@ -89,7 +89,7 @@ def generate_source_disk_array(
     :return: A uint8 RGB NumPy array of the generated accretion disk texture.
     """
     # pylint: disable=import-outside-toplevel, import-error
-    import matplotlib.pyplot as plt
+    import matplotlib.pyplot as plt  # type: ignore
 
     half_width = disk_physical_width / 2.0
     # Create coordinate grid representing the flat source plane
@@ -326,7 +326,7 @@ def generate_static_lensed_image(
     :param display_image: If True, opens the resulting image using the default viewer.
     """
     # pylint: disable=import-outside-toplevel
-    from PIL import Image
+    from PIL import Image  # type: ignore
 
     print(f"--- Generating Static Lensed Image: '{output_filename}' ---")
 

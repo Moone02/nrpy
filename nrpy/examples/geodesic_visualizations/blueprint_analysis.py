@@ -39,8 +39,8 @@ def plot_heatmaps(data: Any) -> None:
     :param data: The structured NumPy array containing ray termination data.
     """
     # pylint: disable=import-outside-toplevel, import-error
-    import matplotlib.pyplot as plt
-    import numpy as np
+    import matplotlib.pyplot as plt  # type: ignore
+    import numpy as np  # type: ignore
 
     # Preamble: Descriptive Physical Variable Mapping.
     # Extract coordinates from the structured array for plotting.
@@ -131,7 +131,7 @@ def diagnose_blueprint(
     # pylint: disable=import-outside-toplevel
     import zipfile
 
-    import numpy as np
+    import numpy as np  # type: ignore
 
     print("=================================================================")
     print(" BLUEPRINT DIAGNOSTICS & VISUALIZATION")
