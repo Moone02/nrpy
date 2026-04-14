@@ -40,7 +40,7 @@ def plot_heatmaps(data: Any) -> None:
     """
     # pylint: disable=import-outside-toplevel, import-error
     import matplotlib.pyplot as plt  # type: ignore
-    import numpy as np  # type: ignore
+    import numpy as np
 
     # Preamble: Descriptive Physical Variable Mapping.
     # Extract coordinates from the structured array for plotting.
@@ -131,7 +131,7 @@ def diagnose_blueprint(
     # pylint: disable=import-outside-toplevel
     import zipfile
 
-    import numpy as np  # type: ignore
+    import numpy as np
 
     print("=================================================================")
     print(" BLUEPRINT DIAGNOSTICS & VISUALIZATION")

@@ -36,7 +36,7 @@ def plot_trajectory(
     """
     # pylint: disable=import-outside-toplevel, import-error
     import matplotlib.pyplot as plt  # type: ignore
-    import numpy as np  # type: ignore
+    import numpy as np
 
     # Step 1: Descriptive Physical Variable Mapping.
     # Extract the spatial coordinates (x, y, z) from the dataset.
@@ -125,7 +125,7 @@ def visualize_trajectory(
     :param particle_type: String representing the particle type for dynamic labeling.
     """
     # pylint: disable=import-outside-toplevel
-    import numpy as np  # type: ignore
+    import numpy as np
 
     if traj_path is None:
         # Default expectation: the script is executed in the output directory.

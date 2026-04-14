@@ -16,7 +16,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import Optional, Tuple, Union
 
 import numba as nb  # type: ignore
-import numpy as np  # type: ignore
+import numpy as np
 import numpy.typing as npt  # type: ignore
 
 from nrpy.examples.geodesic_visualizations import config_and_types as cfg

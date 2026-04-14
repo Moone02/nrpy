@@ -10,7 +10,7 @@ Author: Dalton Moone.
 
 import os
 
-import numpy as np  # type: ignore
+import numpy as np
 
 # Step 1: Core data structures.
 # This dtype MUST match the 'blueprint_data_t' struct in the C code.
