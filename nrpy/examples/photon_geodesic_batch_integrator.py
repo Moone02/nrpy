@@ -397,7 +397,7 @@ if __name__ == "__main__":
         "    Then, execute the visualization script directly from the project directory:"
     )
     print(f"    {vis_command}\n")
-    
+
     blueprint_command = (
         f"python3 blueprint_analysis.py "
         f"--window_tiles_width {c_tiles_width} "
