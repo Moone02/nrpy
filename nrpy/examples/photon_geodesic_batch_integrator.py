@@ -397,5 +397,12 @@ if __name__ == "__main__":
         "    Then, execute the visualization script directly from the project directory:"
     )
     print(f"    {vis_command}\n")
-    print("    To run the blueprint diagnostic and visualization suite:")
-    print("    python3 blueprint_analysis.py\n")
+    
+    blueprint_command = (
+        f"python3 blueprint_analysis.py "
+        f"--window_tiles_width {c_tiles_width} "
+        f"--window_tiles_height {c_tiles_height}"
+    )
+
+    print("    To run the blueprint diagnostic:")
+    print(f"    {blueprint_command}\n")

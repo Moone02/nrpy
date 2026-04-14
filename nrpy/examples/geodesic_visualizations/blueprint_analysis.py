@@ -278,13 +278,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "--window_tiles_width",
         type=int,
-        default=10,
+        default=1,
         help="Number of horizontal tiles generated.",
     )
     parser.add_argument(
         "--window_tiles_height",
         type=int,
-        default=10,
+        default=1,
         help="Number of vertical tiles generated.",
     )
     args = parser.parse_args()
