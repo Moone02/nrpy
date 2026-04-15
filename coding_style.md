@@ -27,6 +27,10 @@ for line wrapping and other formatting details.
 Run `black .` before committing to ensure consistent formatting.
 For any modified Python file, also run `.github/single_file_static_analysis.sh <path-to-file.py>` before committing.
 
+Binary files are not allowed in NRPy pull requests. Do not add images, archives,
+compiled artifacts, or other non-text assets. If a change appears to require one,
+redesign it as text or discuss an exception with maintainers first.
+
 ### Naming Conventions
 
 | Element | Convention | Examples |
@@ -100,7 +104,7 @@ from . import (
 - Use **triple double-quotes** (`"""`) consistently.
 - Follow **Sphinx/reStructuredText-style** docstrings using `:param name:`, `:return:`, `:raises ExceptionType:` fields. This is **not** Google-style (which uses `Args:` / `Returns:` / `Raises:` sections) — never use the Google-style section headers.
 - Use `:return:` (**singular**, not `:returns:`).
-- Module docstrings at the top of each file should describe purpose and authors.
+- Module docstrings at the top of each file should describe purpose and authors. For non-`__init__.py` files, an optional leading filename comment may appear immediately before the module docstring if and only if it has the exact form `# <relative path from nrpy root>.py`.
 - **Exception**: `__init__.py` files never have module docstrings (see above).
 - **Exception**: Test data files (trusted dict files) never have module docstrings.
 
@@ -151,6 +155,9 @@ Authors: Zachariah B. Etienne
 ```
 
 Rules:
+- An optional filename comment may appear immediately before the module docstring in non-`__init__.py` files only.
+- If present, it must have the exact form `# <relative path from nrpy root>.py`, e.g. `# nrpy/examples/mass_geodesic_integrator.py`.
+- `__init__.py` files are excluded from this exception and must remain comment-free.
 - Use singular `Author:` for exactly one author; plural `Authors:` for two or more.
 - In current NRPy Python files, single-author docstrings most often put the email on the next indented line, and multi-author docstrings often list contributors as stacked name/email lines.
 - The names shown in the examples above are illustrative, not prescriptive. Do not add Zachariah B. Etienne (or any other person) to a file's `Author:`/`Authors:` metadata unless that person is already an author of the file or is being intentionally credited for that file's content.
