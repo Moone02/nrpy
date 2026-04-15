@@ -99,47 +99,40 @@ def main(spacetime_name: str) -> None:
     printf("=============================================\\n");
     printf("Spacetime Metric: {spacetime_name}\\n");
     
-    printf("--- Analytic Spacetimes ---\\n");
-    printf("Mass Scale (M): %.3f\\n", commondata.M_scale);
-    printf("Spin Parameter (a): %.3f\\n", commondata.a_spin);
+    printf("--- Analytic Spacetime Physics ---\\n");
+    printf("Mass Scale (M): %.2f\\n", commondata.M_scale);
+    printf("Spin Parameter (a): %.2f\\n", commondata.a_spin);
 
-    printf("--- Initial Conditions ---\\n");
-    printf("Scan Density: %d\\n", commondata.scan_density);
-    printf("Start Time (t_start): %.3f\\n", commondata.t_start);
-
-    printf("--- Batch Integrator Numerical ---\\n");
-    printf("Initial Step Size (h_initial): %.3f\\n", commondata.numerical_initial_h);
-    printf("Max Momentum (p_t,max): %.3f\\n", commondata.p_t_max);
-    printf("Conservation Check: %d\\n", commondata.perform_conservation_check);
-    printf("Escape Radius (r_escape): %.3f\\n", commondata.r_escape);
-    printf("Slot Delta t: %.3f\\n", commondata.slot_manager_delta_t);
-    printf("Slot Min t: %.3f\\n", commondata.slot_manager_t_min);
-    printf("Integration Max t: %.3f\\n", commondata.t_integration_max);
-
-    printf("--- RKF45 Control ---\\n");
-    printf("Absolute Tolerance: %e\\n", commondata.rkf45_absolute_error_tolerance);
-    printf("Relative Tolerance: %e\\n", commondata.rkf45_error_tolerance);
-    printf("Max Step (h_max): %.3f\\n", commondata.rkf45_h_max);
-    printf("Min Step (h_min): %e\\n", commondata.rkf45_h_min);
-    printf("Max Retries: %d\\n", commondata.rkf45_max_retries);
-    printf("Safety Factor: %.3f\\n", commondata.rkf45_safety_factor);
-
-    printf("--- Source Plane ---\\n");
-    printf("Center (x, y, z): %.3f, %.3f, %.3f\\n", commondata.source_plane_center_x, commondata.source_plane_center_y, commondata.source_plane_center_z);
-    printf("Normal (x, y, z): %.3f, %.3f, %.3f\\n", commondata.source_plane_normal_x, commondata.source_plane_normal_y, commondata.source_plane_normal_z);
-    printf("Max Radius (r_max): %.3f\\n", commondata.source_r_max);
-    printf("Min Radius (r_min): %.3f\\n", commondata.source_r_min);
-    printf("Up Vector (x, y, z): %.3f, %.3f, %.3f\\n", commondata.source_up_vec_x, commondata.source_up_vec_y, commondata.source_up_vec_z);
-
-    printf("--- Window Plane ---\\n");
-    printf("Camera Pos (x, y, z): %.3f, %.3f, %.3f\\n", commondata.camera_pos_x, commondata.camera_pos_y, commondata.camera_pos_z);
-    printf("Original Window Center (x, y, z): %.3f, %.3f, %.3f\\n", commondata.original_window_center_x, commondata.original_window_center_y, commondata.original_window_center_z);
-    printf("Window Height: %.3f\\n", commondata.window_height);
-    printf("Window Width: %.3f\\n", commondata.window_width);
-    printf("Window Up Vec (x, y, z): %.3f, %.3f, %.3f\\n", commondata.window_up_vec_x, commondata.window_up_vec_y, commondata.window_up_vec_z);
+    printf("--- Camera & Window Plane ---\\n");
+    printf("Camera Pos (x, y, z): %.2f, %.2f, %.2f\\n", commondata.camera_pos_x, commondata.camera_pos_y, commondata.camera_pos_z);
+    printf("Original Window Center (x, y, z): %.2f, %.2f, %.2f\\n", commondata.original_window_center_x, commondata.original_window_center_y, commondata.original_window_center_z);
+    printf("Window Up Vec (x, y, z): %.2f, %.2f, %.2f\\n", commondata.window_up_vec_x, commondata.window_up_vec_y, commondata.window_up_vec_z);
+    printf("Window Dimensions (W x H): %.2f x %.2f\\n", commondata.window_width, commondata.window_height);
     printf("Resolution Grid: %d x %d tiles, each %d x %d px\\n", 
            commondata.window_tiles_width, commondata.window_tiles_height, 
            commondata.scan_density, commondata.scan_density);
+    printf("Total Rays per Tile: %ld\\n", (long int)commondata.scan_density * commondata.scan_density);
+
+    printf("--- Source Plane (Target) ---\\n");
+    printf("Center (x, y, z): %.2f, %.2f, %.2f\\n", commondata.source_plane_center_x, commondata.source_plane_center_y, commondata.source_plane_center_z);
+    printf("Normal (x, y, z): %.2f, %.2f, %.2f\\n", commondata.source_plane_normal_x, commondata.source_plane_normal_y, commondata.source_plane_normal_z);
+    printf("Up Vector (x, y, z): %.2f, %.2f, %.2f\\n", commondata.source_up_vec_x, commondata.source_up_vec_y, commondata.source_up_vec_z);
+    printf("Radii Bounds (Min -> Max): %.2f -> %.2f\\n", commondata.source_r_min, commondata.source_r_max);
+
+    printf("--- Temporal & Boundary Conditions ---\\n");
+    printf("Start Time (t_start): %.2f\\n", commondata.t_start);
+    printf("Integration Max t: %.2f\\n", commondata.t_integration_max);
+    printf("Escape Radius (r_escape): %.2f\\n", commondata.r_escape);
+    printf("Max Momentum (p_t,max): %.2f\\n", commondata.p_t_max);
+
+    printf("--- Batch Integrator & RKF45 Settings ---\\n");
+    printf("Initial Step Size (h_initial): %.2f\\n", commondata.numerical_initial_h);
+    printf("Min / Max Step (h_min / h_max): %e / %.2f\\n", commondata.rkf45_h_min, commondata.rkf45_h_max);
+    printf("Abs / Rel Tolerance: %e / %e\\n", commondata.rkf45_absolute_error_tolerance, commondata.rkf45_error_tolerance);
+    printf("Safety Factor: %.2f\\n", commondata.rkf45_safety_factor);
+    printf("Max Retries: %d\\n", commondata.rkf45_max_retries);
+    printf("Conservation Check: %d\\n", commondata.perform_conservation_check);
+    printf("Slot Manager (Delta t / Min t): %.2f / %.2f\\n", commondata.slot_manager_delta_t, commondata.slot_manager_t_min);
 
     //==========================================
     // TILING CALCULATIONS
