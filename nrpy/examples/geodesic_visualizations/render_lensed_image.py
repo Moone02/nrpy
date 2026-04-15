@@ -51,7 +51,7 @@ def _load_texture(
     :raises TypeError: Raised if the input is not a string or NumPy array.
     """
     # pylint: disable=import-outside-toplevel
-    from PIL import Image
+    from PIL import Image  # type: ignore
 
     if isinstance(image_input, str):
         if not os.path.exists(image_input):
