@@ -15,7 +15,7 @@ import zipfile
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import Optional, Tuple, Union
 
-import numba as nb  # type: ignore
+import numba as nb  # type: ignore # pylint: disable=import-error
 import numpy as np
 import numpy.typing as npt
 
@@ -50,7 +50,7 @@ def _load_texture(
     :raises FileNotFoundError: Raised if the provided file path does not exist.
     :raises TypeError: Raised if the input is not a string or NumPy array.
     """
-    # pylint: disable=import-outside-toplevel
+    # pylint: disable=import-outside-toplevel, import-error
     from PIL import Image  # type: ignore
 
     if isinstance(image_input, str):
@@ -325,7 +325,7 @@ def generate_static_lensed_image(
     :param chunk_size: Number of records to read from the binary stream at once.
     :param display_image: If True, opens the resulting image using the default viewer.
     """
-    # pylint: disable=import-outside-toplevel
+    # pylint: disable=import-outside-toplevel, import-error
     from PIL import Image
 
     print(f"--- Generating Static Lensed Image: '{output_filename}' ---")
