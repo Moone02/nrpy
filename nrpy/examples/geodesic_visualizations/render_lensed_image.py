@@ -17,7 +17,7 @@ from typing import Optional, Tuple, Union
 
 import numba as nb  # type: ignore
 import numpy as np
-import numpy.typing as npt  # type: ignore
+import numpy.typing as npt
 
 from nrpy.examples.geodesic_visualizations import config_and_types as cfg
 
@@ -51,7 +51,7 @@ def _load_texture(
     :raises TypeError: Raised if the input is not a string or NumPy array.
     """
     # pylint: disable=import-outside-toplevel
-    from PIL import Image  # type: ignore
+    from PIL import Image
 
     if isinstance(image_input, str):
         if not os.path.exists(image_input):
@@ -326,7 +326,7 @@ def generate_static_lensed_image(
     :param display_image: If True, opens the resulting image using the default viewer.
     """
     # pylint: disable=import-outside-toplevel
-    from PIL import Image  # type: ignore
+    from PIL import Image
 
     print(f"--- Generating Static Lensed Image: '{output_filename}' ---")
 
