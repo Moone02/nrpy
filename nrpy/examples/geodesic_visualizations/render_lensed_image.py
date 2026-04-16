@@ -13,9 +13,30 @@ Author: Dalton Moone.
 import os
 import zipfile
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from typing import Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
-import numba as nb  # type: ignore # pylint: disable=import-error
+try:
+    import numba as nb  # type: ignore # pylint: disable=import-error
+except ImportError:
+
+    class _DummyNumba:
+        """Dummy."""
+
+        def njit(self, *_args, **_kwargs):  # type: ignore
+            """
+            Return a decorator that returns the unmodified function.
+
+            :param _args: Positional arguments for the njit decorator.
+            :param _kwargs: Keyword arguments for the njit decorator.
+            :return: A pass-through decorator.
+            """
+
+            def decorator(func):  # type: ignore
+                return func
+
+            return decorator
+
+    nb = _DummyNumba()
 import numpy as np
 import numpy.typing as npt
 
@@ -51,7 +72,9 @@ def _load_texture(
     :raises TypeError: Raised if the input is not a string or NumPy array.
     """
     # pylint: disable=import-outside-toplevel, import-error
-    from PIL import Image  # type: ignore
+    from PIL import (  # type: ignore[import-not-found, import-untyped, unused-ignore]
+        Image,
+    )
 
     if isinstance(image_input, str):
         if not os.path.exists(image_input):
@@ -89,7 +112,7 @@ def generate_source_disk_array(
     :return: A uint8 RGB NumPy array of the generated accretion disk texture.
     """
     # pylint: disable=import-outside-toplevel, import-error
-    import matplotlib.pyplot as plt  # type: ignore
+    import matplotlib.pyplot as plt  # type: ignore[import-not-found, import-untyped, unused-ignore]
 
     half_width = disk_physical_width / 2.0
     # Create coordinate grid representing the flat source plane
@@ -299,7 +322,7 @@ def generate_static_lensed_image(
     source_image_width: float,
     sphere_image: Union[str, npt.NDArray[np.float64]],
     source_image: Union[str, npt.NDArray[np.float64]],
-    blueprint_filenames: list[str],
+    blueprint_filenames: List[str],
     window_width: float,
     window_height: float,
     chunk_size: int = cfg.CHUNK_SIZE,
@@ -326,7 +349,9 @@ def generate_static_lensed_image(
     :param display_image: If True, opens the resulting image using the default viewer.
     """
     # pylint: disable=import-outside-toplevel, import-error
-    from PIL import Image
+    from PIL import (  # type: ignore[import-not-found, import-untyped, unused-ignore] # pyright: ignore
+        Image,
+    )
 
     print(f"--- Generating Static Lensed Image: '{output_filename}' ---")
 

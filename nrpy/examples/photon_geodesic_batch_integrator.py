@@ -340,18 +340,16 @@ if __name__ == "__main__":
     # Define the directory containing the visualization assets relative to the repository root
     vis_dir = os.path.join("nrpy", "examples", "geodesic_visualizations")
 
-    # Locate the visualization script and the background texture
+    # Locate the visualization script
     vis_script_src = os.path.join(vis_dir, "visualize_lensed_image.py")
-    starmap_src = os.path.join(vis_dir, "starmap_2020.png")
     config_src = os.path.join(vis_dir, "config_and_types.py")
     render_src = os.path.join(vis_dir, "render_lensed_image.py")
 
     # Locate the blueprint analysis script
     blueprint_analysis_src = os.path.join(vis_dir, "blueprint_analysis.py")
 
-    # Copy the scripts and background texture into the generated project directory
+    # Copy the scripts into the generated project directory
     shutil.copy(vis_script_src, project_dir)
-    shutil.copy(starmap_src, project_dir)
     shutil.copy(blueprint_analysis_src, project_dir)
 
     # The inner disk radius ensures the texture mapping aligns with the computed initial conditions.
@@ -401,7 +399,9 @@ if __name__ == "__main__":
     blueprint_command = (
         f"python3 blueprint_analysis.py "
         f"--window_tiles_width {c_tiles_width} "
-        f"--window_tiles_height {c_tiles_height}"
+        f"--window_tiles_height {c_tiles_height} "
+        f"--window_width {c_window_width} "
+        f"--window_height {c_window_height}"
     )
 
     print("    To run the blueprint diagnostic:")

@@ -13,6 +13,7 @@ import argparse
 import math
 import os
 import sys
+import urllib.request
 
 import numpy as np
 
@@ -119,10 +120,18 @@ def main() -> None:
     # The texture path locates the high-resolution background celestial sphere image.
     starmap_path = os.path.join(script_dir, cfg.SPHERE_TEXTURE_FILE)
 
-    # The existence check ensures the celestial texture asset is available.
+    # Download the celestial sphere texture if it doesn't already exist locally.
     if not os.path.exists(starmap_path):
-        print(f"ERROR: Sphere texture not found at '{starmap_path}'.")
-        return
+        print(f"Downloading {cfg.SPHERE_TEXTURE_FILE}...")
+        starmap_url = "https://raw.githubusercontent.com/Moone02/nrpy-visual-assets/96a39ba8510e401ea8ec836154fca5db3b13f4d3/noirlab2430b.tif"
+        try:
+            urllib.request.urlretrieve(starmap_url, starmap_path)
+            print("Download complete.")
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            print(
+                f"FATAL: Failed to download {cfg.SPHERE_TEXTURE_FILE} from {starmap_url}: {e}"
+            )
+            sys.exit(1)
 
     # Physical span encompasses full mathematical diameter of accretion disk geometry.
     source_physical_width = 2.0 * args.source_r_max

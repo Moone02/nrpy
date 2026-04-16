@@ -60,9 +60,10 @@ OUTPUT_BASEDIR = os.path.join(
 # Step 4: Physics and scene parameters.
 MASS_OF_BLACK_HOLE = 1.0  # Normalized mass ($M$)
 WINDOW_WIDTH = 1.0  # Physical width of the camera's projection window
+WINDOW_HEIGHT = 1.0  # Physical height of the camera's projection window
 
 # Step 5: Texture and disk generation parameters.
-SPHERE_TEXTURE_FILE = "starmap_2020.png"  # Background image for escaped rays
+SPHERE_TEXTURE_FILE = "noirlab2430b.tif"  # Background image for escaped rays
 DISK_INNER_RADIUS = 6.0  # Inner edge of the disk (usually near ISCO)
 DISK_OUTER_RADIUS = 25.0  # Outer edge of the disk
 COLORMAP = "afmhot"  # Matplotlib colormap for disk temperature

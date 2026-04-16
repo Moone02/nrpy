@@ -12,7 +12,10 @@ Author: Dalton Moone.
 import argparse
 import logging
 import os
-from typing import Any, Optional
+from typing import Optional, cast
+
+import numpy as np
+import numpy.typing as npt
 
 # Mute matplotlib's verbose font debugging output at the module level
 # to prevent console spam during standard execution.
@@ -22,7 +25,9 @@ logging.getLogger("PIL").setLevel(logging.WARNING)
 
 
 def plot_trajectory(
-    data: Any, r_horizon: float = 2.0, particle_type: str = "Test Particle"
+    data: "npt.NDArray[np.float64]",
+    r_horizon: float = 2.0,
+    particle_type: str = "Test Particle",
 ) -> None:
     """
     Create a 3D visualization of the particle trajectory and the black hole horizon.
@@ -34,9 +39,11 @@ def plot_trajectory(
     :param r_horizon: The radial coordinate representing the event horizon.
     :param particle_type: String descriptor of the particle for plot labels.
     """
-    # pylint: disable=import-outside-toplevel, import-error
-    import matplotlib.pyplot as plt  # type: ignore
-    import numpy as np
+    # pylint: disable=import-outside-toplevel, import-error, no-name-in-module
+    import matplotlib.pyplot as plt  # type: ignore[import-not-found, import-untyped, unused-ignore]
+    from mpl_toolkits.mplot3d.axes3d import (  # type: ignore[import-not-found, import-untyped, unused-ignore]
+        Axes3D,
+    )
 
     # Step 1: Descriptive Physical Variable Mapping.
     # Extract the spatial coordinates (x, y, z) from the dataset.
@@ -46,7 +53,7 @@ def plot_trajectory(
     z_pts = data[:, 4]
 
     fig = plt.figure(figsize=(8, 8))
-    ax = fig.add_subplot(111, projection="3d")
+    ax = cast(Axes3D, fig.add_subplot(111, projection="3d"))
 
     # Step 2: Plot the geodesic path.
     ax.plot(
@@ -124,9 +131,6 @@ def visualize_trajectory(
     :param traj_path: Path to the .txt trajectory file. Defaults to 'trajectory.txt'.
     :param particle_type: String representing the particle type for dynamic labeling.
     """
-    # pylint: disable=import-outside-toplevel
-    import numpy as np
-
     if traj_path is None:
         # Default expectation: the script is executed in the output directory.
         traj_path = "trajectory.txt"

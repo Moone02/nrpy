@@ -18,18 +18,17 @@ Author: Dalton Moone.
 """
 
 import os
-import sys
-from typing import Any
+from typing import Dict, List
+
+import numpy as np
+import numpy.typing as npt
 
 import nrpy.examples.geodesic_visualizations.config_and_types as cfg
 
-# Temporarily add the script's directory to sys.path to ensure we can import config.
 script_dir = os.path.dirname(os.path.abspath(__file__))
-if script_dir not in sys.path:
-    sys.path.append(script_dir)
 
 
-def plot_heatmaps(data: Any) -> None:
+def plot_heatmaps(data: "npt.NDArray[np.void]") -> None:
     """
     Generate hexbin heatmaps for window, source plane, and sphere coordinates.
 
@@ -40,7 +39,6 @@ def plot_heatmaps(data: Any) -> None:
     """
     # pylint: disable=import-outside-toplevel, import-error
     import matplotlib.pyplot as plt  # type: ignore
-    import numpy as np
 
     # Preamble: Descriptive Physical Variable Mapping.
     # Extract coordinates from the structured array for plotting.
@@ -118,7 +116,10 @@ def plot_heatmaps(data: Any) -> None:
 
 
 def diagnose_blueprint(
-    window_tiles_width: int = 1, window_tiles_height: int = 1
+    window_tiles_width: int = 1,
+    window_tiles_height: int = 1,
+    window_width: float = 1.0,
+    window_height: float = 1.0,
 ) -> None:
     """
     Read the binary blueprint files and print diagnostics to the console.
@@ -127,11 +128,11 @@ def diagnose_blueprint(
 
     :param window_tiles_width: Number of horizontal tiles generated.
     :param window_tiles_height: Number of vertical tiles generated.
+    :param window_width: The physical width of the camera's local window.
+    :param window_height: The physical height of the camera's local window.
     """
     # pylint: disable=import-outside-toplevel
     import zipfile
-
-    import numpy as np
 
     print("=================================================================")
     print(" BLUEPRINT DIAGNOSTICS & VISUALIZATION")
@@ -165,8 +166,8 @@ def diagnose_blueprint(
 
     total_rays = 0
     in_view = 0
-    enum_counts: dict[int, int] = {}
-    first_records: list[Any] = []
+    enum_counts: Dict[int, int] = {}
+    first_records: List["npt.NDArray[np.void]"] = []
     sampled_data_list = []
 
     chunk_size = cfg.CHUNK_SIZE
@@ -202,13 +203,14 @@ def diagnose_blueprint(
                         enum_counts[e] = enum_counts.get(e, 0) + c
 
                     # Step 2: Accumulate Window Coordinate Bounds.
-                    half_w = cfg.WINDOW_WIDTH / 2.0
+                    half_w = window_width / 2.0
+                    half_h = window_height / 2.0
                     in_view += int(
                         np.sum(
                             (chunk_data["y_w"] >= -half_w)
                             & (chunk_data["y_w"] < half_w)
-                            & (chunk_data["z_w"] >= -half_w)
-                            & (chunk_data["z_w"] < half_w)
+                            & (chunk_data["z_w"] >= -half_h)
+                            & (chunk_data["z_w"] < half_h)
                         )
                     )
 
@@ -287,6 +289,23 @@ if __name__ == "__main__":
         default=1,
         help="Number of vertical tiles generated.",
     )
+    parser.add_argument(
+        "--window_width",
+        type=float,
+        default=1.0,
+        help="Camera window width w in coordinate units.",
+    )
+    parser.add_argument(
+        "--window_height",
+        type=float,
+        default=1.0,
+        help="Camera window height h in coordinate units.",
+    )
     args = parser.parse_args()
 
-    diagnose_blueprint(args.window_tiles_width, args.window_tiles_height)
+    diagnose_blueprint(
+        args.window_tiles_width,
+        args.window_tiles_height,
+        args.window_width,
+        args.window_height,
+    )
