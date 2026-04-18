@@ -226,8 +226,8 @@ if __name__ == "__main__":
 
     # RKF45 Adaptive Control Tolerances
     par.glb_code_params_dict["numerical_initial_h"].defaultvalue = 0.1
-    par.glb_code_params_dict["rkf45_absolute_error_tolerance"].defaultvalue = 1e-12
-    par.glb_code_params_dict["rkf45_error_tolerance"].defaultvalue = 1e-12
+    par.glb_code_params_dict["rkf45_absolute_error_tolerance"].defaultvalue = 1e-10
+    par.glb_code_params_dict["rkf45_error_tolerance"].defaultvalue = 1e-10
     par.glb_code_params_dict["rkf45_h_max"].defaultvalue = 10.0
     par.glb_code_params_dict["rkf45_h_min"].defaultvalue = 1e-15
 
