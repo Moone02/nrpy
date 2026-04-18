@@ -56,67 +56,12 @@ Authors: Wesley Inselman
 
 from inspect import currentframe as cfr
 from types import FrameType as FT
-from typing import Tuple, Union, cast
-
-import sympy as sp
+from typing import Union, cast
 
 import nrpy.c_codegen as ccg
 import nrpy.c_function as cfc
+import nrpy.equations.general_relativity.bhahaha.area as bhahaha_area
 import nrpy.helpers.parallel_codegen as pcg
-import nrpy.indexedexp as ixp
-from nrpy.equations.general_relativity.bhahaha.ExpansionFunctionTheta import (
-    ExpansionFunctionTheta,
-)
-from nrpy.infrastructures import BHaH
-
-
-# circumferential_arclength: Calculates the differential arclength element along a specified direction (theta or phi).
-def circumference_metric_roots() -> Tuple[sp.Expr, sp.Expr, sp.Expr]:
-    """
-    Compute the induced-metric ingredients for the proper-circumference integrand.
-
-    We construct q_{AB} on the embedded surface r = h(theta, phi) in terms of the ambient spatial metric gamma_{ij}
-    and angular derivatives of h. Explicitly,
-        q_{theta theta} = gamma_{rr} h_{,theta}^2 + 2 gamma_{r theta} h_{,theta} + gamma_{theta theta}
-        q_{phi phi}     = gamma_{rr} h_{,phi}^2  + 2 gamma_{r phi}  h_{,phi}  + gamma_{phi phi}
-        q_{theta phi}   = gamma_{rr} h_{,theta} h_{,phi} + gamma_{r theta} h_{,phi}
-                          + gamma_{r phi} h_{,theta} + gamma_{theta phi}.
-
-    We return sqrt(q_{theta theta}), sqrt(q_{phi phi}), and q_{theta phi} (not sqrt) for the following reasons:
-      (1) The diagonals are nonnegative scale factors; interpolating their square roots improves conditioning and guards
-          against tiny negative overshoots that would otherwise cause NaNs in the outer sqrt(ds^2).
-      (2) The cross-term q_{theta phi} changes sign and enters linearly in the ds integrand; preserving its sign is essential.
-
-    :return: A tuple of SymPy expressions (sqrt_qtt, sqrt_qpp, qtp) evaluated with xx0 -> h substitutions applied.
-    """
-    Th = ExpansionFunctionTheta["Spherical"]
-    h = sp.Symbol("hh", real=True)
-    h_dD = ixp.declarerank1("hh_dD")
-
-    # Induced 2-metric components on r = h(theta,phi), expressed on the spherical reference metric.
-    qtt = (
-        Th.gammaDD[0][0] * h_dD[1] ** 2
-        + 2 * Th.gammaDD[0][1] * h_dD[1]
-        + Th.gammaDD[1][1]
-    )
-    qpp = (
-        Th.gammaDD[0][0] * h_dD[2] ** 2
-        + 2 * Th.gammaDD[0][2] * h_dD[2]
-        + Th.gammaDD[2][2]
-    )
-    qtp = (
-        Th.gammaDD[0][0] * h_dD[1] * h_dD[2]
-        + Th.gammaDD[0][1] * h_dD[2]
-        + Th.gammaDD[0][2] * h_dD[1]
-        + Th.gammaDD[1][2]
-    )
-
-    # Replace the symbolic radius placeholder xx0 with h in all expressions, then
-    # return sqrt(diagonals) and raw off-diagonal as discussed above.
-    sqrt_qtt = sp.sqrt(qtt.replace(sp.sympify("xx0"), h))
-    sqrt_qpp = sp.sqrt(qpp.replace(sp.sympify("xx0"), h))
-    qtp = qtp.replace(sp.sympify("xx0"), h)
-    return sqrt_qtt, sqrt_qpp, qtp
 
 
 def register_CFunction_diagnostics_proper_circumferences_general(
@@ -249,7 +194,9 @@ static REAL compute_spin(const REAL C_r) {
 """
     # Newton-Raphson is a bit more robust; also our initial guess is pretty good, so typically we need only a few iterations.
     prefunc += ccg.c_codegen(
-        BHaH.BHaHAHA.area.spin_NewtonRaphson(), "const REAL x_np1", include_braces=False
+        bhahaha_area.spin_NewtonRaphson(),
+        "const REAL x_np1",
+        include_braces=False,
     )
     prefunc += r"""
     if (x_np1 > 1.0) {
@@ -368,7 +315,7 @@ and preserves positivity; keeping q_tp raw preserves the sign required by the cr
 
 Precomputation strategy on the (theta,phi) grid at fixed i0=NGHOSTS:
   sqrt(q_{theta theta}), sqrt(q_{phi phi}), and q_{theta phi} are generated via NRPy's SymPy expressions
-  (BHaHAHA/area.py::circumference_metric_roots). In addition, we precompute scalar integrands
+  (nrpy/equations/general_relativity/bhahaha/area.py::circumference_metric_roots). In addition, we precompute scalar integrands
   f_eq(theta,phi) and f_pol(theta,phi) using smooth great-circle tangent fields, so the integration phase
   only interpolates a single scalar per sample. This avoids finite differencing of angles entirely
   and aligns the derivative accuracy with the high-order midpoint quadrature.
@@ -417,7 +364,7 @@ Precomputation strategy on the (theta,phi) grid at fixed i0=NGHOSTS:
 """
     # Generate the three outputs from the induced 2-metric roots:
     body += ccg.c_codegen(
-        list(circumference_metric_roots()),
+        bhahaha_area.circumference_metric_roots(),
         [
             "metric_data_gfs[IDX4pt(0, 0) + IDX2(i1, i2)]",  # sqrt(q_tt)
             "metric_data_gfs[IDX4pt(1, 0) + IDX2(i1, i2)]",  # sqrt(q_pp)
@@ -635,11 +582,12 @@ Precomputation strategy on the (theta,phi) grid at fixed i0=NGHOSTS:
 
 if __name__ == "__main__":
     import doctest
+    import sys
 
     results = doctest.testmod()
 
     if results.failed > 0:
-        raise RuntimeError(
-            f"Doctest failed: {results.failed} of {results.attempted} test(s)"
-        )
-    print(f"Doctest passed: All {results.attempted} test(s) passed")
+        print(f"Doctest failed: {results.failed} of {results.attempted} test(s)")
+        sys.exit(1)
+    else:
+        print(f"Doctest passed: All {results.attempted} test(s) passed")

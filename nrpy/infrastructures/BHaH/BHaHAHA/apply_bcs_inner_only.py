@@ -5,8 +5,6 @@ Author: Zachariah B. Etienne
         zachetie **at** gmail **dot* com
 """
 
-import sys
-
 import nrpy.c_function as cfc
 from nrpy.infrastructures.BHaH.CurviBoundaryConditions.apply_bcs_inner_only import (
     APPLY_PARITY_BRANCHLESS_PREFUNC,
@@ -72,6 +70,7 @@ boundary points ("inner maps to outer").
 
 if __name__ == "__main__":
     import doctest
+    import sys
 
     results = doctest.testmod()
 

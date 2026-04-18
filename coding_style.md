@@ -155,14 +155,9 @@ Authors: Zachariah B. Etienne
 ```
 
 Rules:
-- An optional filename comment may appear immediately before the module docstring in non-`__init__.py` files only.
-- If present, it must have the exact form `# <relative path from nrpy root>.py`, e.g. `# nrpy/examples/mass_geodesic_integrator.py`.
-- `__init__.py` files are excluded from this exception and must remain comment-free.
 - Use singular `Author:` for exactly one author; plural `Authors:` for two or more.
-- In current NRPy Python files, single-author docstrings most often put the email on the next indented line, and multi-author docstrings often list contributors as stacked name/email lines.
-- The names shown in the examples above are illustrative, not prescriptive. Do not add Zachariah B. Etienne (or any other person) to a file's `Author:`/`Authors:` metadata unless that person is already an author of the file or is being intentionally credited for that file's content.
-- Author contact information may be included in whatever source-level format is most practical for the file; this style guide does not enforce a specific email layout or obfuscation pattern.
-- Email obfuscation is encouraged when publishing addresses in source code.
+- The names in the examples above are illustrative. Do not add any person to `Author:`/`Authors:` unless they are already an author of that file.
+- Email obfuscation is encouraged; the exact format is not enforced.
 
 **Common anti-patterns to avoid** (all widespread in older files — do not reproduce):
 
@@ -178,7 +173,7 @@ Rules:
 - Return type annotations are always present, including `-> None`.
 - `# type: ignore` comments are used selectively for third-party imports lacking stubs (e.g., `from mpmath import mpf  # type: ignore`).
 - **Do not use `Any` in type hints** when a more specific type can be written. Prefer precise unions, protocols, `object`, or small helper aliases. Treat `Any` as last resort for unavoidable third-party typing gaps, and document the reason inline when it must appear.
-- **Do not use Python 3.9+ builtin generics** (`list[X]`, `dict[X, Y]`, `tuple[X, ...]`) or the `X | None` union shorthand. Always use `List[X]`, `Dict[X, Y]`, `Optional[X]`, `Union[X, Y]` from `typing` — zero occurrences of the newer syntax exist in the codebase.
+- **Do not use Python 3.9+ builtin generics** (`list[X]`, `dict[X, Y]`, `tuple[X, ...]`) or the `X | None` union shorthand. Always use `List[X]`, `Dict[X, Y]`, `Optional[X]`, `Union[X, Y]` from `typing`. A small number of files (primarily in `infrastructures/BHaH/general_relativity/basis_transforms/` and `examples/`) use the newer syntax; do not introduce it in new files.
 - **`from __future__ import annotations`** is used in ~14 files (mostly the `BHaH/rotation` submodule). It is not the codebase-wide standard; do not add it to files that do not already use it unless there is a specific reason (e.g., forward references in the same file).
 
 ```python
@@ -191,9 +186,6 @@ def process_data(
 
 ### Comment Style
 
-- Inline comments are used sparingly, primarily for complex algorithmic explanations.
-- Block comments with `#` prefix are used for section headers.
-- Comments should be clear and concise.
 - **`Note:` inside docstrings** — inline `Note:` prose is acceptable for clarifying subtle behavior directly inside a docstring paragraph. A small number of files (primarily in `equations/`) use the reST `.. note::` directive block instead; either form is acceptable, but do not mix both within the same docstring.
 
 ```python
@@ -215,11 +207,19 @@ def process_data(
 # Step 2: Compute Christoffel symbols.
 ```
 
-The uppercase variant `# STEP N:` appears in a small number of older files and is **non-standard** — use lowercase `# Step N:` in all new code.
+The uppercase variant `# STEP N:` is **non-standard** and appears in the `examples/` directory (e.g., `wave_equation_cartesian.py`, `spinning_blackhole.py`) as well as some older infrastructure files. Use lowercase `# Step N:` in all new code; do not propagate `# STEP N:` to new files.
 
 ### `if __name__ == "__main__":` Block
 
-Every runnable non-test, non-`__init__.py` file ends with this exact block to run its embedded doctests:
+For runnable non-test, non-`__init__.py` modules under `nrpy/equations/` and all subdirectories, the file ends with this exact block to run its embedded doctests.
+
+For runnable modules under `infrastructures/*/*.py`, this block is strongly encouraged.
+
+For other runnable modules, this block is recommended when it is useful.
+
+Outside `nrpy/infrastructures/*/*.py`, doctests that invoke Python-based C/C++ code generation are discouraged, though not forbidden. Prefer symbolic validation, expression-level checks, or other cheaper invariants unless the doctest adds clear signal that those alternatives cannot provide.
+
+When present, use this exact block:
 
 ```python
 if __name__ == "__main__":
@@ -265,6 +265,7 @@ This section documents the patterns used when building symbolic equations in the
   - Face-value substitution in GRHD fluxes
   - Systematic `nrpyABS` → `sp.Abs` conversion
   - Surface radius substitution in horizon modules
+  - Evaluating a symbolic expression at a specific parameter value (e.g., `.subs(t, t_attach)` in waveform attachment-point calculations)
 
 - **Preferred SymPy patterns**:
   - Use `sp.sympify(0)` / `sp.sympify(1)` for accumulator initialization
@@ -349,14 +350,6 @@ ve.compare_or_generate_trusted_results(
 )
 ```
 
-**How validation works internally**:
-
-1. **CSE optimization**: Each SymPy expression is passed through SymPy's `cse()` (common subexpression elimination) to speed up numerical evaluation.
-2. **Symbol substitution**: Free symbols are mapped to deterministic `mpf` values using MD5-hashed seeds (`fixed_mpfs_for_free_symbols=True` ensures reproducibility). Special constants like `PI` and `M_SQRT1_2` are set to their correct mathematical values.
-3. **High-precision evaluation**: Expressions are evaluated at 30-digit precision using `mpmath`. If a result is suspiciously close to zero, precision is doubled to 60 digits to confirm whether it should be exactly zero.
-4. **Trusted file comparison**: The computed `mpf`/`mpc` values are compared against a `trusted_dict` stored in a sibling `tests/` directory. Relative error tolerance is `10^(-4/5 * precision)` (~24 significant digits).
-5. **Auto-generation**: If no trusted file exists, one is automatically generated and formatted with Black.
-
 **Trusted file format**: Test data files in `tests/` directories follow the **Trusted Vector File Contract** described below:
 
 ```python
@@ -385,26 +378,7 @@ trusted_dict = {
 
 ### Equation Module Output Contract
 
-Equation modules must expose the symbolic outputs that will be validated and code-generated via a predictable structure. The typical pattern is:
-
-1. During symbolic construction, assign key output expressions to `self.<expr_name>`.
-2. Build a results dictionary from the instance namespace (commonly `bq.__dict__` or an explicit dict) and pass it through `nrpy.validate_expressions.validate_expressions`.
-
-A common usage looks like:
-
-```python
-import nrpy.validate_expressions.validate_expressions as ve
-
-results_dict = ve.process_dictionary_of_expressions(
-    bq.__dict__, fixed_mpfs_for_free_symbols=True
-)
-ve.compare_or_generate_trusted_results(
-    os.path.abspath(__file__),
-    os.getcwd(),
-    f"{os.path.splitext(os.path.basename(__file__))[0]}_{CoordSystem}",
-    results_dict,
-)
-```
+Equation modules assign key outputs to `self.<expr_name>`, then validate via the same `process_dictionary_of_expressions` / `compare_or_generate_trusted_results` pattern shown above (using `bq.__dict__` or an explicit dict).
 
 Naming expectations:
 - Expression names in the results dictionary must match the `trusted_dict` keys used by the corresponding `tests/<module>*.py` file.
@@ -430,15 +404,15 @@ Style rules:
 
 ### Prohibited Dependencies
 
-- **`import re` — USE SPARINGLY**: Regex is used only when genuine pattern matching is required (e.g., detecting coordinate-system variants by name, transforming loop-body strings). It is not acceptable for simple string manipulation that `.replace()` can handle. Five core files (`reference_metric.py`, `rfm_wrapper_functions.py`, `CarpetX/general_relativity/rhs_eval.py`, `BHaH/general_relativity/constraints_eval.py`, `ETLegacy/general_relativity/rhs_eval.py`) use `re` for legitimate reasons; follow their pattern and add a comment explaining why `.replace()` is insufficient.
+- **`import re` — FORBIDDEN WHEN `.replace()` SUFFICES**: Regex may be used only when genuine pattern matching is required (e.g., detecting coordinate-system variants by name or matching variable text layouts that cannot be handled robustly with direct string replacement). It is forbidden for simple string manipulation that `.replace()` can handle. If `.replace()` or another plain-string method is sufficient, do not `import re`. Five core files (`reference_metric.py`, `rfm_wrapper_functions.py`, `CarpetX/general_relativity/rhs_eval.py`, `BHaH/general_relativity/constraints_eval.py`, `ETLegacy/general_relativity/rhs_eval.py`) use `re` for legitimate reasons; follow their pattern and add a comment explaining why `.replace()` is insufficient.
 
-- **`numpy` — NEVER DEPEND ON NUMPY**: NRPy codes cannot ever depend on numpy. The workflow is: symbolic expression → C code. All computation is done symbolically with SymPy, then code-generated to C.
+- **`numpy` — FORBIDDEN IN CORE NRPY, ALLOWED IN VISUALIZATION SCRIPTS**: Core NRPy code must not depend on numpy. The workflow is: symbolic expression → C code. All core computation is done symbolically with SymPy, then code-generated to C. Exception: visualization/post-processing scripts may depend on numpy when needed for image handling, plotting, binary parsing, or similar non-core analysis tasks.
 
 ---
 
 ## Infrastructure Code Patterns
 
-Based on analysis of the BHaHAHA infrastructure module, the following patterns are standard for NRPy infrastructure code:
+The following patterns are standard for NRPy infrastructure code:
 
 ### Module Organization
 
@@ -451,7 +425,8 @@ Based on analysis of the BHaHAHA infrastructure module, the following patterns a
   # Imports
   # Main registration function: register_CFunction_<name>()
   # Optional helper functions (Python-side symbolic computation)
-  # if __name__ == "__main__": doctest block
+  # Optional if __name__ == "__main__": doctest block
+  # Required for modules under nrpy/equations/ and subdirectories
   ```
 
 ### Doctest Conventions
@@ -474,7 +449,7 @@ def register_CFunction_foo(...) -> ...:
     """
 ```
 
-The singular `Doctest:` label also appears in a small number of older files; prefer the plural `Doctests:` in new code.
+Two non-standard variants also appear in the codebase: the singular `Doctest:` (older files) and the mixed-case `DocTests:` (core files including `c_function.py` and `params.py`). Use `Doctests:` (lowercase `t`, plural) in all new code.
 
 #### `validate_strings` pattern
 
@@ -496,6 +471,8 @@ Key points:
 - `validate_strings` compares against a trusted file in `tests/` (auto-generated on first run).
 - Set `file_ext="cu"` when the generated code is CUDA, `"c"` otherwise.
 - Import `validate_strings` (and `clang_format` if needed) inside the doctest, not at module level.
+- Doctests that drive Python-based C/C++ generation are most appropriate in `nrpy/infrastructures/*/*.py`, where registration functions are a core public interface.
+- Outside `nrpy/infrastructures/*/*.py`, such doctests are discouraged but still allowed when they verify meaningful behavior that cheaper symbolic, structural, or non-codegen checks would miss.
 - **Exception — generated-kernel-dominated C functions**: Do **not** generate or check trusted output files for C functions whose bodies primarily consist of generated kernels, especially large kernels emitted from SymPy expressions. Such output is too sensitive to SymPy version and codegen details for exact string comparison to be a reliable unit-test signal.
 - For these generated-kernel-heavy functions, prefer validation at the symbolic-expression level or with cheaper structural/sanity checks instead of outputting a golden C file under `tests/`.
 
@@ -506,7 +483,7 @@ Some functions include `Doctests:` blocks with `# FIXME` placeholders. Treat the
 - Prefer doctests that validate generated strings (e.g., via `validate_strings`) or cheap invariants, but skip golden-output doctests for large generated kernels as described above.
 - If you see `# FIXME`, either complete it in a follow-up PR or remove the placeholder when the doctest is ready.
 
-**Doctest prohibition:** Do not write doctests whose primary purpose is to assert that a `CFunction` successfully registers (e.g., checking membership in `cfc.CFunction_dict` or that `register_CFunction_*()` returns without error). Such doctests provide low value and tend to be brittle.
+**Doctest prohibition:** Do not write trivial doctests that appear to exist only to check a box. In particular, forbid doctests whose primary purpose is merely to show that Python-based C/C++ generation ran, that a `CFunction` successfully registered, that `register_CFunction_*()` returned without error, or that an object/function can be called with no meaningful assertion. Such doctests provide low value and tend to be brittle.
 
 ### Parallel Codegen Phase Detection
 
@@ -574,6 +551,21 @@ For readability, embedded C inside raw strings should use 2-space indentation wh
 - **`#include` directives** inside C bodies use `#include "set_CodeParameters.h"` when `include_CodeParameters_h=True`.
 - **String replacement** is used to adapt generated C code: `.replace("auxevol_gfs[IDX4(", "commondata->interp_src_gfs[IDX4(SRC_")`.
 
+#### BHaH symbolic codegen rules
+
+For new BHaH infrastructure generators that emit ordinary per-grid or per-point kernels, prefer infrastructure helpers over handwritten emitted C:
+
+- Prefer `BHaH.simple_loop.simple_loop()` over handwritten `LOOP_OMP(...)` or raw nested `for` loops when generating standard grid loops.
+- When symbolic expressions depend on registered gridfunctions, prefer `ccg.c_codegen(..., automatically_read_gf_data_from_memory=True)` and provide the expected array aliases (for example `in_gfs`) instead of hand-writing repetitive `const REAL ... = y_n_gfs[...]` loads.
+- Keep transformations symbolic until `c_codegen` whenever practical. Do not use string-based replacement of symbolic expressions or generated C when the same result can be expressed symbolically.
+- For this class of infrastructure code, do not introduce new `#include "set_CodeParameters.h"` lines inside generated function bodies. Instead, derive needed `params` and `commondata` locals from the symbolic expressions using `get_params_commondata_symbols_from_expr_list()` and `generate_definition_header()`.
+- Avoid routine post-registration mutation of `cfc.CFunction_dict[...]` bodies as a customization mechanism. Prefer explicit extension hooks or function parameters in the shared registration helper that owns the emitted C.
+- Keep the registration function linear. For one-off symbolic setup used only by a single `register_CFunction_*()` routine, do not factor the work into private helper functions that force readers to scroll up and down to reconstruct the flow.
+- Construct symbolic expressions immediately before they are consumed by `c_codegen()` or `simple_loop()`. Do not build `expr_list`, `lhs_list`, tensor declarations, or supporting symbolic state far earlier in the function than the code-generation call that uses them.
+- Register gridfunctions, parity tables, and other registration-time metadata in the same local part of the function where they are actually needed. Do not front-load unrelated setup before `desc`, `name`, `params`, or other basic C-function metadata when that setup is specific to a later code-generation block.
+- When assembling emitted C bodies, prefer a top-to-bottom `body += ...` construction that follows the generated C execution order. Avoid proliferating temporary string fragments or helper functions whose primary purpose is to manufacture pieces of C text.
+- Add short comments at jarring transitions in registration functions so readers understand why the flow changes abruptly. In particular, annotate jumps such as “register DIAG gridfunctions before building parity tables” or “construct the symbolic kernel immediately before `c_codegen()`” instead of leaving those shifts implicit.
+
 **Raw-string indentation note**: Embedded C inside raw strings may appear with minor indentation variance across modules due to historical edits. The requirement is that the C is valid and consistently readable; do not mechanically re-indent unless you are fixing a functional or formatting issue.
 
 ```python
@@ -590,7 +582,7 @@ body = rf"""
 The Python registration function must closely imitate the C function it registers. Follow these guidelines:
 
 - Use separate lines for declaring `desc`, `cfunc_type`, `name`, `params`, `body`, etc. variables before passing them to `register_CFunction()`
-- Avoid helper functions when possible - the registration function should be self-contained
+- Registration functions should be self-contained and read in execution order. Do not introduce tiny helper wrappers or one-off private setup helpers unless they encapsulate genuinely reusable logic shared across multiple registration functions.
 
 Example pattern:
 ```python
@@ -616,20 +608,12 @@ def register_CFunction_my_function() -> None:
 
 ### Function Inlining Guidelines
 
-**Inline all C and Python functions that do not save lines of code by existing separately.** The worst offenders are functions that:
-- Are used only once
-- Are only a few lines long
-- When considering Doxygen-style docstrings (C) or proper docstrings (Python), would need to have several lines and/or be called many times for separation to make sense
-
-**Rule of thumb**: A function should only be separated if it:
-- Is called from multiple locations, OR
-- Is complex enough (>10-15 lines of actual logic) that separation improves readability
+**Inline all C and Python functions that do not save lines of code by existing separately.** Separate a function only if it is called from multiple locations or has >10-15 lines of actual logic.
 
 **Anti-patterns to avoid**:
-- Single-use helper functions that are only 2-5 lines
-- Functions where the docstring is longer than the function body
-- Functions that simply return a single expression or trivial computation
-- Helper functions that only exist to give a name to a small code fragment
+- Single-use functions that are only 2-5 lines
+- Functions whose docstring is longer than the body
+- Functions that simply return a single expression
 
 **Example of what NOT to do** (Python):
 ```python
@@ -962,7 +946,6 @@ Run this script on every modified Python file before committing. This is the req
 | **darglint** | Docstring argument checking | `-v 2` (verbose) |
 | **doctests** | Embedded tests | `python3 <file>` |
 
-This indicates the project enforces **very strict** coding standards with a near-perfect pylint score requirement.
 
 ---
 
@@ -986,10 +969,6 @@ This indicates the project enforces **very strict** coding standards with a near
 
 - All code contributions must pass the static analysis checks before being merged.
 - For Python changes, run `.github/single_file_static_analysis.sh` on each modified Python file, not just on a hand-picked subset.
-- When in doubt, follow the existing patterns in the codebase.
-- This style guide is a living document and may be updated as the project evolves.
-- **Author email formatting**: Source files may use any readable email formatting or obfuscation scheme. Obfuscation is encouraged, but this guide does not enforce one exact representation.
-- **Doctest placeholders**: Some registration functions have `Doctests:\n    # FIXME` in their docstrings, indicating tests that need to be written.
 - **`body +=` for conditional C code**: When a C function body has sections that are conditionally included based on Python parameters, build the body string incrementally with `+=`:
   ```python
   body = ""

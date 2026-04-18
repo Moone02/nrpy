@@ -29,7 +29,9 @@ def register_CFunction_variable_wavespeed(
     :param CoordSystem: Coordinate system in use (e.g., "Spherical").
     :return: None if in registration phase, otherwise an instance of NRPyEnv_type.
 
-    >>> register_CFunction_variable_wavespeed("Cartesian", "float")
+    >>> env = register_CFunction_variable_wavespeed("Cartesian")
+    >>> env is not None
+    True
     """
     # Suppress unused argument warnings by documenting that they are placeholders for future extensions.
     _ = CoordSystem
