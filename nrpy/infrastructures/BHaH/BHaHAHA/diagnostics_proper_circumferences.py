@@ -13,8 +13,8 @@ from typing import Union, cast
 
 import nrpy.c_codegen as ccg
 import nrpy.c_function as cfc
+import nrpy.equations.general_relativity.bhahaha.area as bhahaha_area
 import nrpy.helpers.parallel_codegen as pcg
-from nrpy.infrastructures import BHaH
 
 
 def register_CFunction_diagnostics_proper_circumferences(
@@ -139,7 +139,9 @@ static REAL compute_spin(const REAL C_r) {
 """
     # Newton-Raphson is a bit more robust; also our initial guess is pretty good, so typically we need only a few iterations.
     prefunc += ccg.c_codegen(
-        BHaH.BHaHAHA.area.spin_NewtonRaphson(), "const REAL x_np1", include_braces=False
+        bhahaha_area.spin_NewtonRaphson(),
+        "const REAL x_np1",
+        include_braces=False,
     )
     prefunc += r"""
     if (x_np1 > 1.0) {
@@ -212,8 +214,8 @@ Computes proper circumferences along the equator and polar directions for appare
 """
     body += ccg.c_codegen(
         [
-            BHaH.BHaHAHA.area.circumferential_arclength(direction="theta"),
-            BHaH.BHaHAHA.area.circumferential_arclength(direction="phi"),
+            bhahaha_area.circumferential_arclength(direction="theta"),
+            bhahaha_area.circumferential_arclength(direction="phi"),
         ],
         [
             "metric_data_gfs[IDX4pt(0, 0) + IDX2(i1, i2)]",
@@ -441,11 +443,12 @@ Computes proper circumferences along the equator and polar directions for appare
 
 if __name__ == "__main__":
     import doctest
+    import sys
 
     results = doctest.testmod()
 
     if results.failed > 0:
-        raise RuntimeError(
-            f"Doctest failed: {results.failed} of {results.attempted} test(s)"
-        )
-    print(f"Doctest passed: All {results.attempted} test(s) passed")
+        print(f"Doctest failed: {results.failed} of {results.attempted} test(s)")
+        sys.exit(1)
+    else:
+        print(f"Doctest passed: All {results.attempted} test(s) passed")
