@@ -173,7 +173,7 @@ def main(spacetime_name: str) -> None:
         n_x[1] = alt_up[2]*n_z[0] - alt_up[0]*n_z[2];
         n_x[2] = alt_up[0]*n_z[1] - alt_up[1]*n_z[0];
         mag_n_x = sqrt(n_x[0]*n_x[0] + n_x[1]*n_x[1] + n_x[2]*n_x[2]);
-    }}
+    }} // END IF: near-nadir fallback
     for(int j=0; j<3; j++) n_x[j] /= mag_n_x;
 
     // n_y: The "Up" vector (Vertical)
@@ -225,7 +225,7 @@ def main(spacetime_name: str) -> None:
             for (long int i = 0; i < num_rays; i++) {{
                 results_buffer[i].y_w += offset_x;
                 results_buffer[i].z_w += offset_y;
-            }}
+            }} // END LOOP: for i over rays in tile
 
             // 4. Data Serialization
             char bin_name[256], zip_cmd[512];
@@ -241,14 +241,14 @@ def main(spacetime_name: str) -> None:
                 int status = system(zip_cmd);
                 if (status != 0) {{
                     fprintf(stderr, "ERROR: Compression failed for %s. Keeping raw binary.\\n", bin_name);
-                }}
+                }} // END IF: check zip status
             }} else {{
                 fprintf(stderr, "ERROR: Could not write to %s\\n", bin_name);
                 free(results_buffer);
                 exit(1);
-            }}
-        }}
-    }}
+            }} // END ELSE: check fp
+        }} // END LOOP: for tx over window tile columns
+    }} // END LOOP: for ty over window tile rows
 
     //==========================================
     // FINAL CLEANUP & SHUTDOWN

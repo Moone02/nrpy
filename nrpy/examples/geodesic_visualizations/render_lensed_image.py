@@ -40,7 +40,7 @@ except ImportError:
 import numpy as np
 import numpy.typing as npt
 
-from nrpy.examples.geodesic_visualizations import config_and_types as cfg
+import nrpy.examples.geodesic_visualizations.blueprint_config_and_schema as cfg
 
 # Global variables for zero-copy memory sharing across process workers
 _WORKER_SOURCE_TEX: Optional[npt.NDArray[np.float64]] = None
@@ -65,6 +65,16 @@ def _load_texture(
     Load and normalize textures into float64 arrays.
 
     Converts 0-255 RGB integers to 0.0-1.0 floats for blending math.
+
+    >>> import numpy as np
+    >>> _load_texture(np.array([[[255.0, 0.0, 127.5]]])).tolist()
+    [[[1.0, 0.0, 0.5]]]
+    >>> _load_texture(np.array([[[1.0, 0.0, 0.5]]])).tolist()
+    [[[1.0, 0.0, 0.5]]]
+    >>> _load_texture(123)
+    Traceback (most recent call last):
+        ...
+    TypeError: Image input must be a file path (str) or a NumPy array.
 
     :param image_input: A file path (str) or a NumPy array to be loaded.
     :return: A float64 NumPy array normalized to the [0.0, 1.0] range.
@@ -315,6 +325,32 @@ def _process_blueprint_tile(
     return flat_y, flat_x, flat_colors, flat_counts
 
 
+def _save_image_to_file(img: "Image.Image", output_filename: str) -> None:  # type: ignore[name-defined]
+    """
+    Save a PIL Image to a file, creating the parent directory if necessary.
+
+    >>> # pylint: disable=import-outside-toplevel, import-error
+    >>> from PIL import Image  # type: ignore
+    >>> dummy_img = Image.new("RGB", (10, 10))
+    >>> _save_image_to_file(dummy_img, "test_out_bare.png")
+    >>> os.path.exists("test_out_bare.png")
+    True
+    >>> _save_image_to_file(dummy_img, "test_out_dir/test_nested.png")
+    >>> os.path.exists("test_out_dir/test_nested.png")
+    True
+    >>> os.remove("test_out_bare.png")
+    >>> os.remove("test_out_dir/test_nested.png")
+    >>> os.rmdir("test_out_dir")
+
+    :param img: The PIL Image object to save.
+    :param output_filename: The target file path.
+    """
+    output_dir = os.path.dirname(output_filename)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+    img.save(output_filename)
+
+
 def generate_static_lensed_image(
     output_filename: str,
     output_pixel_width: int,
@@ -432,8 +468,7 @@ def generate_static_lensed_image(
     img = Image.fromarray(
         (np.clip(final_image_float, 0, 1) * 255).astype(np.uint8), "RGB"
     )
-    os.makedirs(os.path.dirname(output_filename), exist_ok=True)
-    img.save(output_filename)
+    _save_image_to_file(img, output_filename)
 
     if display_image:
         img.show()

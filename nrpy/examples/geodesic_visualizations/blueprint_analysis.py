@@ -23,9 +23,31 @@ from typing import Dict, List
 import numpy as np
 import numpy.typing as npt
 
-import nrpy.examples.geodesic_visualizations.config_and_types as cfg
+import nrpy.examples.geodesic_visualizations.blueprint_config_and_schema as cfg
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
+
+
+def _calculate_subsample_rate(total_expected_records: int, max_viz_points: int) -> int:
+    """
+    Calculate the subsampling rate to cap the total visualization points.
+
+    >>> _calculate_subsample_rate(1_000_000, 2_000_000)
+    1
+    >>> _calculate_subsample_rate(2_000_000, 2_000_000)
+    1
+    >>> _calculate_subsample_rate(2_000_001, 2_000_000)
+    2
+    >>> _calculate_subsample_rate(4_000_000, 2_000_000)
+    2
+    >>> _calculate_subsample_rate(0, 2_000_000)
+    1
+
+    :param total_expected_records: Total number of records across all files.
+    :param max_viz_points: The maximum number of points to visualize.
+    :return: The subsampling rate (always >= 1).
+    """
+    return max(1, (total_expected_records + max_viz_points - 1) // max_viz_points)
 
 
 def plot_heatmaps(data: "npt.NDArray[np.void]") -> None:
@@ -162,7 +184,7 @@ def diagnose_blueprint(
 
     # To prevent OOM errors during plotting, we cap visualization to ~2 million points
     max_viz_points = 2_000_000
-    subsample_rate = max(1, total_expected_records // max_viz_points)
+    subsample_rate = _calculate_subsample_rate(total_expected_records, max_viz_points)
 
     total_rays = 0
     in_view = 0
@@ -234,7 +256,7 @@ def diagnose_blueprint(
         f"FAIL_PT_BIG = {cfg.TERM_FAIL_PT_BIG}"
     )
     print(
-        "  -> If your raw enums above do NOT match these, update config_and_types.py."
+        "  -> If your raw enums above do NOT match these, update blueprint_config_and_schema.py."
     )
 
     # Validates that the output rays actually align with the window dimensions
@@ -275,6 +297,14 @@ def diagnose_blueprint(
 
 if __name__ == "__main__":
     import argparse
+    import doctest
+    import sys
+
+    results = doctest.testmod()
+
+    if results.failed > 0:
+        print(f"Doctest failed: {results.failed} of {results.attempted} test(s)")
+        sys.exit(1)
 
     parser = argparse.ArgumentParser(description="Blueprint Diagnostic Suite")
     parser.add_argument(
