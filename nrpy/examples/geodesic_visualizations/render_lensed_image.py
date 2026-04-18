@@ -81,14 +81,14 @@ def _load_texture(
     :raises FileNotFoundError: Raised if the provided file path does not exist.
     :raises TypeError: Raised if the input is not a string or NumPy array.
     """
-    # pylint: disable=import-outside-toplevel, import-error
-    from PIL import (  # type: ignore[import-not-found, import-untyped, unused-ignore]
-        Image,
-    )
-
     if isinstance(image_input, str):
         if not os.path.exists(image_input):
             raise FileNotFoundError(f"Texture file not found: {image_input}")
+        # pylint: disable=import-outside-toplevel, import-error
+        from PIL import (  # type: ignore[import-not-found, import-untyped, unused-ignore]
+            Image,
+        )
+
         with Image.open(image_input) as img:
             return np.array(img.convert("RGB")).astype(np.float64) / 255.0
     if isinstance(image_input, np.ndarray):
@@ -329,9 +329,11 @@ def _save_image_to_file(img: "Image.Image", output_filename: str) -> None:  # ty
     """
     Save a PIL Image to a file, creating the parent directory if necessary.
 
-    >>> # pylint: disable=import-outside-toplevel, import-error
-    >>> from PIL import Image  # type: ignore
-    >>> dummy_img = Image.new("RGB", (10, 10))
+    >>> class DummyImage:
+    ...     def save(self, path: str) -> None:
+    ...         with open(path, "w", encoding="utf-8") as f:
+    ...             pass
+    >>> dummy_img = DummyImage()
     >>> _save_image_to_file(dummy_img, "test_out_bare.png")
     >>> os.path.exists("test_out_bare.png")
     True
