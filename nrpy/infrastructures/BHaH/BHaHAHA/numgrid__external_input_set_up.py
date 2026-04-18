@@ -11,8 +11,6 @@ Author: Zachariah B. Etienne
         zachetie **at** gmail **dot* com
 """
 
-import os
-import sys
 from inspect import currentframe as cfr
 from types import FrameType as FT
 from typing import List, Tuple, Union, cast
@@ -432,6 +430,7 @@ This function performs the following steps:
 
 if __name__ == "__main__":
     import doctest
+    import sys
 
     results = doctest.testmod()
 

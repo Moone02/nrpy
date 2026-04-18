@@ -50,13 +50,15 @@ Documented in: Tutorial-Start_to_Finish-Curvilinear_BCs.ipynb
     xx0_inbounds, xx1_inbounds, xx2_inbounds = sp.symbols(
         "xx0_inbounds xx1_inbounds xx2_inbounds", real=True
     )
+    inbounds_replacements = {
+        sp.Symbol("xx0"): xx0_inbounds,
+        sp.Symbol("xx1"): xx1_inbounds,
+        sp.Symbol("xx2"): xx2_inbounds,
+    }
     for i in range(3):
         for j in range(3):
-            UnitVectors_inner[i][j] = (
-                rfm.UnitVectors[i][j]
-                .subs(rfm.xx[0], xx0_inbounds)
-                .subs(rfm.xx[1], xx1_inbounds)
-                .subs(rfm.xx[2], xx2_inbounds)
+            UnitVectors_inner[i][j] = rfm.UnitVectors[i][j].xreplace(
+                inbounds_replacements
             )
     # Type 0: scalar
     parity[0] = sp.sympify(1)

@@ -12,8 +12,8 @@ from typing import Union, cast
 
 import nrpy.c_codegen as ccg
 import nrpy.c_function as cfc
+import nrpy.equations.general_relativity.bhahaha.area as bhahaha_area
 import nrpy.helpers.parallel_codegen as pcg
-from nrpy.infrastructures import BHaH
 
 
 def register_CFunction_diagnostics_min_max_mean_radii_wrt_centroid(
@@ -78,7 +78,7 @@ def register_CFunction_diagnostics_min_max_mean_radii_wrt_centroid(
 """
     body += (
         ccg.c_codegen(
-            BHaH.BHaHAHA.area.area3(),
+            bhahaha_area.area3(),
             "const REAL area_element",
             enable_fd_codegen=True,
             enable_fd_functions=enable_fd_functions,
@@ -130,11 +130,12 @@ def register_CFunction_diagnostics_min_max_mean_radii_wrt_centroid(
 
 if __name__ == "__main__":
     import doctest
+    import sys
 
     results = doctest.testmod()
 
     if results.failed > 0:
-        raise RuntimeError(
-            f"Doctest failed: {results.failed} of {results.attempted} test(s)"
-        )
-    print(f"Doctest passed: All {results.attempted} test(s) passed")
+        print(f"Doctest failed: {results.failed} of {results.attempted} test(s)")
+        sys.exit(1)
+    else:
+        print(f"Doctest passed: All {results.attempted} test(s) passed")
