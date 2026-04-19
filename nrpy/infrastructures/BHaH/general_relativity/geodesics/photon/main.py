@@ -66,6 +66,24 @@ def main(spacetime_name: str) -> None:
     name = "main"
     params = "int argc, const char *argv[]"
 
+    analytic_params_printf = ""
+    if "M_scale" in par.glb_code_params_dict:
+        analytic_params_printf += (
+            '    printf("Mass Scale (M): %.2f\\n", commondata.M_scale);\n'
+        )
+    if "a_spin" in par.glb_code_params_dict:
+        analytic_params_printf += (
+            '    printf("Spin Parameter (a): %.2f\\n", commondata.a_spin);\n'
+        )
+    if "BH1_mass" in par.glb_code_params_dict:
+        analytic_params_printf += (
+            '    printf("BH1 Mass: %.2f\\n", commondata.BH1_mass);\n'
+        )
+    if "BH2_mass" in par.glb_code_params_dict:
+        analytic_params_printf += (
+            '    printf("BH2 Mass: %.2f\\n", commondata.BH2_mass);\n'
+        )
+
     # Step 2: Build the C body
     body = f"""
     //==========================================
@@ -100,9 +118,7 @@ def main(spacetime_name: str) -> None:
     printf("Spacetime Metric: {spacetime_name}\\n");
     
     printf("--- Analytic Spacetime Physics ---\\n");
-    printf("Mass Scale (M): %.2f\\n", commondata.M_scale);
-    printf("Spin Parameter (a): %.2f\\n", commondata.a_spin);
-
+{analytic_params_printf}
     printf("--- Camera & Window Plane ---\\n");
     printf("Camera Pos (x, y, z): %.2f, %.2f, %.2f\\n", commondata.camera_pos_x, commondata.camera_pos_y, commondata.camera_pos_z);
     printf("Original Window Center (x, y, z): %.2f, %.2f, %.2f\\n", commondata.original_window_center_x, commondata.original_window_center_y, commondata.original_window_center_z);

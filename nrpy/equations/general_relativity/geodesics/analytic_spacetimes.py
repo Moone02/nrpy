@@ -20,6 +20,10 @@ import sympy as sp
 import nrpy.indexedexp as ixp
 import nrpy.params as par
 import nrpy.validate_expressions.validate_expressions as ve
+from nrpy.equations.general_relativity.g4munu_conversions import ADM_to_g4DD
+from nrpy.equations.general_relativity.InitialData_Cartesian import (
+    InitialData_Cartesian,
+)
 
 
 class AnalyticSpacetimes:
@@ -48,6 +52,10 @@ class AnalyticSpacetimes:
 
         if self.spacetime_name == "KerrSchild_Cartesian":
             self.g4DD, self.xx = self._define_kerr_metric_Cartesian_Kerr_Schild()
+        elif self.spacetime_name == "BrillLindquist_Cartesian":
+            self.g4DD, self.xx = self._define_from_InitialData_Cartesian(
+                "BrillLindquist"
+            )
         else:
             raise ValueError(f"Spacetime '{self.spacetime_name}' is not supported.")
 
@@ -116,6 +124,74 @@ class AnalyticSpacetimes:
 
         return g4DD, xx
 
+    @staticmethod
+    def _define_from_InitialData_Cartesian(
+        IDtype: str,
+    ) -> Tuple[List[List[sp.Expr]], List[sp.Symbol]]:
+        """
+        Define 4-metric from InitialData_Cartesian.
+
+        Physical Note: Injecting time-dependence into Brill-Lindquist t=0 initial data
+        violates time symmetry, ignores frame dragging, misses gravitational radiation,
+        and violates constraint equations; this creates an ad-hoc, geometric approximation
+        (a "flipbook" of static universes) for visualization purposes rather than a
+        rigorous binary black hole merger.
+
+        :param IDtype: The type of initial data (e.g., "BrillLindquist").
+        :return: A tuple (g4DD, xx).
+        """
+        # Step 1: Initialize generic coordinates and standard initial data.
+        t = sp.symbols("t", real=True)
+        ID = InitialData_Cartesian(IDtype)
+        g4DD = ADM_to_g4DD(ID.gammaDD, ID.betaU, ID.alpha)
+        xx = [t, ID.x, ID.y, ID.z]
+
+        # Step 2: Inject dynamic time dependence for Brill-Lindquist trajectories.
+        if IDtype == "BrillLindquist":
+            # Step 2.a: Target the static CodeParameter symbols by exact name.
+            # These now represent the *initial* (t=0) positions and masses.
+            BH1_posn_z0 = sp.Symbol("BH1_posn_z", real=True)
+            BH2_posn_z0 = sp.Symbol("BH2_posn_z", real=True)
+            BH1_mass = sp.Symbol("BH1_mass", real=True)
+            BH2_mass = sp.Symbol("BH2_mass", real=True)
+            M_tot = BH1_mass + BH2_mass
+
+            # Step 2.b: Construct the [2/2] Padé approximant for the separation distance.
+            # We assume BH1 is initially above BH2 (BH1_posn_z0 > BH2_posn_z0).
+            # This uses a [2/2] Padé approximant (see: https://en.wikipedia.org/wiki/Pad%C3%A9_approximant).
+            r0 = BH1_posn_z0 - BH2_posn_z0
+            Z_cm = (BH1_mass * BH1_posn_z0 + BH2_mass * BH2_posn_z0) / M_tot
+
+            A = r0
+            C = -M_tot / (6 * r0**3)
+            B = -(2 * M_tot) / (3 * r0**2)
+
+            # r_pade(t) extends the 4th-order Taylor series for Newtonian infall (assuming G=c=1).
+            r_pade = (A + B * t**2) / (sp.sympify(1) + C * t**2)
+
+            # Step 2.c: Define the new dynamic z-axis positions over time.
+            # Assuming G=c=1, this approximates the infalling black holes using a purely Newtonian force,
+            # mapped via the [2/2] Padé approximant derived from the Taylor series of separation distance.
+            BH1_posn_z_t = Z_cm + (BH2_mass / M_tot) * r_pade
+            BH2_posn_z_t = Z_cm - (BH1_mass / M_tot) * r_pade
+
+            # Step 2.d: Map static parameters to the dynamic expressions.
+            dynamic_subs = {
+                BH1_posn_z0: BH1_posn_z_t,
+                BH2_posn_z0: BH2_posn_z_t,
+            }
+
+            # Step 2.e: Apply substitution and explicitly enforce symmetry.
+            # Note: .subs() is restricted by coding_style.md for pattern matching,
+            # but is allowed here as it performs an exact evaluation/mapping of
+            # static coordinate parameters to time-dependent functions.
+            for mu in range(4):
+                for nu in range(mu, 4):
+                    g4DD[mu][nu] = g4DD[mu][nu].subs(dynamic_subs)
+                    g4DD[nu][mu] = g4DD[mu][nu]
+
+        return g4DD, xx
+
 
 class AnalyticSpacetimes_dict(Dict[str, "AnalyticSpacetimes"]):
     """A caching dictionary for AnalyticSpacetimes instances."""
@@ -155,7 +231,7 @@ if __name__ == "__main__":
         print(f"Doctest passed: All {results.attempted} test(s) passed")
 
     # Use a distinct loop variable name to avoid pylint redefined-outer-name warnings.
-    for spacetime_name_str in ["KerrSchild_Cartesian"]:
+    for spacetime_name_str in ["KerrSchild_Cartesian", "BrillLindquist_Cartesian"]:
         spacetimes = Analytic_Spacetimes[spacetime_name_str]
         results_dict = ve.process_dictionary_of_expressions(
             spacetimes.__dict__, fixed_mpfs_for_free_symbols=True

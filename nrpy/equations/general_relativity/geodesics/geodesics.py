@@ -539,7 +539,12 @@ if __name__ == "__main__":
 
     # Step 3: Generate trusted results for all configurations.
     # This loop ensures that the __init__ logic (including the solver) works for all spacetimes.
-    for config_key in ["KerrSchild_Cartesian_massive", "KerrSchild_Cartesian_photon"]:
+    for config_key in [
+        "KerrSchild_Cartesian_massive",
+        "KerrSchild_Cartesian_photon",
+        "BrillLindquist_Cartesian_massive",
+        "BrillLindquist_Cartesian_photon",
+    ]:
         print(f"Processing configuration: {config_key}...")
         geodesic_eqs = Geodesic_Equations[config_key]
         results_dict = ve.process_dictionary_of_expressions(

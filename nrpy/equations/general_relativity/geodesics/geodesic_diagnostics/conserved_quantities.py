@@ -402,6 +402,8 @@ if __name__ == "__main__":
     for config in [
         "KerrSchild_Cartesian_massive",
         "KerrSchild_Cartesian_photon",
+        "BrillLindquist_Cartesian_massive",
+        "BrillLindquist_Cartesian_photon",
     ]:
         geo_diags = Geodesic_Diagnostics[config]
         results_dict = ve.process_dictionary_of_expressions(
