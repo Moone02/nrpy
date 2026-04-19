@@ -102,7 +102,7 @@ def event_detection_manager_kernel() -> None:
     #pragma omp parallel for
     for(long int i = 0; i < chunk_size; i++) {
     """
-        loop_postamble = "    } // End OpenMP loop"
+        loop_postamble = "    } // END OMP PARALLEL FOR"
 
     core_math = rf"""
     // Resolves the absolute global memory index $m_{{idx}}$ of the trajectory to bypass local array overwriting.

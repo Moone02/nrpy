@@ -73,7 +73,7 @@ def p0_reverse_kernel(p0_expr: sp.Expr) -> None:
     #pragma omp parallel for
     for(int i = 0; i < chunk_size; i++) {
     """
-        loop_postamble = "    } // End OpenMP loop"
+        loop_postamble = "    } // END OMP PARALLEL FOR"
 
     # Generate the raw C math string from the SymPy expression.
     body_math = ccg.c_codegen(

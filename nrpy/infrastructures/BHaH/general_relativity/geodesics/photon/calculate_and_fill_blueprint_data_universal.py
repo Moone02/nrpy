@@ -64,7 +64,7 @@ def calculate_and_fill_blueprint_data_universal() -> None:
     #pragma omp parallel for
     for(long int c = 0; c < current_chunk_size; c++) { // Thread index $c$ maps to photon ID.
     """
-        loop_postamble = "    } // End OpenMP loop"
+        loop_postamble = "    } // END OMP PARALLEL FOR"
 
     core_math = r"""
     //==========================================

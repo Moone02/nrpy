@@ -2,8 +2,8 @@
 """
 Defines the blueprint diagnostic and visualization suite.
 
-This utility validates the 'light_blueprint.bin' file from the C-based Geodesic
-Integrator.
+This utility validates the tiled 'light_blueprint_XX_YY.zip' archives produced by
+the C-based Geodesic Integrator.
 
 It performs three functions:
 1. Data Integrity: Parses the binary file using the structured 'BLUEPRINT_DTYPE' to

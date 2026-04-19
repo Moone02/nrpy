@@ -82,7 +82,7 @@ def interpolation_kernel(spacetime_name: str) -> None:
     for(long int i = 0; i < chunk_size; i++) {
     """
         cd_ptr = "commondata"
-        loop_postamble = "    } // End OpenMP loop"
+        loop_postamble = "    } // END OMP PARALLEL FOR"
 
     core_math = rf"""
     //==========================================

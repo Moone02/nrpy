@@ -186,7 +186,7 @@ def set_initial_conditions_kernel(spacetime_name: str) -> None:
     #pragma omp parallel for
     for (long int c = 0; c < chunk_size; c++) {
     """
-        loop_postamble = "} // End OpenMP loop"
+        loop_postamble = "} // END OMP PARALLEL FOR"
 
     # ==========================================
     # CORE MATH (Hardware Agnostic)

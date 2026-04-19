@@ -172,7 +172,7 @@ def calculate_ode_rhs_kernel(
     #pragma omp parallel for
     for(long int i = 0; i < chunk_size; i++) {
     """
-        loop_postamble = "    } // End OpenMP loop"
+        loop_postamble = "    } // END OMP PARALLEL FOR"
         body_math = raw_c_code
 
     core_math = rf"""

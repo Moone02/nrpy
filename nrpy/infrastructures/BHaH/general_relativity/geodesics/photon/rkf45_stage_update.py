@@ -69,7 +69,7 @@ def rkf45_stage_update() -> None:
     #pragma omp parallel for
     for(long int i = 0; i < chunk_size; i++) { // Thread index $i$ maps to a unique photon ray.
     """
-        loop_postamble = "    } // End OpenMP loop"
+        loop_postamble = "    } // END OMP PARALLEL FOR"
 
     core_math = r"""
     //==========================================

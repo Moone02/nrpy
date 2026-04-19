@@ -101,7 +101,7 @@ def rkf45_finalize_and_control_kernel() -> None:
     #pragma omp parallel for
     for(long int i = 0; i < chunk_size; i++) {
     """
-        loop_postamble = "    } // End OpenMP loop"
+        loop_postamble = "    } // END OMP PARALLEL FOR"
 
     core_math = rf"""
     //==========================================
