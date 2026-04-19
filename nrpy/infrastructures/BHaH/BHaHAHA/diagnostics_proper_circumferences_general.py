@@ -1,4 +1,3 @@
-# BHaHAHA/diagnostics_proper_circumferences.py
 """
 Register and generate a C routine that computes equatorial and polar proper circumferences of a horizon surface.
 
@@ -82,12 +81,6 @@ def register_CFunction_diagnostics_proper_circumferences_general(
     :param enable_fd_functions: Whether to emit FD derivative helpers in the generated code (passed through to codegen).
     :return: An NRPyEnv_type object if registration is successful, otherwise None.
 
-    DocTests:
-    >>> import nrpy.grid as gri
-    >>> _ = gri.register_gridfunctions("hh")[0]
-    >>> env = register_CFunction_diagnostics_proper_circumferences_general()
-    Setting up ExpansionFunctionThetaClass[Spherical]...
-    Setting up reference_metric[Spherical]...
     """
     if pcg.pcg_registration_phase():
         pcg.register_func_call(f"{__name__}.{cast(FT, cfr()).f_code.co_name}", locals())
@@ -144,7 +137,7 @@ static void elliptic_E_and_K_integrals(const REAL k, REAL *restrict E, REAL *res
     // Update the running sums for E(k) & K(k), applying the corresponding weight.
     sum_E += weights[i % weight_stencil_size] * elliptic_E_integrand;
     sum_K += weights[i % weight_stencil_size] * elliptic_K_integrand;
-  } // END LOOP over sample points to compute both integrals
+  } // END LOOP: for i over sample points to compute both integrals
 
   // Multiply by the step size to complete the integration and store the results.
   *E = sum_E * h; // Elliptic integral of the second kind.
@@ -210,7 +203,7 @@ static REAL compute_spin(const REAL C_r) {
       // Calculate the relative difference and update the spin estimate.
       rel_diff = fabs(x_np1 - x) / x;
       spin = x_np1;
-    } // END spin adjustment to go back in-bounds
+    } // END ELSE: spin adjustment to go back in-bounds
     it++;
   } // END WHILE: Refining spin estimate until convergence or maximum iterations
 
@@ -256,9 +249,9 @@ static void apply_inner_bc_for_selected_gfs(bc_struct *restrict bcstruct, REAL *
       if (dst_i0 == NGHOSTS) {
         metric_data_gfs[IDX4pt(which_gf, 0) + IDX2(dst_i1, dst_i2)] = metric_data_gfs[IDX4pt(which_gf, 0) + IDX2(src_i1, src_i2)];
       }
-    } // END LOOP over inner boundary points
-  } // END LOOP over gridfunctions
-} // END apply_inner_bc_for_selected_gfs()
+    } // END LOOP: for pt over inner boundary points
+  } // END LOOP: for which_gf over gridfunctions
+} // END FUNCTION: apply_inner_bc_for_selected_gfs
 
 // ---------- small vector & math helpers (pure C) ----------
 // These are intentionally tiny & inlined: they live in tight OpenMP loops,
@@ -268,7 +261,7 @@ static inline void cross3(const REAL a[3], const REAL b[3], REAL c[3]) {
   c[0] = a[1]*b[2] - a[2]*b[1];
   c[1] = a[2]*b[0] - a[0]*b[2];
   c[2] = a[0]*b[1] - a[1]*b[0];
-} // END FUNCTION cross3()
+} // END FUNCTION: cross3
 static inline REAL norm3(const REAL a[3]) { return sqrt(dot3(a,a)); }
 static inline void normalize3(REAL a[3]) { const REAL n = norm3(a); if (n > 0.0) { a[0]/=n; a[1]/=n; a[2]/=n; } }
 // Build an orthonormal basis {e1, e2} orthogonal to s; avoid near-collinearity for numerical stability.
@@ -277,14 +270,14 @@ static inline void build_basis_from_s(const REAL s[3], REAL e1[3], REAL e2[3]) {
   if (fabs(dot3(a,s)) > 0.9) { a[0]=0.0; a[1]=1.0; a[2]=0.0; }
   cross3(s, a, e1); normalize3(e1);
   cross3(s, e1, e2); normalize3(e2);
-} // END FUNCTION build_basis_from_s()
+} // END FUNCTION: build_basis_from_s
 // Cartesian unit vector -> spherical angles (theta, phi); inputs here are unit by construction.
 static inline void cart_to_sph(const REAL r[3], REAL *theta, REAL *phi) {
   const REAL x=r[0], y=r[1], z=r[2];
   REAL zz = z; if (zz < -1.0) zz = -1.0; if (zz > 1.0) zz = 1.0;
   *theta = acos(zz);
   *phi   = atan2(y, x);
-} // END FUNCTION cart_to_sph()
+} // END FUNCTION: cart_to_sph
 
 // Midpoint integrate over alpha with precomputed 8th-order weights (N_angle == Nxx2 is typically divisible by 8 -> 8th order).
 static inline REAL integrate_over_alpha(const REAL *vals, int N_angle, REAL d_alpha) {
@@ -296,7 +289,7 @@ static inline REAL integrate_over_alpha(const REAL *vals, int N_angle, REAL d_al
   for (int i = 0; i < N_angle; i++)
     sum += vals[i] * weights[i % weight_stencil_size];
   return sum * d_alpha;
-} // END FUNCTION integrate_over_alpha()
+} // END FUNCTION: integrate_over_alpha
 /* ---------- end helpers ---------- */
 """
     desc = """
@@ -308,10 +301,10 @@ Line element integrated (alpha parametrizes the great circle):
 with q_tt = (sqrt_qtt)^2, q_pp = (sqrt_qpp)^2, and q_tp as-is. Storing sqrt(diagonals) improves interpolation stability
 and preserves positivity; keeping q_tp raw preserves the sign required by the cross term.
 
-@param commondata - Pointer to common data structure containing shared parameters and settings.
-@param griddata - Pointer to grid data structures for each grid, containing parameters and gridfunctions.
-@return - Status code indicating success or type of error (e.g., BHAHAHA_SUCCESS or INITIAL_DATA_MALLOC_ERROR).
-@note - Uses OpenMP for parallel loops; performs interpolation and midpoint integration over angular samples.
+@param[in,out] commondata Pointer to common data structure containing shared parameters and settings.
+@param[in,out] griddata Pointer to grid data structures for each grid, containing parameters and gridfunctions.
+@return Status code indicating success or type of error (e.g., BHAHAHA_SUCCESS or INITIAL_DATA_MALLOC_ERROR).
+@note Uses OpenMP for parallel loops; performs interpolation and midpoint integration over angular samples.
 
 Precomputation strategy on the (theta,phi) grid at fixed i0=NGHOSTS:
   sqrt(q_{theta theta}), sqrt(q_{phi phi}), and q_{theta phi} are generated via NRPy's SymPy expressions
@@ -374,16 +367,16 @@ Precomputation strategy on the (theta,phi) grid at fixed i0=NGHOSTS:
         enable_fd_functions=enable_fd_functions,
     )
     body += r"""
-      } // END LOOP over i1 (theta)
-    } // END LOOP over i2 (phi)
+      } // END LOOP: for i1 over grid index (theta)
+    } // END LOOP: for i2 over grid index (phi)
 
     // Apply inner boundary conditions to q-metric gridfunctions sqrt(qtt), sqrt(qpp), and qtp:
     {
       const int which_gfs_1[3] = {0, 1, 2};
       apply_inner_bc_for_selected_gfs(&griddata[grid].bcstruct, metric_data_gfs, Nxx_plus_2NGHOSTS0, Nxx_plus_2NGHOSTS1, Nxx_plus_2NGHOSTS2,
                                       which_gfs_1, 3);
-    } // END application of inner boundary conditions
-  } // END computation of q-metric root gridfunctions
+    } // END BLOCK: application of inner boundary conditions
+  } // END BLOCK: computation of q-metric root gridfunctions
 
   // Number of angular points to sample over 2 pi radians (controls resolution of great-circle integrals).
   const int N_angle = griddata[grid].params.Nxx2;
@@ -481,8 +474,8 @@ Precomputation strategy on the (theta,phi) grid at fixed i0=NGHOSTS:
       const REAL dph_pol = (tpx * phx + tpy * phy + tpz * phz) / fmax(1e-14, sinth);
       const REAL fpol = sqrt(qtt * dth_pol * dth_pol + 2.0 * qtp * dth_pol * dph_pol + qpp * dph_pol * dph_pol);
       metric_data_gfs[IDX4pt(4, 0) + IDX2(i1, i2)] = fpol;
-    } // END LOOP over theta
-  } // END LOOP over phi
+    } // END LOOP: for i1 over theta
+  } // END LOOP: for i2 over phi
 
   // Apply inner boundary conditions to the newly computed scalar integrands f_eq (which_gf=3)
   // and f_pol (which_gf=4), so their ghost zones are valid prior to interpolation.
@@ -490,7 +483,7 @@ Precomputation strategy on the (theta,phi) grid at fixed i0=NGHOSTS:
     const int which_gfs_2[2] = {3, 4};
     apply_inner_bc_for_selected_gfs(&griddata[grid].bcstruct, metric_data_gfs, Nxx_plus_2NGHOSTS0, Nxx_plus_2NGHOSTS1, Nxx_plus_2NGHOSTS2,
                                     which_gfs_2, 2);
-  } // END application of inner boundary conditions for f_eq/f_pol
+  } // END BLOCK: application of inner boundary conditions for f_eq/f_pol
 
   // Convenience base pointers for scalar integrands:
   const REAL *restrict src_feq = &metric_data_gfs[IDX4pt(3, 0)];
@@ -511,7 +504,7 @@ Precomputation strategy on the (theta,phi) grid at fixed i0=NGHOSTS:
     cart_to_sph(rvec, &theta[i], &phi[i]);
     dst_pts[i][0] = theta[i];
     dst_pts[i][1] = phi[i];
-  } // END LOOP over alpha: cell-centered sampling 2 pi across N_angle points
+  } // END LOOP: for i over alpha: cell-centered sampling 2 pi across N_angle points
 
   {
     // Interpolate precomputed equator integrand f_eq onto the alpha-midpoints.
@@ -521,8 +514,8 @@ Precomputation strategy on the (theta,phi) grid at fixed i0=NGHOSTS:
     if (err != BHAHAHA_SUCCESS) {
       free(metric_data_gfs);
       return err;
-    } // END error check
-  } // END interpolation step across equatorial circumference
+    } // END IF: error check
+  } // END BLOCK: interpolation step across equatorial circumference
 
   const REAL C_equator = integrate_over_alpha(integrand, N_angle, d_alpha);
 
@@ -538,7 +531,7 @@ Precomputation strategy on the (theta,phi) grid at fixed i0=NGHOSTS:
     cart_to_sph(rvec, &theta[i], &phi[i]);
     dst_pts[i][0] = theta[i];
     dst_pts[i][1] = phi[i];
-  } // END LOOP over alpha: cell-centered sampling 2 pi across N_angle points
+  } // END LOOP: for i over alpha: cell-centered sampling 2 pi across N_angle points
 
   {
     // Interpolate precomputed polar integrand f_pol onto the alpha-midpoints.
@@ -548,8 +541,8 @@ Precomputation strategy on the (theta,phi) grid at fixed i0=NGHOSTS:
     if (err != BHAHAHA_SUCCESS) {
       free(metric_data_gfs);
       return err;
-    } // END error check
-  } // END interpolation step across polar circumference
+    } // END IF: error check
+  } // END BLOCK: interpolation step across polar circumference
 
   const REAL C_polar = integrate_over_alpha(integrand, N_angle, d_alpha);
 

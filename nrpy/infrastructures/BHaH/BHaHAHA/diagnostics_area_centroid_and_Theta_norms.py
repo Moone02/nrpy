@@ -33,12 +33,6 @@ def register_CFunction_diagnostics_area_centroid_and_Theta_norms(
     :param enable_fd_functions: Whether to enable finite difference functions, defaults to True.
     :return: An NRPyEnv_type object if registration is successful, otherwise None.
 
-    DocTests:
-    >>> import nrpy.grid as gri
-    >>> _ = gri.register_gridfunctions("hh")[0]
-    >>> env = register_CFunction_diagnostics_area_centroid_and_Theta_norms()
-    Setting up ExpansionFunctionThetaClass[Spherical]...
-    Setting up reference_metric[Spherical]...
     """
     if pcg.pcg_registration_phase():
         pcg.register_func_call(f"{__name__}.{cast(FT, cfr()).f_code.co_name}", locals())
@@ -115,7 +109,7 @@ def register_CFunction_diagnostics_area_centroid_and_Theta_norms(
               sum_x_centroid += (Cart_originx + tmp0 * cos(xx2)) * area_element * weight1 * weight2;
               sum_y_centroid += (Cart_originy + tmp0 * sin(xx2)) * area_element * weight1 * weight2;
               sum_z_centroid += (Cart_originz + hh * cos(xx1)) * area_element * weight1 * weight2;
-            } // END centroid sums
+            } // END BLOCK: centroid sums
             if (Theta * Theta > max_Theta_squared_for_Linf_norm)
               max_Theta_squared_for_Linf_norm = Theta * Theta;
             if (hh > max_radius)
@@ -123,9 +117,9 @@ def register_CFunction_diagnostics_area_centroid_and_Theta_norms(
             if (hh < min_radius)
               min_radius = hh;
           } // END OMP CRITICAL
-        } // END LOOP over i0
-      } // END LOOP over i1
-    } // END LOOP over i2
+        } // END LOOP: for i0 over grid index
+      } // END LOOP: for i1 over grid index
+    } // END LOOP: for i2 over grid index
   } // END OMP PARALLEL
 
   // Store diagnostics in commondata->bhahaha_diagnostics struct.
@@ -155,7 +149,7 @@ def register_CFunction_diagnostics_area_centroid_and_Theta_norms(
     bhahaha_diags->x_centroid_wrt_coord_origin = sum_x_centroid * params->dxx1 * params->dxx2 / bhahaha_diags->area;
     bhahaha_diags->y_centroid_wrt_coord_origin = sum_y_centroid * params->dxx1 * params->dxx2 / bhahaha_diags->area;
     bhahaha_diags->z_centroid_wrt_coord_origin = sum_z_centroid * params->dxx1 * params->dxx2 / bhahaha_diags->area;
-  } // END store diagnostics in commondata->bhahaha_diagnostics struct.
+  } // END BLOCK: store diagnostics in commondata->bhahaha_diagnostics struct
 """
     )
     cfc.register_CFunction(

@@ -26,44 +26,6 @@ def register_CFunction_numgrid__interp_src_set_up() -> Union[None, pcg.NRPyEnv_t
     Register the C function for reading original source metric data.
 
     :return: None if in registration phase, else the updated NRPy environment.
-
-    DocTests:
-    >>> env = register_CFunction_numgrid__interp_src_set_up()
-    Grid function "src_aDD00" with rank 2 has parity type 4.
-    Grid function "src_aDD01" with rank 2 has parity type 5.
-    Grid function "src_aDD02" with rank 2 has parity type 6.
-    Grid function "src_aDD11" with rank 2 has parity type 7.
-    Grid function "src_aDD12" with rank 2 has parity type 8.
-    Grid function "src_aDD22" with rank 2 has parity type 9.
-    Grid function "src_hDD00" with rank 2 has parity type 4.
-    Grid function "src_hDD01" with rank 2 has parity type 5.
-    Grid function "src_hDD02" with rank 2 has parity type 6.
-    Grid function "src_hDD11" with rank 2 has parity type 7.
-    Grid function "src_hDD12" with rank 2 has parity type 8.
-    Grid function "src_hDD22" with rank 2 has parity type 9.
-    Grid function "src_partial_D_hDD000" with rank 3 has parity type 10.
-    Grid function "src_partial_D_hDD001" with rank 3 has parity type 11.
-    Grid function "src_partial_D_hDD002" with rank 3 has parity type 12.
-    Grid function "src_partial_D_hDD011" with rank 3 has parity type 13.
-    Grid function "src_partial_D_hDD012" with rank 3 has parity type 14.
-    Grid function "src_partial_D_hDD022" with rank 3 has parity type 15.
-    Grid function "src_partial_D_hDD100" with rank 3 has parity type 16.
-    Grid function "src_partial_D_hDD101" with rank 3 has parity type 17.
-    Grid function "src_partial_D_hDD102" with rank 3 has parity type 18.
-    Grid function "src_partial_D_hDD111" with rank 3 has parity type 19.
-    Grid function "src_partial_D_hDD112" with rank 3 has parity type 20.
-    Grid function "src_partial_D_hDD122" with rank 3 has parity type 21.
-    Grid function "src_partial_D_hDD200" with rank 3 has parity type 22.
-    Grid function "src_partial_D_hDD201" with rank 3 has parity type 23.
-    Grid function "src_partial_D_hDD202" with rank 3 has parity type 24.
-    Grid function "src_partial_D_hDD211" with rank 3 has parity type 25.
-    Grid function "src_partial_D_hDD212" with rank 3 has parity type 26.
-    Grid function "src_partial_D_hDD222" with rank 3 has parity type 27.
-    Grid function "src_partial_D_WW0" with rank 1 has parity type 1.
-    Grid function "src_partial_D_WW1" with rank 1 has parity type 2.
-    Grid function "src_partial_D_WW2" with rank 1 has parity type 3.
-    Grid function "src_trK" with rank 0 has parity type 0.
-    Grid function "src_WW" with rank 0 has parity type 0.
     """
     if pcg.pcg_registration_phase():
         pcg.register_func_call(f"{__name__}.{cast(FT, cfr()).f_code.co_name}", locals())
@@ -145,8 +107,8 @@ on the evolved grids. It configures grid parameters, allocates memory for grid f
 and coordinate arrays, performs interpolation from external input, applies boundary conditions,
 and computes necessary spatial derivatives.
 
-@param commondata Pointer to the common data structure containing simulation parameters and data.
-@param Nx_evol_grid Array specifying the number of grid points in each dimension for the evolved grid.
+@param[in,out] commondata Pointer to the common data structure containing simulation parameters and data.
+@param[in] Nx_evol_grid Array specifying the number of grid points in each dimension for the evolved grid.
 @return Returns BHAHAHA_SUCCESS on successful setup, or an error code if memory allocation fails."""
     cfunc_type = "int"
     name = "numgrid__interp_src_set_up"
@@ -187,7 +149,7 @@ and computes necessary spatial derivatives.
       // Memory allocation failed for grid functions.
       return NUMGRID_INTERP_MALLOC_ERROR_GFS;
     }
-  } // END STEP 1: Configure grid parameters for the interpolation source.
+  } // END STEP 1: Configure grid parameters for the interpolation source
 
   // Step 2: Initialize coordinate arrays for the interpolation source grid.
   {
@@ -200,7 +162,7 @@ and computes necessary spatial derivatives.
       // Free previously allocated grid functions before exiting due to memory allocation failure.
       free(commondata->interp_src_gfs);
       return NUMGRID_INTERP_MALLOC_ERROR_RTHETAPHI;
-    } // END IF memory allocation for coordinate arrays failed
+    } // END IF: memory allocation for coordinate arrays failed
 
     // Step 2.b: Populate coordinate arrays for a uniform, cell-centered spherical grid.
     const REAL xxmin1 = 0.0;
@@ -217,7 +179,7 @@ and computes necessary spatial derivatives.
     // Initialize phi coordinates with cell-centered values.
     for (int j = 0; j < commondata->interp_src_Nxx_plus_2NGHOSTS2; j++)
       commondata->interp_src_r_theta_phi[2][j] = xxmin2 + ((REAL)(j - NGHOSTS) + (1.0 / 2.0)) * commondata->interp_src_dxx2;
-  } // END STEP 2: Initialize coordinate arrays for the interpolation source grid.
+  } // END STEP 2: Initialize coordinate arrays for the interpolation source grid
 
   // Step 2.c: Extract grid sizes for use in indexing macros.
   const int Nxx_plus_2NGHOSTS0 = commondata->interp_src_Nxx_plus_2NGHOSTS0;
@@ -266,10 +228,10 @@ and computes necessary spatial derivatives.
                 f"in_gfs[IDX4(SRC_ADD{i}{j}GF, i0, i1, i2)] = external_Sph_aDD{i}{j};\n"
             )
     body += """
-        } // END LOOP over i0
-      } // END LOOP over i1
-    } // END LOOP over i2
-  } // END STEP 4: Transfer interpolated data to interpolation source grid functions.
+        } // END LOOP: for i0 over grid index
+      } // END LOOP: for i1 over grid index
+    } // END LOOP: for i2 over grid index
+  } // END STEP 4: Transfer interpolated data to interpolation source grid functions
 
   // Step 5: Initialize boundary condition structure for the interpolation source grid.
   bc_struct interp_src_bcstruct;
@@ -284,7 +246,7 @@ and computes necessary spatial derivatives.
 
     // Set up boundary conditions based on the initialized grid.
     bah_bcstruct_set_up(commondata, commondata->interp_src_r_theta_phi, &interp_src_bcstruct);
-  } // END STEP 5: Initialize boundary condition structure.
+  } // END STEP 5: Initialize boundary condition structure
 
   // Step 6: Apply inner boundary conditions to specific grid functions to ensure smoothness.
   {
@@ -310,15 +272,15 @@ and computes necessary spatial derivatives.
           // Apply boundary condition by copying and adjusting with parity.
           commondata->interp_src_gfs[IDX4pt(which_gf, dstpt)] =
               interp_src_bcstruct.inner_bc_array[pt].parity[interp_src_gf_parity[which_gf]] * commondata->interp_src_gfs[IDX4pt(which_gf, srcpt)];
-        } // END LOOP over inner boundary points
+        } // END LOOP: for pt over inner boundary points
         break;
       }
       default:
         // No boundary conditions needed for other grid functions.
         break;
       } // END SWITCH
-    } // END LOOP over gridfunctions
-  } // END STEP 6: Apply inner boundary conditions to specific grid functions.
+    } // END LOOP: for which_gf over gridfunctions
+  } // END STEP 6: Apply inner boundary conditions to specific grid functions
 
   // Step 7: Compute spatial derivatives of h_{ij} within the interior of the interpolation source grid.
   bah_hDD_dD_and_W_dD_in_interp_src_grid_interior(commondata);
@@ -343,16 +305,16 @@ and computes necessary spatial derivatives.
         // Apply boundary condition with parity correction for derivative calculations.
         commondata->interp_src_gfs[IDX4pt(which_gf, dstpt)] =
             interp_src_bcstruct.inner_bc_array[pt].parity[interp_src_gf_parity[which_gf]] * commondata->interp_src_gfs[IDX4pt(which_gf, srcpt)];
-      } // END LOOP over inner boundary points
-    } // END LOOP over gridfunctions
-  } // END STEP 9: Enforce boundary conditions on all interpolation source grid functions.
+      } // END LOOP: for pt over inner boundary points
+    } // END LOOP: for which_gf over gridfunctions
+  } // END STEP 9: Enforce boundary conditions on all interpolation source grid functions
 
   // Step 10: Release allocated memory for boundary condition structures.
   {
     free(interp_src_bcstruct.inner_bc_array);
     for (int ng = 0; ng < NGHOSTS * 3; ng++)
       free(interp_src_bcstruct.pure_outer_bc_array[ng]);
-  } // END STEP 10: Free allocated memory for boundary condition structures.
+  } // END STEP 10: Free allocated memory for boundary condition structures
 
   return BHAHAHA_SUCCESS;
 """

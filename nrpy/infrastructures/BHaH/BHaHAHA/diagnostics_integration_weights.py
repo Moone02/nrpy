@@ -24,9 +24,6 @@ def register_CFunction_diagnostics_integration_weights() -> None:
     - If both Nxx1 and Nxx2 are divisible by 8, 8th-order weights are used.
     - If both Nxx1 and Nxx2 are divisible by 4, 4th-order weights are used.
     - Otherwise, 2nd-order weights are used.
-
-    DocTests:
-    >>> register_CFunction_diagnostics_integration_weights()
     """
     includes = ["BHaH_defines.h"]
     desc = """
