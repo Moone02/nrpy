@@ -860,9 +860,17 @@ static inline void diag_write_header(FILE *file_ptr, const char *coord_names, co
 Every closing brace that ends a non-trivial block must carry a `// END ...` comment in new code. Rules:
 
 - Keyword is ALL-CAPS after `// ` (with one space).
-- A colon follows the keyword (except `OMP PARALLEL` and `OMP PARALLEL FOR`, which mirror the pragma syntax).
-- For loops: name the loop variable, then describe its range or purpose (e.g., `for h over all horizons`).
-- For all other blocks: briefly describe the condition or purpose.
+- A colon follows the keyword in all cases.
+- Every end-curly-brace comment includes a brief description; there are no block-type exceptions.
+- Primary goal: let the reader identify at a glance exactly what the brace is closing.
+- Use the keyword to identify the syntactic construct being closed; use the description to preserve the highest-signal semantic context.
+- Do not throw away useful context just to force a generic label. If a block corresponds to a named step, algorithm phase, special case, or resource-management section, keep that information in the description.
+- `END BLOCK` is for anonymous scoping blocks only. It is not a license to replace a more informative description with something generic like `block`, `step`, or `sanity checks` when the real purpose can be stated precisely.
+- For loops, including OpenMP-parallelized loops, use `END LOOP` and describe the loop variable plus its range or purpose (e.g., `for h over all horizons`).
+- For all other blocks, briefly describe the condition or purpose.
+- Prefer the description of what the block is doing or handling, not the fact that a check occurred. For example, prefer `destination-point allocation failed` over `malloc check`, and `convergence or iteration-limit stop conditions` over `check stop conditions`.
+- For index loops, do not stop at `grid index` when the domain is known. Prefer `theta points on the horizon surface`, `phi points in the external-input grid`, `multigrid resolution entries`, etc.
+- For anonymous scoped blocks that correspond to numbered procedural comments, keep that number in the description when it helps orientation; e.g. `Step 10 free interpolation-source boundary-condition structures`.
 - No trailing period. No parentheses after function names. Bare function name only.
 
 | Block type | Format | Example |
@@ -873,11 +881,29 @@ Every closing brace that ends a non-trivial block must carry a `// END ...` comm
 | `if` block | `} // END IF: brief condition` | `} // END IF: fill_r_min_ghosts flag check` |
 | `else if` block | `} // END ELSE IF: brief condition` | `} // END ELSE IF: num_resolutions_multigrid > 0` |
 | `else` block | `} // END ELSE: brief description` | `} // END ELSE: not enable_BBH_mode` |
-| OpenMP parallel | `} // END OMP PARALLEL` | `} // END OMP PARALLEL` |
-| OpenMP parallel for | `} // END OMP PARALLEL FOR` | `} // END OMP PARALLEL FOR` |
+| `switch` block | `} // END SWITCH: brief description` | `} // END SWITCH: select gridfunctions requiring inner boundary conditions` |
+| OpenMP parallel | `} // END OMP PARALLEL: brief description` | `} // END OMP PARALLEL: reduce per-thread diagnostics` |
+| OpenMP critical | `} // END OMP CRITICAL: brief description` | `} // END OMP CRITICAL: update shared centroid diagnostics` |
+| OpenMP `for` loop | `} // END LOOP: for <var> over <range/purpose>` | `} // END LOOP: for idx over all grid points` |
 | Anonymous scoping block | `} // END BLOCK: description` | `} // END BLOCK: gettimeofday() sanity check` |
 
 `do...while` loops end with `} while (condition);` — append the comment after the semicolon: `} while (condition); // END DO-WHILE: brief description`.
+
+Prefer descriptions like `Step 10 free allocated memory for boundary condition structures` or `BSSN-to-ADM transformation` over low-signal text like `generic cleanup block` or `step`.
+
+Avoid weak but formally compliant comments such as:
+
+- `} // END IF: allocation check`
+- `} // END IF: check for interpolation error`
+- `} // END LOOP: for i1 over grid index`
+- `} // END BLOCK: sanity checks`
+
+Prefer:
+
+- `} // END IF: destination-point allocation failed`
+- `} // END IF: interpolation routine returned error`
+- `} // END LOOP: for i1 over theta points on the horizon surface`
+- `} // END BLOCK: theta/phi stencil bounds and center-index sanity checks`
 
 Omit end comments only when the block body is fewer than 5 lines and the opening brace is visible without scrolling.
 

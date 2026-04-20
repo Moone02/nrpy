@@ -26,12 +26,6 @@ def register_CFunction_diagnostics_min_max_mean_radii_wrt_centroid(
     :param enable_fd_functions: Whether to enable finite difference functions, defaults to True.
     :return: An NRPyEnv_type object if registration is successful, otherwise None.
 
-    DocTests:
-    >>> import nrpy.grid as gri
-    >>> _ = gri.register_gridfunctions("hh")[0]
-    >>> env = register_CFunction_diagnostics_min_max_mean_radii_wrt_centroid()
-    Setting up reference_metric[Spherical]...
-    Setting up ExpansionFunctionThetaClass[Spherical]...
     """
     if pcg.pcg_registration_phase():
         pcg.register_func_call(f"{__name__}.{cast(FT, cfr()).f_code.co_name}", locals())
@@ -102,11 +96,11 @@ def register_CFunction_diagnostics_min_max_mean_radii_wrt_centroid(
               min_radius_squared = radius_squared;
             if (radius_squared > max_radius_squared)
               max_radius_squared = radius_squared;
-          } // END OMP CRITICAL
-        } // END LOOP over i0
-      } // END LOOP over i1
-    } // END LOOP over i2
-  } // END OMP PARALLEL
+          } // END OMP CRITICAL: update shared centroid-radius diagnostics
+        } // END LOOP: for i0 over radial horizon-grid points
+      } // END LOOP: for i1 over theta horizon-grid points
+    } // END LOOP: for i2 over phi horizon-grid points
+  } // END OMP PARALLEL: scan all horizon surface points
 
   // Store commondata diagnostic parameters.
   const REAL curr_area = sum_curr_area * params->dxx1 * params->dxx2;
