@@ -594,15 +594,26 @@ Formats:
 - `if`: `} // END IF: brief condition`
 - `else if`: `} // END ELSE IF: brief condition`
 - `else`: `} // END ELSE: brief description`
-- OpenMP parallel: `} // END OMP PARALLEL`
-- OpenMP parallel for: `} // END OMP PARALLEL FOR`
+- `switch`: `} // END SWITCH: brief description`
+- OpenMP parallel: `} // END OMP PARALLEL: brief description`
+- OpenMP critical: `} // END OMP CRITICAL: brief description`
+- OpenMP `for` loop: `} // END LOOP: for <var> over <range/purpose>`
 - Anonymous block: `} // END BLOCK: description`
 - `do ... while`: `} while (...); // END DO-WHILE: brief description`
 
 Rules:
 
 - keyword after `//` all caps
-- use colon except OpenMP forms
+- use colon in all forms
+- every end-curly-brace comment includes brief description with no exceptions
+- primary goal is help reader see immediately what brace closes
+- keyword names syntactic construct; description keeps highest-signal meaning
+- keep useful context like step number, algorithm phase, special case, or cleanup purpose in description
+- do not replace informative comment with generic `END BLOCK` text unless brace truly closes anonymous scoping block
+- describe what block is doing or handling, not merely that code performs a check
+- for index loops, prefer semantic domain like theta/phi/radial points, resolutions, horizons, ghost-zone layers, not vague `grid index`
+- for anonymous scoped blocks tied to numbered procedural comments, keep step number when useful
+- OpenMP-parallelized loops still use `END LOOP`
 - no trailing period
 - no parentheses after function names
 

@@ -164,7 +164,7 @@ spherical grid. It computes the interpolated values using Lagrange polynomials.
           fprintf(stderr, "ERROR: Radial center index too far from destination point!\n");
         } // END IF: central index is properly centered
 #endif // DEBUG
-      } // END SANITY CHECKS
+      } // END BLOCK: sanity checks for stencil bounds and center index
 
       // Step 1: Precompute all differences between destination radius and source grid points within the stencil.
       REAL diffs_x0[INTERP_ORDER];
@@ -244,10 +244,10 @@ int initialize_src_gf(const int src_Nxx_plus_2NGHOSTS[3], REAL *src_r_theta_phi[
   if (!r_func_values) {
     fprintf(stderr, "malloc failed for r_func_values.\n");
     return -1;
-  }
+  } // END IF: memory allocation issue
   for (int i = 0; i < src_Nxx_plus_2NGHOSTS0; i++) {
     r_func_values[i] = sin(src_r_theta_phi[0][i]) * src_r_theta_phi[0][i] * src_r_theta_phi[0][i];
-  }
+  } // END LOOP: for i over precomputed radial function values
 #pragma omp parallel for
   for (int gf = 0; gf < NUM_INTERP_SRC_GFS; gf++) {
     for (int k = 0; k < src_Nxx_plus_2NGHOSTS2; k++) {
@@ -256,10 +256,10 @@ int initialize_src_gf(const int src_Nxx_plus_2NGHOSTS[3], REAL *src_r_theta_phi[
         const REAL sintheta = sin(src_r_theta_phi[1][j]);
         for (int i = 0; i < src_Nxx_plus_2NGHOSTS0; i++) {
           src_gf[SRC_IDX4(gf, i, j, k)] = r_func_values[i] * sintheta * cosphi;
-        }
-      }
-    }
-  }
+        } // END LOOP: for i over radial grid
+      } // END LOOP: for j over theta grid
+    } // END LOOP: for k over phi grid
+  } // END LOOP: for gf over source gridfunctions
   free(r_func_values);
   return 0;
 } // END FUNCTION: initialize_src_gf

@@ -96,11 +96,11 @@ def register_CFunction_diagnostics_min_max_mean_radii_wrt_centroid(
               min_radius_squared = radius_squared;
             if (radius_squared > max_radius_squared)
               max_radius_squared = radius_squared;
-          } // END OMP CRITICAL
-        } // END LOOP: for i0 over grid index
-      } // END LOOP: for i1 over grid index
-    } // END LOOP: for i2 over grid index
-  } // END OMP PARALLEL
+          } // END OMP CRITICAL: update shared centroid-radius diagnostics
+        } // END LOOP: for i0 over radial horizon-grid points
+      } // END LOOP: for i1 over theta horizon-grid points
+    } // END LOOP: for i2 over phi horizon-grid points
+  } // END OMP PARALLEL: scan all horizon surface points
 
   // Store commondata diagnostic parameters.
   const REAL curr_area = sum_curr_area * params->dxx1 * params->dxx2;

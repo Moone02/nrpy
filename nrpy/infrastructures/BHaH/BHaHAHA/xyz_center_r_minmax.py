@@ -67,7 +67,7 @@ based on the number of available data points to ensure flexibility and accuracy.
     // Adjust radii to expand search volume when the third horizon find is missing.
     *r_min *= 0.8;
     *r_max *= 1.2;
-  } // END IF: checking if the horizon has not been found three times in a row
+  } // END IF: horizon remained unfound for three consecutive searches
   else {
     if ((pars->r_max_m1 - pars->r_max_m3) > 0.05 * (*r_max)) {
       // Increase r_max by 20% if the maximum radius is growing rapidly.

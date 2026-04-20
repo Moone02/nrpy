@@ -218,8 +218,8 @@ Computes proper circumferences along the equator and polar directions for appare
         enable_fd_functions=enable_fd_functions,
     )
     body += r"""
-      } // END LOOP: for i1 over grid index (theta)
-    } // END LOOP: for i2 over grid index (phi)
+      } // END LOOP: for i1 over theta points on the horizon surface
+    } // END LOOP: for i2 over phi points on the horizon surface
 
     // Apply inner boundary conditions to the computed sqrt(q_{phi phi}) gridfunction.
     {
@@ -258,8 +258,8 @@ Computes proper circumferences along the equator and polar directions for appare
           }
         } // END LOOP: for pt over inner boundary points
       } // END LOOP: for which_gf over gridfunctions
-    } // END BLOCK: application of inner boundary conditions
-  } // END BLOCK: computation of line element gridfunction
+    } // END BLOCK: apply inner boundary conditions to circumference metric data
+  } // END BLOCK: compute line-element gridfunctions on the horizon surface
 
   // Grid spacings in theta and phi directions.
   const REAL dxx1 = griddata[grid].params.dxx1;
@@ -313,7 +313,7 @@ Computes proper circumferences along the equator and polar directions for appare
     } // END LOOP: for ic over circumference samples
     // Multiply the sum by d[angle]
     commondata->bhahaha_diagnostics->xy_plane_circumference = sum_circumference * d_angle;
-  } // END BLOCK: xy-plane circumference
+  } // END BLOCK: compute xy-plane proper circumference
 
   // Polar (xz-plane) circumference next
   {
@@ -353,7 +353,7 @@ Computes proper circumferences along the equator and polar directions for appare
     } // END LOOP: for ic over circumference samples
     // Multiply the sum by d[angle]
     commondata->bhahaha_diagnostics->xz_plane_circumference = sum_circumference * d_angle;
-  } // END BLOCK: xz-plane circumference
+  } // END BLOCK: compute xz-plane proper circumference
 
   // Polar (yz-plane) circumference next
   {
@@ -393,7 +393,7 @@ Computes proper circumferences along the equator and polar directions for appare
     } // END LOOP: for ic over circumference samples
     // Multiply the sum by d[angle]
     commondata->bhahaha_diagnostics->yz_plane_circumference = sum_circumference * d_angle;
-  } // END BLOCK: yz-plane circumference
+  } // END BLOCK: compute yz-plane proper circumference
 
   // Next estimate spin parameter magnitudes, valid for equilibrium BHs only.
   //   Based on Eq 5.2 of Alcubierre et al arXiv:gr-qc/0411149.

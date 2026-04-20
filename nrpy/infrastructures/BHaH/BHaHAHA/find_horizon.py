@@ -252,7 +252,7 @@ to identify the apparent horizon with progressively refined grid resolutions.
       bah_diagnostics(&commondata, griddata);
       if (commondata.error_flag != BHAHAHA_SUCCESS) {
         break;
-      } // END IF: Check for diagnostic errors
+      } // END IF: diagnostics routine returned an error
 
       // Step 5.f: Determine if stop conditions are met to exit the simulation loop.
       if (commondata.nn > bhahaha_params_and_data->max_iterations) {
@@ -264,14 +264,14 @@ to identify the apparent horizon with progressively refined grid resolutions.
                  bhahaha_diags->Theta_L2_times_M <= bhahaha_params_and_data->Theta_L2_times_M_tolerance) {
         stop_condition = 1;
         break;
-      } // END IF: Check multiple stop conditions
+      } // END IF: convergence or iteration-limit stop conditions
 
       // Step 5.g: Advance the simulation using the Method of Lines with Runge-Kutta-like integration.
       if (!stop_condition)
         bah_MoL_step_forward_in_time(&commondata, griddata);
       if (commondata.error_flag != BHAHAHA_SUCCESS) {
         break;
-      } // END IF: Check for time-stepping errors
+      } // END IF: time stepper returned an error
     } // END LOOP: for resolution over main simulation loop
 
     {
@@ -283,7 +283,7 @@ to identify the apparent horizon with progressively refined grid resolutions.
         printf("#Nth x Nph = %d x %d elapsed time = %.1f ms / %.1f ms so far...\n", params->Nxx1, params->Nxx2,
                timeval_to_milliseconds(res_start_time, end_time), timeval_to_milliseconds(start_time, end_time));
       }
-    } // END BLOCK: Timing and logging
+    } // END BLOCK: record and optionally print per-resolution timing
 
     if (commondata.error_flag == BHAHAHA_SUCCESS) {
       // Step 6: Save the coarse horizon for subsequent resolutions or output final diagnostics.
@@ -341,7 +341,7 @@ to identify the apparent horizon with progressively refined grid resolutions.
         // Adjust setting for the final iteration, to trigger diagnostics and compute additional diagnostics.
         commondata.is_final_iteration = 1;
 
-      } // END IF/ELSE: Handling final resolution
+      } // END ELSE: handling final resolution
     } else if (commondata.error_flag == INTERP1D_HORIZON_TOO_LARGE) {
       // Handle specific error when the horizon exceeds interpolation limits.
       REAL max_radius = -1e10;
@@ -364,7 +364,7 @@ to identify the apparent horizon with progressively refined grid resolutions.
                "Try either increasing search radius or decreasing cfl_factor.\n",
                max_radius, r_max_interior);
       }
-    } // END IF: Handling specific error conditions
+    } // END IF: handle interpolation-too-large horizon error
 
     // Step 7: Horizon found! Compute final diagnostics.
     if (commondata.error_flag == BHAHAHA_SUCCESS) {
@@ -374,14 +374,14 @@ to identify the apparent horizon with progressively refined grid resolutions.
       //   as they depend on centroids being computed, and r_{min,max} for good measure.
       bah_diagnostics(&commondata, griddata);
       commondata.output_diagnostics_every_nn = orig_output_diagnostics_every_nn;
-    } // END BLOCK: Freeing current grid resolution memory
+    } // END BLOCK: final diagnostics after a successful horizon find
 
     // Step 8: Release all allocated memory for the current grid resolution.
     free_all_but_external_input_gfs(&commondata, griddata);
 
     if (commondata.error_flag != BHAHAHA_SUCCESS) {
       break;
-    } // END IF: Check for errors after freeing memory
+    } // END IF: error persisted after freeing current-resolution memory
   } // END LOOP: for resolution over grid resolutions
 
   // Step 9: After processing all resolutions, release external input memory.

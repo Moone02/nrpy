@@ -34,7 +34,7 @@ for all horizons."""
     BHAH_FREE(current_horizon_params->prev_horizon_m1);
     BHAH_FREE(current_horizon_params->prev_horizon_m2);
     BHAH_FREE(current_horizon_params->prev_horizon_m3);
-  } // END LOOP: for h
+  } // END LOOP: for h over all horizons
 """
     cfc.register_CFunction(
         includes=includes,
@@ -318,7 +318,7 @@ static void check_multigrid_resolution_inputs(const commondata_struct *restrict 
         trigger_error = 1;
         break;
       } // END IF: invalid resolution
-    } // END LOOP: for res
+    } // END LOOP: for res over multigrid resolution entries
   } // END ELSE: num_resolutions_multigrid > 0
   if (trigger_error) {
     fprintf(stderr, "ERROR: BHaHAHA multigrid resolutions are unset or invalid. Please specify "
@@ -471,7 +471,7 @@ static void BHaHAHA_interpolate_metric_data_nrpy(const commondata_struct *restri
         Cart_to_xx_and_nearest_i0i1i2(params, xCart, dst_x0x1x2_interp[idx3], Cart_to_i0i1i2_not_stored_to_save_memory);
       } // END LOOP: for ir (spherical grid setup)
     } // END LOOP: for itheta (spherical grid setup)
-  } // END LOOP: for iphi (#pragma omp parallel for, spherical grid setup)
+  } // END LOOP: for iphi over spherical interpolation grid setup
 
   // STEP 5: Initialize source gridfunction pointers.
   const REAL *restrict src_gf_ptrs[BHAHAHA_NUM_INTERP_GFS];
@@ -551,8 +551,8 @@ static void BHaHAHA_interpolate_metric_data_nrpy(const commondata_struct *restri
     prefunc += r"""
         } // END LOOP: for ir (BSSN to ADM transformation)
       } // END LOOP: for itheta (BSSN to ADM transformation)
-    } // END LOOP: for iphi (#pragma omp parallel for, BSSN to ADM transformation)
-  } // End of BSSN to ADM transformation block
+    } // END LOOP: for iphi over BSSN-to-ADM transformation angles
+  } // END BLOCK: BSSN-to-ADM transformation
 
   // STEP 10: Free allocated temporary memory.
   BHAH_FREE(dst_x0x1x2_interp);
@@ -757,7 +757,7 @@ and result updates for multiple horizons.
         if (commondata->bah_verbosity_level > 0) {
           printf("NRPy BBH Trigger (Iter %d, CommonH_idx %d): sep=%.3f, rmax1(H%d)=%.3f, rmax2(H%d)=%.3f. Sum_dist+radii=%.3f <= Thr_diam=%.3f?\n",
                  commondata->nn, com_idx, dist_centers, bh1_idx, rmax1, bh2_idx, rmax2, (dist_centers + rmax1 + rmax2), threshold_diam);
-        } // END IF: verbosity for trigger check
+        } // END IF: print BBH common-horizon trigger diagnostics
 
         if (dist_centers + rmax1 + rmax2 <= threshold_diam) {   // Trigger condition met.
           commondata->bah_BBH_mode_horizon_active[com_idx] = 1; // Activate common horizon search.
@@ -789,7 +789,7 @@ and result updates for multiple horizons.
           } // END IF: verbosity for common activation
         } // END IF: trigger condition met
       } // END IF: both inspiral BHs found previously
-    } // END IF: check for activating common horizon
+    } // END IF: common-horizon activation test in BBH mode
   } // END IF: bah_enable_BBH_mode (BBH Mode Logic)
 
   // STEP 6: Apply robustness improvements and extrapolate horizon guesses.

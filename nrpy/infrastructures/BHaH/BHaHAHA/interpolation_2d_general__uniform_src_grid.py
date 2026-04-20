@@ -164,7 +164,7 @@ to a set of arbitrary destination points using Lagrange interpolation of a speci
           error_flag = INTERP2D_GENERAL_HORIZON_OUT_OF_BOUNDS; // Set error flag if stencil is out of bounds.
         }
         continue; // Skip interpolation for this destination point to prevent invalid memory access.
-      } // END IF: Check stencil boundaries
+      } // END IF: theta/phi stencil exceeded source-grid bounds
 
       // Additional sanity checks to ensure central index is correctly positioned.
 #ifdef DEBUG
@@ -178,7 +178,7 @@ to a set of arbitrary destination points using Lagrange interpolation of a speci
                 src_dxx2 * (0.5 + TOLERANCE));
       } // END IF: Central index is properly centered
 #endif // DEBUG
-    } // END SANITY CHECKS: Ensure stencil is valid and central index is correct
+    } // END BLOCK: theta/phi stencil bounds and center-index sanity checks
 
     // Calculate the starting indices for the interpolation stencil in theta and phi directions.
     const int base_idx_th = idx_center_th - n_interp_ghosts;
@@ -265,7 +265,7 @@ int initialize_coordinates(const int n_interp_ghosts, const int N_x0, const int 
     free(src_x0x1[2]);
     src_x0x1[1] = src_x0x1[2] = NULL;
     return -1;
-  } // END IF: check for allocation failure
+  } // END IF: coordinate-array allocation failed
   for (int i = 0; i < src_Nxx_plus_2NGHOSTS0; i++)
     src_x0x1[1][i] = (i - n_interp_ghosts) * (*src_dxx0);
   // END LOOP: for i over x0 coordinates
@@ -294,8 +294,8 @@ void initialize_src_gf(const int src_Nxx_plus_2NGHOSTS0, const int src_Nxx_plus_
     for (int i0 = 0; i0 < src_Nxx_plus_2NGHOSTS0; i0++) {
       const int idx = i0 + src_Nxx_plus_2NGHOSTS0 * i1;
       src_gf[idx] = func(src_x0x1[1][i0], src_x0x1[2][i1]);
-    } // END LOOP: for i0 over grid index
-  } // END LOOP: for i1 over grid index
+    } // END LOOP: for i0 over x0 source-grid points
+  } // END LOOP: for i1 over x1 source-grid points
 } // END FUNCTION: initialize_src_gf
 
 /**
@@ -335,7 +335,7 @@ int main() {
     fprintf(stderr, "malloc failed for dst_pts.\n");
     return_code = EXIT_FAILURE;
     goto cleanup;
-  } // END IF: check malloc for dst_pts
+  } // END IF: destination-point allocation failed
 
   for (int gf = 0; gf < NUM_INTERP_GFS; gf++) {
     f_exact[gf] = (REAL *)malloc(sizeof(REAL) * NUM_DST_PTS);
@@ -343,7 +343,7 @@ int main() {
       fprintf(stderr, "malloc failed for f_exact.\n");
       return_code = EXIT_FAILURE;
       goto cleanup;
-    } // END IF: check malloc for f_exact
+    } // END IF: exact-value allocation failed
   } // END LOOP: for gf over exact function value arrays
 
   for (int res = 0; res < NUM_RESOLUTIONS; res++) {
@@ -359,7 +359,7 @@ int main() {
       fprintf(stderr, "malloc failed for coordinates.\n");
       return_code = EXIT_FAILURE;
       goto cleanup;
-    } // END IF: initialize coordinates
+    } // END IF: source-coordinate initialization failed
     REAL x0_min_safe = src_x0x1[1][n_interp_ghosts] + 1e-6;
     REAL x0_max_safe = src_x0x1[1][src_Nxx_plus_2NGHOSTS0 - n_interp_ghosts - 1] - 1e-6;
     REAL x1_min_safe = src_x0x1[2][n_interp_ghosts] + 1e-6;
@@ -378,13 +378,13 @@ int main() {
         fprintf(stderr, "malloc failed for src_gf.\n");
         return_code = EXIT_FAILURE;
         goto cleanup;
-      } // END IF: check malloc for src_gf
+      } // END IF: source-gridfunction allocation failed
       dst_data[gf] = (REAL *)malloc(sizeof(REAL) * NUM_DST_PTS);
       if (!dst_data[gf]) {
         fprintf(stderr, "malloc failed for dst_data.\n");
         return_code = EXIT_FAILURE;
         goto cleanup;
-      } // END IF: check malloc for dst_data
+      } // END IF: destination-data allocation failed
     } // END LOOP: for gf over source grid and destination data arrays
     initialize_src_gf(src_Nxx_plus_2NGHOSTS0, src_Nxx_plus_2NGHOSTS1, src_x0x1, src_gf[0], analytic_function1);
     initialize_src_gf(src_Nxx_plus_2NGHOSTS0, src_Nxx_plus_2NGHOSTS1, src_x0x1, src_gf[1], analytic_function2);
@@ -400,7 +400,7 @@ int main() {
         fprintf(stderr, "Interpolation error code: %d for GF %d\n", error_code, gf + 1);
         return_code = error_code;
         goto cleanup;
-      } // END IF: check for interpolation error
+      } // END IF: interpolation routine returned error
     } // END LOOP: for which_gf over grid functions for interpolation
 #ifdef _OPENMP
     double elapsed_time = omp_get_wtime() - start_time;

@@ -226,7 +226,7 @@ This function performs the following steps:
       commondata->external_input_r_theta_phi[1][j] = xxmin1 + ((REAL)(j - NGHOSTS) + (1.0 / 2.0)) * commondata->external_input_dxx1;
     for (int j = 0; j < Nxx_plus_2NGHOSTS2; j++)
       commondata->external_input_r_theta_phi[2][j] = xxmin2 + ((REAL)(j - NGHOSTS) + (1.0 / 2.0)) * commondata->external_input_dxx2;
-  } // END BLOCK: setting up coordinate arrays
+  } // END BLOCK: Step 5 set up external-input coordinate arrays
 
   // Step 6: Transform the metric components (gamma_{ij}, K_{ij}) from Cartesian to spherical coordinates,
   // including necessary rescaling.
@@ -344,10 +344,10 @@ This function performs the following steps:
         include_braces=False,
     )
     body += """
-        } // END LOOP: for i0 over grid index
-      } // END LOOP: for i1 over grid index
-    } // END LOOP: for i2 over grid index
-  } // END BLOCK: transformation and rescaling
+        } // END LOOP: for i0 over radial points in the external-input grid
+      } // END LOOP: for i1 over theta points in the external-input grid
+    } // END LOOP: for i2 over phi points in the external-input grid
+  } // END BLOCK: Step 6 transform Cartesian input data to rescaled spherical BSSN fields
 
   // Step 7: Set up boundary condition structures and apply inner boundary conditions.
   {
@@ -391,7 +391,7 @@ This function performs the following steps:
     free(external_input_bcstruct.inner_bc_array);
     for (int ng = 0; ng < NGHOSTS * 3; ng++)
       free(external_input_bcstruct.pure_outer_bc_array[ng]);
-  } // END BLOCK: applying boundary conditions
+  } // END BLOCK: Step 7 apply external-input inner boundary conditions
 
   return BHAHAHA_SUCCESS;
 """

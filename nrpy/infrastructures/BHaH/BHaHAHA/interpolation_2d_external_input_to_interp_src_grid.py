@@ -150,7 +150,7 @@ Notes:
                     fabs(src_r_theta_phi[2][idx_center_ph] - phi_dst), src_dxx2 * (0.5 + TOLERANCE));
           } // END IF: central index is properly centered
 #endif // DEBUG
-        } // END BLOCK: sanity checks
+        } // END BLOCK: theta/phi stencil bounds and center-index sanity checks
 
         const int base_idx_th = idx_center_th - NinterpGHOSTS;
         const int base_idx_ph = idx_center_ph - NinterpGHOSTS;
@@ -247,7 +247,7 @@ int initialize_coordinates(const int N_r, const int N_theta, const int N_phi, RE
     free(r_theta_phi[1]);
     free(r_theta_phi[2]);
     return -1;
-  } // END IF: memory allocation check
+  } // END IF: coordinate-array allocation failed
 
   // Populate coordinate arrays. Note the r-direction is vertex-centered like the 1D example.
   for (int i = 0; i < Nxx_plus_2NGHOSTS[0]; i++) {
@@ -283,12 +283,12 @@ int initialize_src_gf(const int src_Nxx_plus_2NGHOSTS[3], REAL *src_r_theta_phi[
   if (!r_func_values) {
     fprintf(stderr, "malloc failed for r_func_values.\n");
     return -1;
-  } // END IF: memory allocation check
+  } // END IF: r_func_values allocation failed
 
   for (int i = 0; i < src_Nxx_plus_2NGHOSTS0; i++) {
     const REAL r = src_r_theta_phi[0][i];
     r_func_values[i] = r * r * sin(r);
-  } // END LOOP to pre-calculate r-dependent values
+  } // END LOOP: for i over precomputed r-dependent values
 
 #pragma omp parallel for collapse(2)
   for (int gf = 0; gf < NUM_EXT_INPUT_CONFORMAL_GFS; gf++) {
@@ -344,7 +344,7 @@ int main() {
     fprintf(stderr, "Memory allocation failed for destination coordinate arrays.\n");
     return_code = EXIT_FAILURE;
     goto cleanup;
-  } // END IF: destination coordinate initialization check
+  } // END IF: destination coordinate initialization failed
 
   const size_t total_dst_pts = (size_t)dst_Nxx_plus_2NGHOSTS0 * dst_Nxx_plus_2NGHOSTS1 * dst_Nxx_plus_2NGHOSTS2;
   dst_gfs = (REAL *)malloc(sizeof(REAL) * NUM_EXT_INPUT_CONFORMAL_GFS * total_dst_pts);
@@ -352,7 +352,7 @@ int main() {
     fprintf(stderr, "Memory allocation failed for destination grid functions.\n");
     return_code = EXIT_FAILURE;
     goto cleanup;
-  } // END IF: destination grid function allocation check
+  } // END IF: destination gridfunction allocation failed
 
   for (int res = 0; res < NUM_RESOLUTIONS; res++) {
     const int Ntheta_src = Ntheta_src_arr[res];
@@ -364,7 +364,7 @@ int main() {
       fprintf(stderr, "Memory allocation failed for source coordinates at resolution %d.\n", res);
       return_code = EXIT_FAILURE;
       goto cleanup;
-    } // END IF: source coordinate initialization check
+    } // END IF: source coordinate initialization failed
 
     const size_t total_src_pts = (size_t)src_Nxx_plus_2NGHOSTS[0] * src_Nxx_plus_2NGHOSTS[1] * src_Nxx_plus_2NGHOSTS[2];
     src_gf = (REAL *)malloc(sizeof(REAL) * NUM_EXT_INPUT_CONFORMAL_GFS * total_src_pts);
@@ -372,12 +372,12 @@ int main() {
       fprintf(stderr, "Memory allocation failed for source grid function at resolution %d.\n", res);
       return_code = EXIT_FAILURE;
       goto cleanup;
-    } // END IF: source grid function allocation check
+    } // END IF: source gridfunction allocation failed
 
     if (initialize_src_gf(src_Nxx_plus_2NGHOSTS, src_r_theta_phi, src_gf) != 0) {
       return_code = EXIT_FAILURE;
       goto cleanup;
-    } // END IF: source grid function initialization check
+    } // END IF: source gridfunction initialization failed
 
     // Use designated initializers for commondata_struct
     commondata_struct commondata = {
@@ -403,7 +403,7 @@ int main() {
     for (int i = 0; i < 3; i++) {
       commondata.external_input_r_theta_phi[i] = src_r_theta_phi[i];
       commondata.interp_src_r_theta_phi[i] = dst_r_theta_phi[i];
-    } // END LOOP to set coordinate pointers in commondata
+    } // END LOOP: for i over coordinate pointers in commondata
 
 #ifdef _OPENMP
     double start_time = omp_get_wtime();
@@ -476,7 +476,7 @@ cleanup:
   for (int i = 0; i < 3; i++) {
     free(src_r_theta_phi[i]);
     free(dst_r_theta_phi[i]);
-  } // END LOOP to free all coordinate arrays
+  } // END LOOP: for i over coordinate arrays to free
   free(src_gf);
   free(dst_gfs);
 

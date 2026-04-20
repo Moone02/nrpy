@@ -149,7 +149,7 @@ and computes necessary spatial derivatives.
       // Memory allocation failed for grid functions.
       return NUMGRID_INTERP_MALLOC_ERROR_GFS;
     }
-  } // END STEP 1: Configure grid parameters for the interpolation source
+  } // END BLOCK: Step 1 configure interpolation-source grid parameters
 
   // Step 2: Initialize coordinate arrays for the interpolation source grid.
   {
@@ -179,7 +179,7 @@ and computes necessary spatial derivatives.
     // Initialize phi coordinates with cell-centered values.
     for (int j = 0; j < commondata->interp_src_Nxx_plus_2NGHOSTS2; j++)
       commondata->interp_src_r_theta_phi[2][j] = xxmin2 + ((REAL)(j - NGHOSTS) + (1.0 / 2.0)) * commondata->interp_src_dxx2;
-  } // END STEP 2: Initialize coordinate arrays for the interpolation source grid
+  } // END BLOCK: Step 2 initialize interpolation-source coordinate arrays
 
   // Step 2.c: Extract grid sizes for use in indexing macros.
   const int Nxx_plus_2NGHOSTS0 = commondata->interp_src_Nxx_plus_2NGHOSTS0;
@@ -228,10 +228,10 @@ and computes necessary spatial derivatives.
                 f"in_gfs[IDX4(SRC_ADD{i}{j}GF, i0, i1, i2)] = external_Sph_aDD{i}{j};\n"
             )
     body += """
-        } // END LOOP: for i0 over grid index
-      } // END LOOP: for i1 over grid index
-    } // END LOOP: for i2 over grid index
-  } // END STEP 4: Transfer interpolated data to interpolation source grid functions
+        } // END LOOP: for i0 over radial points in the interpolation-source grid
+      } // END LOOP: for i1 over theta points in the interpolation-source grid
+    } // END LOOP: for i2 over phi points in the interpolation-source grid
+  } // END BLOCK: Step 4 transfer interpolated data into interpolation-source gridfunctions
 
   // Step 5: Initialize boundary condition structure for the interpolation source grid.
   bc_struct interp_src_bcstruct;
@@ -246,7 +246,7 @@ and computes necessary spatial derivatives.
 
     // Set up boundary conditions based on the initialized grid.
     bah_bcstruct_set_up(commondata, commondata->interp_src_r_theta_phi, &interp_src_bcstruct);
-  } // END STEP 5: Initialize boundary condition structure
+  } // END BLOCK: Step 5 initialize the interpolation-source boundary-condition structure
 
   // Step 6: Apply inner boundary conditions to specific grid functions to ensure smoothness.
   {
@@ -274,13 +274,13 @@ and computes necessary spatial derivatives.
               interp_src_bcstruct.inner_bc_array[pt].parity[interp_src_gf_parity[which_gf]] * commondata->interp_src_gfs[IDX4pt(which_gf, srcpt)];
         } // END LOOP: for pt over inner boundary points
         break;
-      }
+      } // END BLOCK: selected gridfunction case with inner boundary updates
       default:
         // No boundary conditions needed for other grid functions.
         break;
-      } // END SWITCH
+      } // END SWITCH: select gridfunctions requiring inner boundary conditions
     } // END LOOP: for which_gf over gridfunctions
-  } // END STEP 6: Apply inner boundary conditions to specific grid functions
+  } // END BLOCK: Step 6 apply inner boundary conditions to selected interpolation-source fields
 
   // Step 7: Compute spatial derivatives of h_{ij} within the interior of the interpolation source grid.
   bah_hDD_dD_and_W_dD_in_interp_src_grid_interior(commondata);
@@ -307,14 +307,14 @@ and computes necessary spatial derivatives.
             interp_src_bcstruct.inner_bc_array[pt].parity[interp_src_gf_parity[which_gf]] * commondata->interp_src_gfs[IDX4pt(which_gf, srcpt)];
       } // END LOOP: for pt over inner boundary points
     } // END LOOP: for which_gf over gridfunctions
-  } // END STEP 9: Enforce boundary conditions on all interpolation source grid functions
+  } // END BLOCK: Step 9 enforce boundary conditions on all interpolation-source gridfunctions
 
   // Step 10: Release allocated memory for boundary condition structures.
   {
     free(interp_src_bcstruct.inner_bc_array);
     for (int ng = 0; ng < NGHOSTS * 3; ng++)
       free(interp_src_bcstruct.pure_outer_bc_array[ng]);
-  } // END STEP 10: Free allocated memory for boundary condition structures
+  } // END BLOCK: Step 10 free interpolation-source boundary-condition structures
 
   return BHAHAHA_SUCCESS;
 """

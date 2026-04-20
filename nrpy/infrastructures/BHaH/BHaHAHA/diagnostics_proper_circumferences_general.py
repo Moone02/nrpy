@@ -367,16 +367,16 @@ Precomputation strategy on the (theta,phi) grid at fixed i0=NGHOSTS:
         enable_fd_functions=enable_fd_functions,
     )
     body += r"""
-      } // END LOOP: for i1 over grid index (theta)
-    } // END LOOP: for i2 over grid index (phi)
+      } // END LOOP: for i1 over theta points on the horizon surface
+    } // END LOOP: for i2 over phi points on the horizon surface
 
     // Apply inner boundary conditions to q-metric gridfunctions sqrt(qtt), sqrt(qpp), and qtp:
     {
       const int which_gfs_1[3] = {0, 1, 2};
       apply_inner_bc_for_selected_gfs(&griddata[grid].bcstruct, metric_data_gfs, Nxx_plus_2NGHOSTS0, Nxx_plus_2NGHOSTS1, Nxx_plus_2NGHOSTS2,
                                       which_gfs_1, 3);
-    } // END BLOCK: application of inner boundary conditions
-  } // END BLOCK: computation of q-metric root gridfunctions
+    } // END BLOCK: apply inner boundary conditions to q-metric root gridfunctions
+  } // END BLOCK: compute q-metric root gridfunctions on the horizon surface
 
   // Number of angular points to sample over 2 pi radians (controls resolution of great-circle integrals).
   const int N_angle = griddata[grid].params.Nxx2;
@@ -403,7 +403,7 @@ Precomputation strategy on the (theta,phi) grid at fixed i0=NGHOSTS:
     s[0] = 0.0;
     s[1] = 0.0;
     s[2] = 1.0;
-  } // fallback: z-axis
+  } // END ELSE: fallback to z-axis when spin axis norm vanishes
   commondata->bhahaha_diagnostics->BHAHAHA_SPIN_AXIS_X = s[0];
   commondata->bhahaha_diagnostics->BHAHAHA_SPIN_AXIS_Y = s[1];
   commondata->bhahaha_diagnostics->BHAHAHA_SPIN_AXIS_Z = s[2];
@@ -483,7 +483,7 @@ Precomputation strategy on the (theta,phi) grid at fixed i0=NGHOSTS:
     const int which_gfs_2[2] = {3, 4};
     apply_inner_bc_for_selected_gfs(&griddata[grid].bcstruct, metric_data_gfs, Nxx_plus_2NGHOSTS0, Nxx_plus_2NGHOSTS1, Nxx_plus_2NGHOSTS2,
                                     which_gfs_2, 2);
-  } // END BLOCK: application of inner boundary conditions for f_eq/f_pol
+  } // END BLOCK: apply inner boundary conditions to equatorial and polar integrands
 
   // Convenience base pointers for scalar integrands:
   const REAL *restrict src_feq = &metric_data_gfs[IDX4pt(3, 0)];
@@ -514,8 +514,8 @@ Precomputation strategy on the (theta,phi) grid at fixed i0=NGHOSTS:
     if (err != BHAHAHA_SUCCESS) {
       free(metric_data_gfs);
       return err;
-    } // END IF: error check
-  } // END BLOCK: interpolation step across equatorial circumference
+    } // END IF: equatorial-integrand interpolation failed
+  } // END BLOCK: interpolate equatorial integrand onto great-circle samples
 
   const REAL C_equator = integrate_over_alpha(integrand, N_angle, d_alpha);
 
@@ -541,8 +541,8 @@ Precomputation strategy on the (theta,phi) grid at fixed i0=NGHOSTS:
     if (err != BHAHAHA_SUCCESS) {
       free(metric_data_gfs);
       return err;
-    } // END IF: error check
-  } // END BLOCK: interpolation step across polar circumference
+    } // END IF: polar-integrand interpolation failed
+  } // END BLOCK: interpolate polar integrand onto great-circle samples
 
   const REAL C_polar = integrate_over_alpha(integrand, N_angle, d_alpha);
 

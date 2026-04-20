@@ -109,18 +109,18 @@ def register_CFunction_diagnostics_area_centroid_and_Theta_norms(
               sum_x_centroid += (Cart_originx + tmp0 * cos(xx2)) * area_element * weight1 * weight2;
               sum_y_centroid += (Cart_originy + tmp0 * sin(xx2)) * area_element * weight1 * weight2;
               sum_z_centroid += (Cart_originz + hh * cos(xx1)) * area_element * weight1 * weight2;
-            } // END BLOCK: centroid sums
+            } // END BLOCK: accumulate centroid numerators
             if (Theta * Theta > max_Theta_squared_for_Linf_norm)
               max_Theta_squared_for_Linf_norm = Theta * Theta;
             if (hh > max_radius)
               max_radius = hh;
             if (hh < min_radius)
               min_radius = hh;
-          } // END OMP CRITICAL
-        } // END LOOP: for i0 over grid index
-      } // END LOOP: for i1 over grid index
-    } // END LOOP: for i2 over grid index
-  } // END OMP PARALLEL
+          } // END OMP CRITICAL: update shared area and centroid diagnostics
+        } // END LOOP: for i0 over radial horizon-grid points
+      } // END LOOP: for i1 over theta horizon-grid points
+    } // END LOOP: for i2 over phi horizon-grid points
+  } // END OMP PARALLEL: scan all horizon surface points
 
   // Store diagnostics in commondata->bhahaha_diagnostics struct.
   {
@@ -149,7 +149,7 @@ def register_CFunction_diagnostics_area_centroid_and_Theta_norms(
     bhahaha_diags->x_centroid_wrt_coord_origin = sum_x_centroid * params->dxx1 * params->dxx2 / bhahaha_diags->area;
     bhahaha_diags->y_centroid_wrt_coord_origin = sum_y_centroid * params->dxx1 * params->dxx2 / bhahaha_diags->area;
     bhahaha_diags->z_centroid_wrt_coord_origin = sum_z_centroid * params->dxx1 * params->dxx2 / bhahaha_diags->area;
-  } // END BLOCK: store diagnostics in commondata->bhahaha_diagnostics struct
+  } // END BLOCK: store area, centroid, and Theta norms in commondata diagnostics
 """
     )
     cfc.register_CFunction(

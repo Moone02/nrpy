@@ -109,7 +109,7 @@ calculations, norm evaluations, and detailed final iteration analyses.
       // Exit diagnostics if interpolation fails.
       if (commondata->error_flag != BHAHAHA_SUCCESS)
         return;
-    } // END BLOCK: Interpolation and grid size setup
+    } // END BLOCK: prepare interpolated horizon data and local grid extents
 
     // Calculate area centroid and theta norms for the apparent horizon.
     bah_diagnostics_area_centroid_and_Theta_norms(commondata, griddata);
@@ -219,7 +219,7 @@ calculations, norm evaluations, and detailed final iteration analyses.
           display_spin("spin_z", bhahaha_diags->spin_a_z_from_xz_over_xy_prop_circumfs, bhahaha_diags->spin_a_z_from_yz_over_xy_prop_circumfs, //
                        "xz/xy", "yz/xy");
         } // END IF: verbosity level > 0
-      } // END BLOCK: compute, store, and optionally print final diagnostics
+      } // END BLOCK: compute final diagnostics and update stored horizon history
     } // END IF: final iteration
   } // END IF: output diagnostics
 """
