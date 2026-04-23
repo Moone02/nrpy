@@ -14,7 +14,7 @@ It performs three functions:
    plane intercepts, and celestial sphere angles to check for coordinate mapping
    errors or integration 'blind spots'.
 
-Author: Dalton Moone.     
+Author: Dalton Moone.
 """
 
 import os
