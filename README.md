@@ -24,98 +24,6 @@ python -m pip install nrpy
 For contributors working from a clone of this repository:
 
 ```bash
-# NRPy 2: Python/SymPy-Based Code Generation for Numerical Relativity... and Beyond!
-
-## Quick start, Step 1:
-
-```
-pip install nrpy
-```
-
-## Quick start, Step 2: Choose a project to build.
-
-### BlackHoles@Home infrastructure (standalone): Choose a project, run the provided command, then follow the instructions for compiling & running the generated C code.
-
-* **Wave equation solver**
-  - **Cartesian coordinates**:
-    ```
-    python3 -m nrpy.examples.wave_equation_cartesian
-    ```
-  - **Curvilinear coordinates**:
-    ```
-    python3 -m nrpy.examples.wave_equation_curvilinear
-    ```
-* **General relativity**
-  - **Two black holes collide**:
-    ```
-    python3 -m nrpy.examples.two_blackholes_collide
-    ```
-  - **Black hole spectroscopy**:
-    ```
-    python3 -m nrpy.examples.blackhole_spectroscopy
-    ```
-  - **Spinning black hole**:
-    ```
-    python3 -m nrpy.examples.spinning_blackhole
-    ```
-  - **Binary black hole initial data, courtesy NRPyElliptic**:
-    ```
-    python3 -m nrpy.examples.nrpyelliptic_conformally_flat
-    ```
-  - **Massive particle geodesic integrator**:
-    ```
-    python3 -m nrpy.examples.mass_geodesic_integrator
-    ```
-  - **Photon geodesic integrator**:
-    ```
-    python3 -m nrpy.examples.photon_geodesic_integrator
-    ```
-  - **Photon geodesic batch integrator (with visualization)**:
-    ```
-    python3 -m nrpy.examples.photon_geodesic_batch_integrator
-    ```
-
-### Einstein Toolkit infrastructure: Choose a project to build, run the provided command. Check the `examples/et_*` directory for a ThornList and parameter file. Thorns will be output to `project/`
-
-* **Wave equation solver**
-  - **Cartesian coordinates, with Carpet AMR infrastructure**:
-    ```
-    python3 -m nrpy.examples.carpet_wavetoy_thorns
-    ```
-* **General relativity: Generate Baikal and BaikalVacuum thorns**
-  - **Cartesian coordinates, with Carpet AMR infrastructure**:
-    ```
-    python3 -m nrpy.examples.carpet_baikal_thorns
-    ```
-### superB infrastructure: Choose a project, run the provided command, then follow the instructions for installing Charm++, compiling and running the generated C++ code.
-
-* **General relativity**
-  - **Two black holes collide**:
-    ```
-    python3 -m nrpy.examples.superB_two_blackholes_collide
-    ```
-  - **Black hole spectroscopy**:
-    ```
-    python3 -m nrpy.examples.superB_blackhole_spectroscopy
-    ```
-  - **Binary black hole initial data, courtesy NRPyElliptic**:
-    ```
-    python3 -m nrpy.examples.superB_nrpyelliptic_conformally_flat
-    ```
-
-## Quick Start, Step 3
-
-1. If working with a BlackHoles@Home project: follow the directions at the end of the code generation, starting with "Now go into `[directory name]` and type `make` to build, then `[executable]` to run. Parameter file can be found in `[parameter filename]`."
-  1. Parameter files are text files, making it easy to adjust simulation parameters.
-  1. In addition, parameters can be set at the command line. For example, `wavetoy` has a parameter `convergence_factor` that increases the resolution (technically `Nx=Ny=Nz`) by this factor. To output at twice the resolution, simply run `./wavetoy 2.0`, and a new file will be output `out0d-conv_factor2.00.txt`, which contains data at 2x the resolution.
-  1. Analyze the output from `out0d-conv_factor1.00.txt` and `out0d-conv_factor2.00.txt` in e.g., `gnuplot`.
-1. If working with an Einstein Toolkit project, the output will be Einstein Toolkit modules (thorns). You'll want to either copy or link them to an arrangement in `arrangements/[subdirectory]/`, then add the thorns to your `ThornList`, and compile.
-1. If working with a superB project: install Charm++ following the instructions in [Charm++ documentation](https://charm.readthedocs.io/en/latest/charm++/manual.html#installing-charm). Then, follow the directions at the end of the code generation, starting with "Now go into `[directory name]` and type `make` to build, then `[executable]` to run. Parameter file can be found in `[parameter filename]`." As in a BlackHoles@Home project parameters can be changed and output from `out0d-conv_factor1.00.txt` and `out0d-conv_factor2.00.txt` can be analyzed using e.g., `gnuplot`.
-
-# Contributing to NRPy 2 and running locally
-
-Want to contribute to NRPy 2? Great! First clone the NRPy 2.0 repo:
-```
 git clone https://github.com/nrpy/nrpy.git
 cd nrpy
 python -m pip install -U -r requirements-dev.txt
@@ -243,7 +151,14 @@ These generators focus on compact-binary dynamics, inspiral, and waveform modeli
 These generators cover additional relativistic physics applications beyond the main PDE and thorn-generation workflows.
 
 - Neutron-star and matter-related workflows: `python -m nrpy.examples.tovola_neutron_star` (requires GSL), `python -m nrpy.examples.hydro_without_hydro` (requires GSL)
-- Geodesic integration: `python -m nrpy.examples.mass_geodesic_integrator`, `python -m nrpy.examples.photon_geodesic_integrator`
+
+### Geodesic Integration and Ray-Tracing
+
+These generators focus on test-particle dynamics in curved spacetimes. They produce standalone C or CUDA projects that evolve trajectories and include companion Python scripts for visualization (e.g., trajectory plots and lensed image rendering).
+
+- Single massive particle integration, requires GSL: `python -m nrpy.examples.mass_geodesic_integrator`
+- Single photon integration : `python -m nrpy.examples.photon_geodesic_integrator`
+- Batch photon ray-tracing (supports CUDA or OpenMP): `python -m nrpy.examples.photon_geodesic_batch_integrator`
 
 ### Specialized Utilities
 

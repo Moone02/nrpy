@@ -80,7 +80,7 @@ def find_event_time_and_state() -> None:
         t_linear = (f1 * lam_p_p - f0 * lam_p) / (f1 - f0);
     } else {
         t_linear = lam_p;
-    }
+    } // END ELSE: fallback to previous parameter
 
     //==========================================
     // STEP 2: QUADRATIC INTERPOLATION (SECOND-ORDER ACCURACY)
@@ -106,9 +106,9 @@ def find_event_time_and_state() -> None:
                 double t_max = (lam_p_p < lam) ? lam : lam_p_p; // Maximum bound of the historical integration window.
                 // Bound check: ensure the quadratic root $\lambda_{root}$ lies within the historical integration window.
                 if (t_quad >= t_min && t_quad <= t_max) lambda_event = t_quad;
-            }
-        }
-    }
+            } // END IF: stable denominator for quadratic root
+        } // END IF: discriminant >= 0 and a > 1e-16
+    } // END IF: intervals are not degenerate
 
     //==========================================
     // STEP 3: LAGRANGE STATE RECONSTRUCTION
@@ -123,7 +123,7 @@ def find_event_time_and_state() -> None:
         L0 = ((t - lam_p) * (t - lam)) / ((lam_p_p - lam_p) * (lam_p_p - lam));
         L1 = ((t - lam_p_p) * (t - lam)) / ((lam_p - lam_p_p) * (lam_p - lam));
         L2 = ((t - lam_p_p) * (t - lam_p)) / ((lam - lam_p_p) * (lam - lam_p));
-    }
+    } // END ELSE: compute full quadratic Lagrange weights
 
     // Assign the final computed event parameter $\lambda$.
     *event_lambda = lambda_event;
@@ -133,7 +133,7 @@ def find_event_time_and_state() -> None:
         event_f_intersect[i] = f_p_p_local[i] * L0 +
                                f_p_local[i]   * L1 +
                                f_local[i]     * L2;
-    }
+    } // END LOOP: for i over 9 state vector components
     """
 
     cfc.register_CFunction(

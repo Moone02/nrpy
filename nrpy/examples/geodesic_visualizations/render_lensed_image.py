@@ -7,7 +7,7 @@ for the celestial sphere (background stars) and the accretion disk. Uses an
 accumulator-based approach to map ray endpoints from curved spacetime onto a 2D
 pixel grid via the camera's local window coordinates.
 
-Author: Dalton Moone.
+Author: Dalton Moone.     
 """
 
 import os
@@ -85,9 +85,7 @@ def _load_texture(
         if not os.path.exists(image_input):
             raise FileNotFoundError(f"Texture file not found: {image_input}")
         # pylint: disable=import-outside-toplevel, import-error
-        from PIL import (  # type: ignore[import-not-found, import-untyped, unused-ignore]
-            Image,
-        )
+        from PIL import Image  # type: ignore
 
         with Image.open(image_input) as img:
             return np.array(img.convert("RGB")).astype(np.float64) / 255.0
@@ -122,7 +120,7 @@ def generate_source_disk_array(
     :return: A uint8 RGB NumPy array of the generated accretion disk texture.
     """
     # pylint: disable=import-outside-toplevel, import-error
-    import matplotlib.pyplot as plt  # type: ignore[import-not-found, import-untyped, unused-ignore]
+    import matplotlib.pyplot as plt  # type: ignore
 
     half_width = disk_physical_width / 2.0
     # Create coordinate grid representing the flat source plane
@@ -387,9 +385,7 @@ def generate_static_lensed_image(
     :param display_image: If True, opens the resulting image using the default viewer.
     """
     # pylint: disable=import-outside-toplevel, import-error
-    from PIL import (  # type: ignore[import-not-found, import-untyped, unused-ignore] # pyright: ignore
-        Image,
-    )
+    from PIL import Image
 
     print(f"--- Generating Static Lensed Image: '{output_filename}' ---")
 

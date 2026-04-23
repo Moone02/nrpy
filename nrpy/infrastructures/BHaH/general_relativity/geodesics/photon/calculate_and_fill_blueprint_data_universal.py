@@ -64,7 +64,7 @@ def calculate_and_fill_blueprint_data_universal() -> None:
     #pragma omp parallel for
     for(long int c = 0; c < current_chunk_size; c++) { // Thread index $c$ maps to photon ID.
     """
-        loop_postamble = "    } // END OMP PARALLEL FOR"
+        loop_postamble = "    } // END LOOP: for c over current_chunk_size"
 
     core_math = r"""
     //==========================================
@@ -101,7 +101,7 @@ def calculate_and_fill_blueprint_data_universal() -> None:
         // Map the Cartesian escape coordinates to the celestial sphere.
         d_result_bundle[c].final_theta = acos(z_final / r_final); // Polar angle $\theta$ relative to the $z$-axis.
         d_result_bundle[c].final_phi = atan2(y_final, x_final);   // Azimuthal angle $\phi$ in the $x$-$y$ plane.
-    }
+    } // END IF: d_status_bundle[c] == TERMINATION_TYPE_CELESTIAL_SPHERE
     """
 
     kernel_body = f"{loop_preamble}\n{core_math}\n{loop_postamble}"
@@ -158,7 +158,7 @@ def calculate_and_fill_blueprint_data_universal() -> None:
     // Transfer the 9-component state vector $f^mu$ for the current bundle for coordinate unpacking.
     for(int m=0; m<9; m++) {{ // Iterate over the 9 components of the $f^mu$ state vector.
         {memcpy_f} // Transfer of $f^mu$.
-    }}
+    }} // END LOOP: for m over 9 components of f^mu state vector
 
     // Pre-load existing results to prevent overwriting valid memory with garbage during the subsequent transfer.
     {memcpy_result_in} // Transfer of previous results.

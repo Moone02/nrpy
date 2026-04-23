@@ -101,7 +101,7 @@ def rkf45_finalize_and_control_kernel() -> None:
     #pragma omp parallel for
     for(long int i = 0; i < chunk_size; i++) {
     """
-        loop_postamble = "    } // END OMP PARALLEL FOR"
+        loop_postamble = "    } // END LOOP: for i over chunk_size rays"
 
     core_math = rf"""
     //==========================================
@@ -138,7 +138,7 @@ def rkf45_finalize_and_control_kernel() -> None:
         const double py = ReadCUDA(&d_f_start[IDX_F(6, i)]); // Spatial momentum $p_y$.
         const double pz = ReadCUDA(&d_f_start[IDX_F(7, i)]); // Spatial momentum $p_z$.
         p_L1 = AddCUDA(AbsCUDA(px), AddCUDA(AbsCUDA(py), AbsCUDA(pz))); // The scalar $L_1$ momentum norm.
-    }}
+    }} // END BLOCK: L1 momentum floor calculation
 
     for (int comp = 0; comp < 9; ++comp) {{
         //==========================================
@@ -169,7 +169,7 @@ def rkf45_finalize_and_control_kernel() -> None:
         // Evaluates the physical state for numerical singularities to guarantee the rejection of corrupted trajectory steps.
         if (isnan(f_5th_val) || isinf(f_5th_val)) {{
             err_norm = 1e30; // Forces an artificially massive error norm $L_\infty$ to guarantee step rejection.
-        }}
+        }} // END IF: numerical singularities check
 
         //==========================================
         // TRUNCATION ERROR EVALUATION
@@ -202,7 +202,7 @@ def rkf45_finalize_and_control_kernel() -> None:
             }} else {{
                 // Spatial Momentum $p_i$: Mixed tolerance bounded by the $L_1$ momentum floor.
                 scale = AddCUDA(atol, MulCUDA(rtol, p_L1)); // Mixed tolerance scaling bounds spatial momentum variation.
-            }}
+            }} // END ELSE: spatial momentum tolerance bounds
 
             double current_err = DivCUDA(err_abs, scale); // The normalized error for the specific tensor component.
 
@@ -211,9 +211,9 @@ def rkf45_finalize_and_control_kernel() -> None:
                 err_norm = 1e30; // Forces an artificially massive error norm $L_\infty$ to guarantee step rejection.
             }} else {{
                 err_norm = fmax(err_norm, current_err); // Accumulates the maximum normalized error equivalent to the $L_\infty$ norm.
-            }}
-        }}
-    }}
+            }} // END ELSE: error norm accumulation
+        }} // END IF: exclude distance traveled from error check
+    }} // END LOOP: for comp over 9 tensor components
 
     //==========================================
     // UNIFIED ADAPTIVE CONTROL LOGIC
@@ -234,7 +234,7 @@ def rkf45_finalize_and_control_kernel() -> None:
         {pragma_unroll}
         for (int comp = 0; comp < 9; ++comp) {{
             WriteCUDA(&d_f_persistent[IDX_F(comp, i)], f_5th_cache[comp]); // Commits the cached state component to persistent memory.
-        }}
+        }} // END LOOP: for comp over 9 tensor components to commit state
 
         // Update Affine Parameter $\lambda$.
         const double old_affine = ReadCUDA(&d_affine[i]); // Previous affine parameter $\lambda$.
@@ -246,7 +246,8 @@ def rkf45_finalize_and_control_kernel() -> None:
 
         // Commit the newly adapted step size $h$ to memory.
         WriteCUDA(&d_h[i], h_new); // Commits the newly adapted step size $h$ to memory.
-    }} else {{
+    }} // END IF: err_norm <= 1.0
+    else {{
         //==========================================
         // REJECTED STEP HANDLING
         //==========================================
@@ -259,11 +260,11 @@ def rkf45_finalize_and_control_kernel() -> None:
             WriteCUDA(&d_status[i], FAILURE_RKF45_REJECTION_LIMIT); // Updates the ray status flag to a fatal rejection failure.
         }} else {{
             WriteCUDA(&d_status[i], REJECTED); // Updates the ray status flag to a recoverable rejection.
-        }}
+        }} // END ELSE: recoverable rejection status
 
         // Commit the scaled retry step size $h$ to memory without overwriting persistent state vectors.
         WriteCUDA(&d_h[i], h_new); // Commits the scaled retry step size $h$ to memory.
-    }}
+    }} // END ELSE: rejected step handling
 
     //==========================================
     // MACRO CLEANUP

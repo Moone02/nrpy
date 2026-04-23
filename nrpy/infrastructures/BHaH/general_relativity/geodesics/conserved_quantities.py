@@ -71,7 +71,7 @@ def conserved_quantities(spacetime_name: str, particle_type: str = "photon") -> 
     double Ly;  // Angular momentum projection $L_y$.
     double Lz;  // Angular momentum projection $L_z$ extracted from the azimuthal Killing vector.
     double Q;   // Carter constant $Q$ separating the Hamilton-Jacobi equations.
-    } conserved_quantities_t;
+    } conserved_quantities_t; // END STRUCT: conserved_quantities_t
     """
 
     # Register the struct definition to the global header generation pipeline.
@@ -174,7 +174,7 @@ def conserved_quantities(spacetime_name: str, particle_type: str = "photon") -> 
     #pragma omp parallel for
     for(long int c = 0; c < current_chunk_size; c++) {
 """
-        loop_postamble = "    } // End OpenMP loop"
+        loop_postamble = "    } // END LOOP: for c over photon rays"
 
     core_math = f"""
     //==========================================
@@ -240,7 +240,7 @@ def conserved_quantities(spacetime_name: str, particle_type: str = "photon") -> 
         cudaMemcpy(d_f_bundle + (m * BUNDLE_CAPACITY),
                    all_photons->f + (m * num_rays) + start_idx,
                    sizeof(double) * current_chunk_size, cudaMemcpyHostToDevice);
-    }
+    } // END LOOP: for m over state vector elements
     """
         device_to_host_transfer = r"""
     //==========================================
@@ -260,7 +260,7 @@ def conserved_quantities(spacetime_name: str, particle_type: str = "photon") -> 
         memcpy(d_f_bundle + (m * BUNDLE_CAPACITY),
                all_photons->f + (m * num_rays) + start_idx,
                sizeof(double) * current_chunk_size);
-    }
+    } // END LOOP: for m over state vector elements
     """
         device_to_host_transfer = r"""
     //==========================================

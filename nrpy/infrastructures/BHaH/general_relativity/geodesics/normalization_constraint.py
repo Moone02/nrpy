@@ -48,7 +48,7 @@ def normalization_constraint(norm_expr: sp.Expr, PARTICLE: str) -> None:
     // Defines the physical normalization constraint evaluated along a trajectory.
     typedef struct {
         double C;   // Scalar invariant $C = g_{\\mu\\nu} v^\\mu v^\\nu$.
-    } normalization_constraint_t;
+    } normalization_constraint_t; // END STRUCT: normalization_constraint_t
     """
 
     # Register the struct definition to the global header generation pipeline.
@@ -126,7 +126,7 @@ def normalization_constraint(norm_expr: sp.Expr, PARTICLE: str) -> None:
     #pragma omp parallel for
     for(long int c = 0; c < current_chunk_size; c++) {
     """
-        loop_postamble = "    } // End OpenMP loop"
+        loop_postamble = "    } // END LOOP: for c over current chunk"
 
     core_math = f"""
     //==========================================

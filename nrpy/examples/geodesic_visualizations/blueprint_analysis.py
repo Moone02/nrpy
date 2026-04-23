@@ -14,7 +14,7 @@ It performs three functions:
    plane intercepts, and celestial sphere angles to check for coordinate mapping
    errors or integration 'blind spots'.
 
-Author: Dalton Moone.
+Author: Dalton Moone.     
 """
 
 import os
@@ -23,7 +23,10 @@ from typing import Dict, List
 import numpy as np
 import numpy.typing as npt
 
-import nrpy.examples.geodesic_visualizations.blueprint_config_and_schema as cfg
+try:
+    import blueprint_config_and_schema as cfg  # type: ignore
+except ImportError:
+    import nrpy.examples.geodesic_visualizations.blueprint_config_and_schema as cfg
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -60,7 +63,7 @@ def plot_heatmaps(data: "npt.NDArray[np.void]") -> None:
     :param data: The structured NumPy array containing ray termination data.
     """
     # pylint: disable=import-outside-toplevel, import-error
-    import matplotlib.pyplot as plt  # type: ignore
+    import matplotlib.pyplot as plt  # type: ignore[import-not-found]
 
     # Preamble: Descriptive Physical Variable Mapping.
     # Extract coordinates from the structured array for plotting.
@@ -296,7 +299,6 @@ def diagnose_blueprint(
 
 
 if __name__ == "__main__":
-    import argparse
     import doctest
     import sys
 
@@ -305,6 +307,10 @@ if __name__ == "__main__":
     if results.failed > 0:
         print(f"Doctest failed: {results.failed} of {results.attempted} test(s)")
         sys.exit(1)
+    else:
+        print(f"Doctest passed: All {results.attempted} test(s) passed")
+
+    import argparse
 
     parser = argparse.ArgumentParser(description="Blueprint Diagnostic Suite")
     parser.add_argument(

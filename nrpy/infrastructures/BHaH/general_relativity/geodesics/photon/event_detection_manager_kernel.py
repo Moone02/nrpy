@@ -102,7 +102,7 @@ def event_detection_manager_kernel() -> None:
     #pragma omp parallel for
     for(long int i = 0; i < chunk_size; i++) {
     """
-        loop_postamble = "    } // END OMP PARALLEL FOR"
+        loop_postamble = "    } // END LOOP: for i over chunk_size rays"
 
     core_math = rf"""
     // Resolves the absolute global memory index $m_{{idx}}$ of the trajectory to bypass local array overwriting.
@@ -124,7 +124,7 @@ def event_detection_manager_kernel() -> None:
     if (AbsCUDA(p_t) > {cd_access}p_t_max) {{
         d_status_bundle[i] = FAILURE_PT_TOO_BIG; // Flags the ray as a failure to halt integration.
         {escape_statement}
-    }}
+    }} // END IF: temporal explosion limit exceeded
 
     // Terminated photons cleanly bypass the geometric evaluation logic.
     if (d_status_bundle[i] != ACTIVE) {escape_statement}
@@ -139,7 +139,7 @@ def event_detection_manager_kernel() -> None:
         f_local[c] = ReadCUDA(&d_f_bundle[IDX_F(c, i)]); // Hydrates the current step state $f^\mu_n$.
         f_p_local[c] = ReadCUDA(&d_f_prev_bundle[IDX_F(c, i)]); // Hydrates the previous step state $f^\mu_{{n-1}}$.
         f_p_p_local[c] = ReadCUDA(&d_f_pre_prev_bundle[IDX_F(c, i)]); // Hydrates the pre-previous step state $f^\mu_{{n-2}}$.
-    }}
+    }} // END LOOP: for c over 9 tensor components
 
     // Hydrates the affine parameter $\lambda$ dependencies directly from the discrete memory trackers.
     const double lam_local = ReadCUDA(&d_affine[i]); // Hydrates the current affine parameter $\lambda_n$.
@@ -158,7 +158,7 @@ def event_detection_manager_kernel() -> None:
     if (r_sq > ({cd_access}r_escape * {cd_access}r_escape)) {{
         d_status_bundle[i] = TERMINATION_TYPE_CELESTIAL_SPHERE; // Marks the ray as escaped.
         {escape_statement}
-    }}
+    }} // END IF: celestial escape radius exceeded
 
     //==========================================
     // EVENT DETECTION & TERMINATION CHECKS
@@ -201,10 +201,10 @@ def event_detection_manager_kernel() -> None:
             // Window plane function call to pass commondata conditionally.
             if (handle_window_plane_intersection(f_int, lam_event, &d_results_buffer[master_idx]{commondata_arg})) {{
                 d_window_event_found[i] = true;
-            }}
-        }}
+            }} // END IF: handle_window_plane_intersection succeeded
+        }} // END IF: physical window plane was crossed
         d_on_pos_window_prev[i] = on_pos_win_curr; // Updates the window evaluation history for the next step.
-    }}
+    }} // END IF: window event not found
 
     // Source plane logic is guarded to lock the intersection coordinates permanently.
     if (!d_source_event_found[i]) {{
@@ -223,10 +223,10 @@ def event_detection_manager_kernel() -> None:
             if (handle_source_plane_intersection(f_int, lam_event, &d_results_buffer[master_idx]{commondata_arg})) {{
                 d_status_bundle[i] = TERMINATION_TYPE_SOURCE_PLANE; // Marks the ray as terminated upon striking the source plane.
                 d_source_event_found[i] = true; // Locks the source intersection to prevent future overwrites.
-            }}
-        }}
+            }} // END IF: handle_source_plane_intersection succeeded
+        }} // END IF: physical source plane was crossed
         d_on_pos_source_prev[i] = on_pos_src_curr; // Updates the source evaluation history for the next step.
-    }}
+    }} // END IF: source event not found
 
     //==========================================
     // HISTORY SHIFT
@@ -239,8 +239,8 @@ def event_detection_manager_kernel() -> None:
         for (int c = 0; c < 9; c++) {{ // Loops over the $9$ tensor components to shift the history.
             WriteCUDA(&d_f_pre_prev_bundle[IDX_F(c, i)], f_p_local[c]); // Shifts the previous state $f^\mu_{{n-1}}$ to the pre-previous slot $f^\mu_{{n-2}}$.
             WriteCUDA(&d_f_prev_bundle[IDX_F(c, i)], f_local[c]); // Shifts the current state $f^\mu_{{n}}$ to the previous slot $f^\mu_{{n-1}}$.
-        }}
-    }}
+        }} // END LOOP: for c over 9 tensor components to shift the history
+    }} // END IF: trajectory is active
 
     #undef IDX_F
     """

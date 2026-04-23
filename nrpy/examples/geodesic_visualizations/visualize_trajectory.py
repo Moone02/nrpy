@@ -6,7 +6,7 @@ This script parses the trajectory text file to ensure numerical stability and va
 the structural integrity of the output. It creates a 3D plot of the particle's path
 interacting with the event horizon to visually confirm gravitational lensing effects.
 
-Author: Dalton Moone.
+Author: Dalton Moone.     
 """
 
 import argparse

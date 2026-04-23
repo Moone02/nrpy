@@ -7,6 +7,7 @@ integration, namely the Christoffel symbols and the geodesic equations of motion
 It supports both massive and photon particles.
 
 Author: Dalton J. Moone
+
 """
 
 # Step 0.a: Import standard Python modules

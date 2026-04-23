@@ -12,8 +12,6 @@ kernel is wrapped with offloading pragmas to facilitate execution.
 Author: Dalton Moone.
 """
 
-import sys
-
 import sympy as sp
 
 import nrpy.c_codegen as ccg
@@ -114,8 +112,10 @@ def u0_massive(u0_expr: sp.Expr) -> None:
 
 if __name__ == "__main__":
     import doctest
+    import sys
 
     results = doctest.testmod()
+
     if results.failed > 0:
         print(f"Doctest failed: {results.failed} of {results.attempted} test(s)")
         sys.exit(1)

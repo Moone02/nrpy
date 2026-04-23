@@ -18,12 +18,11 @@ import urllib.request
 import numpy as np
 
 try:
+    import blueprint_config_and_schema as cfg  # type: ignore
+    import render_lensed_image as rli  # type: ignore
+except ImportError:
     from nrpy.examples.geodesic_visualizations import blueprint_config_and_schema as cfg
     from nrpy.examples.geodesic_visualizations import render_lensed_image as rli
-except ImportError as e:
-    # A failure here indicates the Python path lacks the core NRPy infrastructure.
-    print(f"FATAL: Failed to import NRPy visualization scripts. Error: {e}")
-    sys.exit(1)
 
 
 def main() -> None:

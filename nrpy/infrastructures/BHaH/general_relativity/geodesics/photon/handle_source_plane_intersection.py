@@ -112,7 +112,7 @@ def handle_source_plane_intersection() -> None:
         s_x[1] = alt_up[2]*s_z[0] - alt_up[0]*s_z[2];
         s_x[2] = alt_up[0]*s_z[1] - alt_up[1]*s_z[0];
         mag_s_x = SqrtCUDA(s_x[0]*s_x[0] + s_x[1]*s_x[1] + s_x[2]*s_x[2]);
-    }
+    } // END IF: degenerate cross product fallback
 
     double inv_mag_s_x = 1.0 / mag_s_x; // Inverse magnitude $s_x^{-1}$ for rapid normalization.
     s_x[0] *= inv_mag_s_x; s_x[1] *= inv_mag_s_x; s_x[2] *= inv_mag_s_x;
@@ -150,7 +150,7 @@ def handle_source_plane_intersection() -> None:
         final_blueprint_data->t_s = t_intersect;
         final_blueprint_data->L_s = lam_intersect; // Explicit $\lambda$ mapped to persistent blueprint.
         return true;
-    }
+    } // END IF: radial filtering
     return false;
     """
 

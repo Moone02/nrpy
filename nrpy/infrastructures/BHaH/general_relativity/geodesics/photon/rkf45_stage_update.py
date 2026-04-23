@@ -135,7 +135,7 @@ def rkf45_stage_update() -> None:
                                                                         FusedMulAddCUDA(1859.0 / 4104.0, ReadCUDA(&d_k_bundle[IDX_K(3, comp, i)]),
                                                                                         MulCUDA(-0.275, ReadCUDA(&d_k_bundle[IDX_K(4, comp, i)])))))); // Applies coefficients up to $k_5$.
             break;
-            }
+            } // END SWITCH: apply Butcher Tableau coefficients for current RKF45 stage
 
             //==========================================
             // GLOBAL MEMORY WRITE
@@ -145,8 +145,8 @@ def rkf45_stage_update() -> None:
 
             // Write the intermediate state $f_{temp}$ to the destination bundle in memory.
             WriteCUDA(&d_f_temp[IDX_F(comp, i)], f_result); // Writes $f_{temp}$ to global memory.
-        }
-    }
+        } // END LOOP: for comp over 9 tensor components
+    } // END IF: stage != 6
 
     //==========================================
     // MACRO CLEANUP

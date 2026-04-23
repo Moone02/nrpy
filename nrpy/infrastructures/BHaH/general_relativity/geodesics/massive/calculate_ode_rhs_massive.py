@@ -14,7 +14,6 @@ and reading from local arrays organizes memory access. Common Subexpression Elim
 Author: Dalton Moone.
 """
 
-import sys
 from typing import List
 
 import sympy as sp
@@ -147,8 +146,10 @@ def calculate_ode_rhs_massive(
 
 if __name__ == "__main__":
     import doctest
+    import sys
 
     results = doctest.testmod()
+
     if results.failed > 0:
         print(f"Doctest failed: {results.failed} of {results.attempted} test(s)")
         sys.exit(1)

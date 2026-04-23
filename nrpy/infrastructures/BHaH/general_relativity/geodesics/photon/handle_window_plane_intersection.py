@@ -95,7 +95,7 @@ def handle_window_plane_intersection() -> None:
     if (mag_w_z > 1e-12) {
         double inv_mag = 1.0 / mag_w_z; // Inverse multiplication optimizes floating-point arithmetic speed.
         w_z[0] *= inv_mag; w_z[1] *= inv_mag; w_z[2] *= inv_mag;
-    }
+    } // END IF: mag_w_z > 1e-12
 
     const double window_up[3] = {d_commondata.window_up_vec_x, d_commondata.window_up_vec_y, d_commondata.window_up_vec_z}; // Camera up-vector defining vertical orientation.
 
@@ -113,7 +113,7 @@ def handle_window_plane_intersection() -> None:
         w_x[1] = alt_up[2]*w_z[0] - alt_up[0]*w_z[2];
         w_x[2] = alt_up[0]*w_z[1] - alt_up[1]*w_z[0];
         mag_w_x = SqrtCUDA(w_x[0]*w_x[0] + w_x[1]*w_x[1] + w_x[2]*w_x[2]);
-    }
+    } // END IF: mag_w_x < 1e-9
 
     double inv_mag_w_x = 1.0 / mag_w_x; // Inverse magnitude of $w_x$ optimizes division overhead.
     w_x[0] *= inv_mag_w_x; w_x[1] *= inv_mag_w_x; w_x[2] *= inv_mag_w_x;
@@ -145,7 +145,7 @@ def handle_window_plane_intersection() -> None:
         final_blueprint_data->t_w = t_intersect; // Persistent coordinate time of crossing.
         final_blueprint_data->L_w = lam_intersect; // Explicit $\lambda$ mapped to persistent blueprint.
         return true;
-    }
+    } // END IF: intersection is within active window bounds
 
     return false;
     """

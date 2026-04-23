@@ -101,9 +101,9 @@ def main_c(spacetime: str, particle: str) -> None:
     ]
 
     desc = """@brief Main driver function for the massive geodesic integrator.
-    Detailed algorithm: Initializes memory for a single ray and executes continuous 
-    integration via the adaptive RKF45 stepper. Evaluates boundary constraints and 
-    verifies the numerical fidelity using Hamiltonian constraints and conserved 
+    Detailed algorithm: Initializes memory for a single ray and executes continuous
+    integration via the adaptive RKF45 stepper. Evaluates boundary constraints and
+    verifies the numerical fidelity using Hamiltonian constraints and conserved
     quantities."""
 
     cfunc_type = "int"
@@ -116,7 +116,7 @@ def main_c(spacetime: str, particle: str) -> None:
     // ==========================================
     commondata_struct commondata; // Global parameters struct governing spacetime and numerics.
     commondata_struct_set_to_default(&commondata);
-    
+
     commondata.M_scale = 1.0; // The mass $M$ of the central black hole.
     commondata.a_spin = 0.9; // The dimensionless spin $a$ of the central black hole.
 
@@ -218,7 +218,7 @@ def main_c(spacetime: str, particle: str) -> None:
             break;
         }}
         steps++;
-    }}
+    }} // END WHILE: integrate massive particle geodesic
 
     fclose(fp);
     printf("Integration finished after %d steps. Final tau = %.4f\\n", steps, tau);
@@ -228,9 +228,9 @@ def main_c(spacetime: str, particle: str) -> None:
     // ==========================================
     conserved_quantities_t cq_final; // Struct holding constants of motion evaluated at the trajectory boundary.
     calculate_conserved_quantities_universal_{spacetime}_{particle}(&commondata, &all_particles, num_rays, &cq_final);
-    
+
     g4DD_metric_{spacetime}(&commondata, y, g4DD_local);
-    
+
     normalization_constraint_t norm_final; // Struct tracking the residual of the Hamiltonian constraint $u^\\mu u_\\mu = -1$.
     normalization_constraint_{particle}(y, g4DD_local, &norm_final, 1, 0);
 
@@ -335,10 +335,10 @@ if __name__ == "__main__":
     #ifndef IDX_GLOBAL
     #define IDX_GLOBAL(component, ray_id, num_rays) ((component) * (num_rays) + (ray_id))
     #endif
-    
+
     // Add BUNDLE_CAPACITY to define chunk size for memory allocation
     #ifndef BUNDLE_CAPACITY
-    #define BUNDLE_CAPACITY 1 
+    #define BUNDLE_CAPACITY 1
     #endif
     """
     Bdefines_h.register_BHaH_defines("gpu_batch_macros", macro_defs)

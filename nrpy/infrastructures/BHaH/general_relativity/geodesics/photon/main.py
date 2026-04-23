@@ -18,7 +18,6 @@ Author: Dalton Moone.
 """
 
 import logging
-import sys
 
 import nrpy.c_function as cfc
 import nrpy.params as par
@@ -271,8 +270,10 @@ def main(spacetime_name: str) -> None:
 
 if __name__ == "__main__":
     import doctest
+    import sys
 
     results = doctest.testmod()
+
     if results.failed > 0:
         print(f"Doctest failed: {results.failed} of {results.attempted} test(s)")
         sys.exit(1)

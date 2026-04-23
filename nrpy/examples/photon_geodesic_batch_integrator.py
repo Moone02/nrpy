@@ -8,6 +8,7 @@ The generated code employs a Structure of Arrays (SoA) memory layout and an
 adaptive RKF45 integration scheme managed by a lock-free TimeSlotManager system.
 
 Author: Dalton J. Moone.
+
 """
 
 # ##############################################################################
@@ -342,15 +343,17 @@ if __name__ == "__main__":
 
     # Locate the visualization script
     vis_script_src = os.path.join(vis_dir, "visualize_lensed_image.py")
-    config_src = os.path.join(vis_dir, "config_and_types.py")
+    config_src = os.path.join(vis_dir, "blueprint_config_and_schema.py")
     render_src = os.path.join(vis_dir, "render_lensed_image.py")
-
-    # Locate the blueprint analysis script
     blueprint_analysis_src = os.path.join(vis_dir, "blueprint_analysis.py")
 
-    # Copy the scripts into the generated project directory
-    shutil.copy(vis_script_src, project_dir)
-    shutil.copy(blueprint_analysis_src, project_dir)
+    for script_src in (
+        vis_script_src,
+        config_src,
+        render_src,
+        blueprint_analysis_src,
+    ):
+        shutil.copy(script_src, project_dir)
 
     # The inner disk radius ensures the texture mapping aligns with the computed initial conditions.
     c_r_min = float(par.glb_code_params_dict["source_r_min"].defaultvalue)

@@ -201,7 +201,7 @@ def main_c(spacetime: str, particle: str) -> None:
             if (stage < 6) {{
                 rkf45_stage_update(f, k_bundle, h, stage, chunk_size, f_temp, stream_idx);
             }}
-        }}
+        }} // END LOOP: for stage over 6 to execute RKF45 stages
 
         // ==========================================
         // FINALIZE STEP AND CONTROL ADAPTIVE STEP SIZE
@@ -215,7 +215,7 @@ def main_c(spacetime: str, particle: str) -> None:
             fprintf(fp, "%.15e %.15e %.15e %.15e %.15e %.15e %.15e %.15e %.15e %.15e\\n",
                     *affine_param, f[0], f[1], f[2], f[3], f[4], f[5], f[6], f[7], f[8]);
             steps++;
-        }}
+        }} // END IF: successful step to write output
 
         double r2 = f[1]*f[1] + f[2]*f[2] + f[3]*f[3]; // The squared Cartesian radius $r^2$ from the origin.
         if (r2 > (r_escape * r_escape)) {{
@@ -236,8 +236,9 @@ def main_c(spacetime: str, particle: str) -> None:
             }};
             printf("Integration terminated organically with status: %s (%d)\\n", status_names[*status], *status);
             break;
-        }}
-    }}
+        }} // END IF: integration failure limit reached
+    }} // END WHILE: integrate photon geodesic
+
     fclose(fp);
     printf("Integration finished after %d steps. Final lambda = %.4f\\n", steps, *affine_param);
 
@@ -387,31 +388,21 @@ if __name__ == "__main__":
         "BHAH_DEVICE_SYNC()": "#define BHAH_DEVICE_SYNC() do {} while(0)",
     }
 
-    # C. BHaH Defines (Includes GSL headers)
-    additional_includes = [
-        "gsl/gsl_vector.h",
-        "gsl/gsl_matrix.h",
-        "gsl/gsl_odeiv2.h",
-        "gsl/gsl_errno.h",
-        "gsl/gsl_math.h",
-    ]
-
+    # C. BHaH Defines
     Bdefines_h.output_BHaH_defines_h(
         project_dir=project_dir,
-        additional_includes=additional_includes,
         enable_rfm_precompute=False,
         supplemental_defines_dict=cpu_macros,
     )
 
     # D. Makefile
     addl_cflags = [
-        "$(shell gsl-config --cflags)",
         "-fopenmp",
         "-O3",
         "-DDEBUG",
         "-Wno-stringop-truncation",
     ]
-    addl_libs = ["$(shell gsl-config --libs)", "-lm"]
+    addl_libs = ["-lm"]
 
     Makefile.output_CFunctions_function_prototypes_and_construct_Makefile(
         project_dir=project_dir,

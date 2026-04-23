@@ -38,7 +38,7 @@ batch_structs_c_code = r"""
     typedef enum {
         WINDOW_EVENT, // Intersection with the observer's camera window.
         SOURCE_EVENT  // Intersection with the emission source plane.
-    } event_type_t;
+    } event_type_t; // END ENUM: event_type_t
 
     // Defines the specific exit condition for a photon's integration loop.
     typedef enum {
@@ -51,7 +51,7 @@ batch_structs_c_code = r"""
         TERMINATION_TYPE_FAILURE,          // 6: Generic unclassified numerical failure.
         ACTIVE,                            // 7: Photon is currently undergoing integration.
         REJECTED,                          // 8: Photon RKF45 step was rejected.
-    } termination_type_t;
+    } termination_type_t; // END ENUM: termination_type_t
 
     // Stores the final physical properties of a photon upon integration termination.
     typedef struct {
@@ -66,7 +66,7 @@ batch_structs_c_code = r"""
         double t_w; // Physical coordinate time $t$ at the window intersection.
         double L_s; // Affine parameter $\lambda$ at the source intersection.
         double t_s; // Physical coordinate time $t$ at the source intersection.
-    } __attribute__((packed)) blueprint_data_t;
+    } __attribute__((packed)) blueprint_data_t; // END STRUCT: blueprint_data_t
 
     // ==========================================
     // Flattened SoA Struct (Master Storage)
@@ -93,7 +93,7 @@ batch_structs_c_code = r"""
         bool *window_event_found; // Flag indicating an observer window intersection was detected.
         double *window_event_lambda; // Exact affine parameter $\lambda$ of the window intersection.
         double *window_event_f_intersect; // Interpolated 9-component state vector at the window intersection.
-    } PhotonStateSoA;
+    } PhotonStateSoA; // END STRUCT: PhotonStateSoA
 """
 Bdefines_h.register_BHaH_defines("photon_batch_structs", batch_structs_c_code)
 
@@ -186,12 +186,12 @@ def set_initial_conditions_kernel(spacetime_name: str) -> None:
     #pragma omp parallel for
     for (long int c = 0; c < chunk_size; c++) {
     """
-        loop_postamble = "} // END OMP PARALLEL FOR"
+        loop_postamble = "} // END LOOP: for c over chunk_size"
 
     # ==========================================
     # CORE MATH (Hardware Agnostic)
     # ==========================================
-    core_math = rf"""
+    core_math = r"""
     // The identifier $i$ represents the global ray index within the master $num\_rays$ SoA.
     const long int i = start_idx + c;
 
@@ -211,17 +211,17 @@ def set_initial_conditions_kernel(spacetime_name: str) -> None:
     // Horizontal pixel coordinate index within the virtual observer's projection frame.
     const int col = i % {cd_access}scan_density;
 
-    // Local physical distance $x_{{pix}}$ along the horizontal camera axis.
+    // Local physical distance $x_{pix}$ along the horizontal camera axis.
     const double x_pix = -{cd_access}window_width/2.0 + (col + 0.5) * ({cd_access}window_width / {cd_access}scan_density);
-    // Local physical distance $y_{{pix}}$ along the vertical camera axis.
+    // Local physical distance $y_{pix}$ along the vertical camera axis.
     const double y_pix = -{cd_access}window_height/2.0 + (row + 0.5) * ({cd_access}window_height / {cd_access}scan_density);
 
     // The array $target\_pos$ stores the global Cartesian intersection point $x^\mu$ on the projection window.
-    const double target_pos[3] = {{
+    const double target_pos[3] = {
         {cd_access}window_center_x + x_pix*nx_0 + y_pix*ny_0,
         {cd_access}window_center_y + x_pix*nx_1 + y_pix*ny_1,
         {cd_access}window_center_z + x_pix*nx_2 + y_pix*ny_2
-    }};
+    };
 
     //==========================================
     // INITIAL STATE POPULATION
@@ -260,7 +260,7 @@ def set_initial_conditions_kernel(spacetime_name: str) -> None:
     //==========================================
     #undef IDX_F
     #undef IDX_H
-    """
+    """.replace("{cd_access}", cd_access)
 
     kernel_body = f"{loop_preamble}\n{core_math}\n{loop_postamble}"
 
@@ -301,9 +301,9 @@ def set_initial_conditions_kernel(spacetime_name: str) -> None:
         cudaError_t err = cudaGetLastError();
         if (err != cudaSuccess) {
             // Fatal unrecoverable error during kernel synchronization.
-            printf("Init Kernel Failed on Batch starting at %ld: %s\n", (long int)start_idx, cudaGetErrorString(err));
+            printf("Init Kernel Failed on Batch starting at %ld: %s\\n", (long int)start_idx, cudaGetErrorString(err));
             exit(1);
-        }
+        } // END IF: check for kernel launch errors
         #endif
 
         //==========================================
@@ -315,7 +315,7 @@ def set_initial_conditions_kernel(spacetime_name: str) -> None:
                     d_f_bundle + (m * BUNDLE_CAPACITY),
                     sizeof(double) * chunk_size,
                     cudaMemcpyDeviceToHost);
-        }
+        } // END LOOP: for m over 9-strided tensor transfer
 
         //==========================================
         // 1-STRIDED BRIDGE TRANSFER (DEVICE-TO-HOST)
@@ -336,7 +336,7 @@ def set_initial_conditions_kernel(spacetime_name: str) -> None:
             memcpy(all_photons->f + (m * num_rays) + start_idx,
                    d_f_bundle + (m * BUNDLE_CAPACITY),
                    sizeof(double) * chunk_size);
-        }
+        } // END LOOP: for m over 9-strided tensor transfer
 
         //==========================================
         // 1-STRIDED BRIDGE TRANSFER (HOST-TO-HOST)
@@ -366,7 +366,7 @@ def set_initial_conditions_kernel(spacetime_name: str) -> None:
         loop_body=loop_body,
     )
 
-    body = rf"""
+    body = r"""
     //==========================================
     // HOST-SIDE GEOMETRY SETUP
     //==========================================
@@ -385,47 +385,47 @@ def set_initial_conditions_kernel(spacetime_name: str) -> None:
     const double wc_z = commondata->window_center_z; // The $z$-coordinate of the shifted tile window center.
 
     // Vector $n_z^i$ normal to the camera window representing the global line of sight.
-    double n_z[3] = {{owc_x - cam_x, owc_y - cam_y, owc_z - cam_z}};
+    double n_z[3] = {owc_x - cam_x, owc_y - cam_y, owc_z - cam_z};
     // Magnitude of the normal vector $n_z^i$.
     double mag_n_z = sqrt(n_z[0]*n_z[0] + n_z[1]*n_z[1] + n_z[2]*n_z[2]);
     // Normalize the $n_z^i$ vector.
     for(int j=0; j<3; j++) n_z[j] /= mag_n_z;
 
     // Geometric reference vector defining the upward orientation.
-    const double guide_up[3] = {{commondata->window_up_vec_x, commondata->window_up_vec_y, commondata->window_up_vec_z}};
+    const double guide_up[3] = {commondata->window_up_vec_x, commondata->window_up_vec_y, commondata->window_up_vec_z};
 
     // Basis vector $n_x^i$ describing the horizontal camera axis.
-    double n_x[3] = {{guide_up[1]*n_z[2] - guide_up[2]*n_z[1],
+    double n_x[3] = {guide_up[1]*n_z[2] - guide_up[2]*n_z[1],
                      guide_up[2]*n_z[0] - guide_up[0]*n_z[2],
-                     guide_up[0]*n_z[1] - guide_up[1]*n_z[0]}};
+                     guide_up[0]*n_z[1] - guide_up[1]*n_z[0]};
     // Magnitude of the horizontal basis vector $n_x^i$.
     double mag_n_x = sqrt(n_x[0]*n_x[0] + n_x[1]*n_x[1] + n_x[2]*n_x[2]);
 
     // Fallback logic prevents cross-product singularities at geometric poles for numerical stability.
-    if (mag_n_x < 1e-9) {{
+    if (mag_n_x < 1e-9) {
         // Alternative upward reference vector to avoid cross-product singularities.
-        double alternative_up[3] = {{0.0, 1.0, 0.0}};
-        if (fabs(n_z[1]) > 0.999) {{ alternative_up[1] = 0.0; alternative_up[2] = 1.0; }}
+        double alternative_up[3] = {0.0, 1.0, 0.0};
+        if (fabs(n_z[1]) > 0.999) { alternative_up[1] = 0.0; alternative_up[2] = 1.0; }
         n_x[0] = alternative_up[1]*n_z[2] - alternative_up[2]*n_z[1];
         n_x[1] = alternative_up[2]*n_z[0] - alternative_up[0]*n_z[2];
         n_x[2] = alternative_up[0]*n_z[1] - alternative_up[1]*n_z[0];
         mag_n_x = sqrt(n_x[0]*n_x[0] + n_x[1]*n_x[1] + n_x[2]*n_x[2]);
-    }}
+    } // END IF: near-nadir fallback
 
     // Normalize the $n_x^i$ vector.
     for(int j=0; j<3; j++) n_x[j] /= mag_n_x;
 
     // Basis vector $n_y^i$ describing the vertical camera axis.
-    double n_y[3] = {{n_z[1]*n_x[2] - n_z[2]*n_x[1], n_z[2]*n_x[0] - n_z[0]*n_x[2], n_z[0]*n_x[1] - n_z[1]*n_x[0]}};
+    double n_y[3] = {n_z[1]*n_x[2] - n_z[2]*n_x[1], n_z[2]*n_x[0] - n_z[0]*n_x[2], n_z[0]*n_x[1] - n_z[1]*n_x[0]};
 
     // Output the local tile components.
     window_center_out[0] = wc_x;
     window_center_out[1] = wc_y;
     window_center_out[2] = wc_z;
-    for(int j=0; j<3; j++) {{
+    for(int j=0; j<3; j++) {
         // Output the normalized global basis vectors $n_x^i, n_y^i, n_z^i$.
         n_x_out[j] = n_x[j]; n_y_out[j] = n_y[j]; n_z_out[j] = n_z[j];
-    }}
+    } // END LOOP: for j over basis vector components
 
     // Extracted basis components.
     const double nx_0 = n_x[0];
@@ -456,10 +456,10 @@ def set_initial_conditions_kernel(spacetime_name: str) -> None:
     const bool init_source_side = (val_source >= 0.0);
 
     // Loop iterator traversing the entire global ray count to hydrate initial plane boundaries.
-    for (long int plane_i = 0; plane_i < num_rays; ++plane_i) {{
+    for (long int plane_i = 0; plane_i < num_rays; ++plane_i) {
         all_photons->on_positive_side_of_window_prev[plane_i] = init_window_side;
         all_photons->on_positive_side_of_source_prev[plane_i] = init_source_side;
-    }}
+    } // END LOOP: for plane_i over initial plane boundaries
 
     //==========================================
     // VRAM STAGING ALLOCATION
@@ -482,7 +482,7 @@ def set_initial_conditions_kernel(spacetime_name: str) -> None:
     //==========================================
     BHAH_FREE_DEVICE(d_f_bundle);
     BHAH_FREE_DEVICE(d_h_bundle);
-    """
+    """.replace("{host_loop_code}", str(host_loop_code))
 
     # Establish the final strings to satisfy the Translation Unit Inlining Mandate.
     prefunc = f"{kernel_prefunc}"

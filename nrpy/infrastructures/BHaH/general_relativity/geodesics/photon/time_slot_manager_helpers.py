@@ -31,7 +31,7 @@ def time_slot_manager_helpers() -> None:
         long int *photon_next_ptrs; // Linked-list pointer array tracking subsequent photons in the same slot.
         long int *slot_heads; // Array of pointers indicating the first photon index residing in each time slot.
         long int *slot_counts; // Array tracking the active number of photons currently residing in each time slot.
-    } TimeSlotManager;
+    } TimeSlotManager; // END STRUCT: TimeSlotManager
 
     //==========================================
     // ARENA ALLOCATION & INITIALIZATION
@@ -61,7 +61,7 @@ def time_slot_manager_helpers() -> None:
         for (j = 0; j < num_rays; j++) {
             tsm->photon_next_ptrs[j] = -1;
         }
-    }
+    } // END FUNCTION: slot_manager_init
 
     //==========================================
     // ARENA DEALLOCATION
@@ -72,7 +72,7 @@ def time_slot_manager_helpers() -> None:
         free(tsm->photon_next_ptrs);
         free(tsm->slot_heads);
         free(tsm->slot_counts);
-    }
+    } // END FUNCTION: slot_manager_free
 
     //==========================================
     // TEMPORAL INDEXING
@@ -106,11 +106,11 @@ def time_slot_manager_helpers() -> None:
             tsm->photon_next_ptrs[photon_idx] = expected_head;
 
             // Atomic Operation: Update the slot head only if it remains equal to the captured $expected\_head$.
-        } while (!__sync_bool_compare_and_swap(&tsm->slot_heads[slot_idx], expected_head, photon_idx));
+        } while (!__sync_bool_compare_and_swap(&tsm->slot_heads[slot_idx], expected_head, photon_idx)); // END DO-WHILE: lock-free linked list insertion
 
         // Atomic Operation: Increment the active photon count for the designated temporal bin.
         __sync_fetch_and_add(&tsm->slot_counts[slot_idx], 1L);
-    }
+    } // END FUNCTION: slot_add_photon
 
     //==========================================
     // PHOTON EXTRACTION
@@ -140,15 +140,15 @@ def time_slot_manager_helpers() -> None:
                 next_node = tsm->photon_next_ptrs[current_head];
 
                 // Atomic Operation: Attempt to swap the head with the next node in the sequence.
-            } while (!__sync_bool_compare_and_swap(&tsm->slot_heads[slot_idx], current_head, next_node));
+            } while (!__sync_bool_compare_and_swap(&tsm->slot_heads[slot_idx], current_head, next_node)); // END DO-WHILE: lock-free linked list extraction
 
             // Populate the contiguous buffer with the successfully extracted index.
             chunk_buffer[i] = current_head;
 
             // Atomic Operation: Decrement the active count for the temporal bin.
             __sync_fetch_and_sub(&tsm->slot_counts[slot_idx], 1L);
-        }
-    }
+        } // END LOOP: for i over chunk_size
+    } // END FUNCTION: slot_remove_chunk
     """
     Bdefines_h.register_BHaH_defines("time_slot_manager", portable_tsm)
 
