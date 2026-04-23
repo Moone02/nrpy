@@ -7,7 +7,7 @@ for the celestial sphere (background stars) and the accretion disk. Uses an
 accumulator-based approach to map ray endpoints from curved spacetime onto a 2D
 pixel grid via the camera's local window coordinates.
 
-Author: Dalton Moone.     
+Author: Dalton Moone.
 """
 
 import os
