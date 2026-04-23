@@ -204,6 +204,10 @@ if __name__ == "__main__":
 
 - Avoid `sp.simplify()` in equation-building code.
 - Allowed only in tests/validation or explicit identity checks.
+- `nrpy.helpers.cached_functions.cached_simplify()` is a narrow exception.
+- Use it sparingly for small local scalar subexpressions when it materially improves symbolic tractability, codegen stability, or readability, especially in `nrpy/equations/general_relativity`.
+- Do not use it on whole tensors or large assembled RHS expressions when plain symbolic construction is practical.
+- If the need is not obvious from nearby code, add a short comment explaining why the cached simplification is warranted.
 - Do not use `sp.subs()` / `sp.replace()` for pattern-based transformation.
 
 Allowed `.subs()` cases:

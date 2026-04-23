@@ -211,7 +211,7 @@ The uppercase variant `# STEP N:` is **non-standard** and appears in the `exampl
 
 ### `if __name__ == "__main__":` Block
 
-For runnable non-test, non-`__init__.py` modules under `nrpy/equations/` and all subdirectories, the file ends with this exact block to run its embedded doctests.
+For runnable non-test, non-`__init__.py` modules under `nrpy/equations/` and all subdirectories, the `__main__` block should start with the standard doctest-runner pattern below.
 
 For runnable modules under `infrastructures/*/*.py`, this block is strongly encouraged.
 
@@ -219,7 +219,7 @@ For other runnable modules, this block is recommended when it is useful.
 
 Outside `nrpy/infrastructures/*/*.py`, doctests that invoke Python-based C/C++ code generation are discouraged, though not forbidden. Prefer symbolic validation, expression-level checks, or other cheaper invariants unless the doctest adds clear signal that those alternatives cannot provide.
 
-When present, use this exact block:
+Use this as the canonical opening prefix:
 
 ```python
 if __name__ == "__main__":
@@ -234,6 +234,8 @@ if __name__ == "__main__":
     else:
         print(f"Doctest passed: All {results.attempted} test(s) passed")
 ```
+
+In `nrpy/equations/**`, additional symbolic validation and trusted-results generation may follow this doctest-runner prefix inside the same `__main__` block, matching the established repo convention. Common allowed follow-on steps include symbolic validation, `ve.process_dictionary_of_expressions(...)`, `ve.compare_or_generate_trusted_results(...)`, and loops over coordinate systems or validation keys. This allowance is specifically for the established equation-module validation workflow; it is not a blanket license for arbitrary script logic.
 
 Additional imports needed only for the `__main__` block (e.g., `os`, `nrpy.validate_expressions.validate_expressions as ve`) are placed inside the block, not at module level.
 
@@ -259,6 +261,8 @@ This section documents the patterns used when building symbolic equations in the
 ### SymPy Usage Guidelines
 
 - **`sp.simplify()` — MINIMAL USE**: Avoid calling `sp.simplify()` in equation-building code. It is only acceptable in test/validation code or explicit identity checks. Some modules explicitly document "No SymPy .subs() or simplify() calls" as an enforcement rule.
+
+- **`cached_simplify()` — NARROW EXCEPTION FOR LOCAL SUBEXPRESSIONS**: `nrpy.helpers.cached_functions.cached_simplify()` may be used sparingly in equation-building code when a localized simplification materially improves downstream symbolic tractability, code generation stability, or expression readability, especially in `nrpy/equations/general_relativity/`. Prefer applying it to small scalar subexpressions, not whole tensors or large assembled RHS expressions. Do not treat this as blanket permission to simplify aggressively; if plain symbolic construction is practical, prefer that. When the need is not obvious from nearby code, add a short comment explaining why the cached simplification is warranted.
 
 - **`sp.subs()`, `sp.replace()` — NEVER USE for pattern-based expression transformation**: These methods are forbidden in core equation-building. The only acceptable uses of `.subs()` are:
   - Coordinate substitution in elliptic source terms
@@ -425,8 +429,8 @@ The following patterns are standard for NRPy infrastructure code:
   # Imports
   # Main registration function: register_CFunction_<name>()
   # Optional helper functions (Python-side symbolic computation)
-  # Optional if __name__ == "__main__": doctest block
-  # Required for modules under nrpy/equations/ and subdirectories
+  # Optional if __name__ == "__main__": doctest-runner prefix
+  # Required as the opening pattern for modules under nrpy/equations/ and subdirectories
   ```
 
 ### Doctest Conventions
