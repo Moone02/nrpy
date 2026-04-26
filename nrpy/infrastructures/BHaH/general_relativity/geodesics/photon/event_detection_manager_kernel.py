@@ -12,7 +12,7 @@ downstream interpolation routines to resolve precise boundary crossing coordinat
 and outputs the filtered physical intersections to persistent blueprint structures
 while shifting the valid trajectory history arrays to stage the next solver step.
 
-Author: Dalton Moone.
+Author: Dalton J. Moone
 """
 
 import nrpy.c_function as cfc
@@ -183,9 +183,9 @@ def event_detection_manager_kernel() -> None:
 
         // Calculates orthogonal distance $d_w$ from the origin to the global window plane.
         const double w_dist = {cd_access}original_window_center_x*w_normal[0] + {cd_access}original_window_center_y*w_normal[1] + {cd_access}original_window_center_z*w_normal[2];
-        
+
         // Evaluates the global plane equation $E_w$ for the photon's current spatial position.
-        const double w_val = x*w_normal[0] + y*w_normal[1] + z*w_normal[2] - w_dist; 
+        const double w_val = x*w_normal[0] + y*w_normal[1] + z*w_normal[2] - w_dist;
 
         const bool on_pos_win_curr = (w_val > 1e-10); // Checks if the photon is on the positive side of the global window.
         const bool on_pos_win_prev = d_on_pos_window_prev[i]; // Retrieves the previous integration step's window side evaluation.
@@ -273,7 +273,7 @@ def event_detection_manager_kernel() -> None:
         includes.append("cuda_intrinsics.h")
         includes.append("BHaH_device_defines.h")
 
-    desc = r"""@brief Optimized detection of plane crossings using consolidated blueprints.
+    desc = r""" Optimized detection of plane crossings using consolidated blueprints.
 
     @param d_f_bundle SoA pointer to the state array for step $f^\mu_{n}$.
     @param d_f_prev_bundle SoA pointer to the state array for step $f^\mu_{n-1}$.

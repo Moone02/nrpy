@@ -11,7 +11,7 @@ process translates SymPy expressions into C code. Caching values into local scal
 and reading from local arrays organizes memory access. Common Subexpression Elimination
 (CSE) reduces floating-point operations during the derivative calculation.
 
-Author: Dalton Moone.
+Author: Dalton J. Moone
 """
 
 from typing import List
@@ -101,7 +101,7 @@ def calculate_ode_rhs_massive(
     # Define C-function arguments and metadata
     includes = ["BHaH_defines.h"]
 
-    desc = r"""@brief Portable derivatives for the massive geodesic ODE system.
+    desc = r""" Portable derivatives for the massive geodesic ODE system.
 
     Calculates $dx^\mu/d\tau$ and $du^\mu/d\tau$ using the provided state vector and
     pre-computed Christoffel symbols $\Gamma^\mu_{\alpha\beta}$. Thread-local arrays

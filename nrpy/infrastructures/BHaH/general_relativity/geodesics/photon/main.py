@@ -14,7 +14,7 @@ prevent coordinate degeneration. Finally, local 2D tile-space hits are translate
 into the global window coordinate system by their spatial offsets before native binary
 serialization and archive compression.
 
-Author: Dalton Moone.
+Author: Dalton J. Moone
 """
 
 import logging
@@ -51,7 +51,7 @@ def main(spacetime_name: str) -> None:
         "math.h",
     ]
 
-    desc = f"""@brief Master entry point for the integrator.
+    desc = f""" Master entry point for the integrator.
 
     Algorithm:
     1. Initializes core data structures and sets default physical constants.
@@ -71,19 +71,19 @@ def main(spacetime_name: str) -> None:
     // CORE STRUCTURE INITIALIZATION
     //==========================================
     // Populates the master structure with the base metric parameters.
-    commondata_struct commondata; 
+    commondata_struct commondata;
 
     //==========================================
     // PARAMETER PARSING
     //==========================================
     // Sets default metric properties and overrides them based on host system input.
-    commondata_struct_set_to_default(&commondata); 
-    cmdline_input_and_parfile_parser(&commondata, argc, argv); 
+    commondata_struct_set_to_default(&commondata);
+    cmdline_input_and_parfile_parser(&commondata, argc, argv);
 
     //==========================================
     // INITIALIZE DYNAMIC WINDOW CENTER
     //==========================================
-    // The tile orchestrator modifies the window center dynamically per tile. 
+    // The tile orchestrator modifies the window center dynamically per tile.
     // We seed the active window center with the original master center provided by the configuration.
     commondata.window_center_x = commondata.original_window_center_x;
     commondata.window_center_y = commondata.original_window_center_y;
@@ -97,7 +97,7 @@ def main(spacetime_name: str) -> None:
     printf("  Geodesic Engine  \\n");
     printf("=============================================\\n");
     printf("Spacetime Metric: {spacetime_name}\\n");
-    
+
     printf("--- Analytic Spacetime Physics ---\\n");
     printf("Mass Scale (M): %.2f\\n", commondata.M_scale);
     printf("Spin Parameter (a): %.2f\\n", commondata.a_spin);
@@ -107,8 +107,8 @@ def main(spacetime_name: str) -> None:
     printf("Original Window Center (x, y, z): %.2f, %.2f, %.2f\\n", commondata.original_window_center_x, commondata.original_window_center_y, commondata.original_window_center_z);
     printf("Window Up Vec (x, y, z): %.2f, %.2f, %.2f\\n", commondata.window_up_vec_x, commondata.window_up_vec_y, commondata.window_up_vec_z);
     printf("Window Dimensions (W x H): %.2f x %.2f\\n", commondata.window_width, commondata.window_height);
-    printf("Resolution Grid: %d x %d tiles, each %d x %d px\\n", 
-           commondata.window_tiles_width, commondata.window_tiles_height, 
+    printf("Resolution Grid: %d x %d tiles, each %d x %d px\\n",
+           commondata.window_tiles_width, commondata.window_tiles_height,
            commondata.scan_density, commondata.scan_density);
     printf("Total Rays per Tile: %ld\\n", (long int)commondata.scan_density * commondata.scan_density);
 

@@ -12,7 +12,7 @@ stages, ensuring exact IEEE 754 rounding behavior. Finally, writing the calculat
 update directly to memory enforces the split-pipeline communication constraint required
 for the architecture.
 
-Author: Dalton Moone.
+Author: Dalton J. Moone
 """
 
 import nrpy.c_function as cfc
@@ -69,7 +69,7 @@ def rkf45_stage_update() -> None:
     #pragma omp parallel for
     for(long int i = 0; i < chunk_size; i++) { // Thread index $i$ maps to a unique photon ray.
     """
-        loop_postamble = "    } // END OMP PARALLEL FOR"
+        loop_postamble = "    } // END LOOP: for i over chunk_size rays"
 
     core_math = r"""
     //==========================================
@@ -178,7 +178,7 @@ def rkf45_stage_update() -> None:
     if parallelization == "cuda":
         includes.append("cuda_intrinsics.h")
 
-    desc = r"""@brief Orchestrates the memory kernel for RKF45 intermediate stage updates.
+    desc = r""" Orchestrates the memory kernel for RKF45 intermediate stage updates.
 
     @param d_f_start Pointer to the base state bundle ($f_{start}$) in memory.
     @param d_k_bundle Pointer to the flattened derivative array $k^{\mu}$ in memory.

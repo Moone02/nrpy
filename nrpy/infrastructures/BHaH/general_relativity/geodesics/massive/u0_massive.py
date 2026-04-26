@@ -9,7 +9,7 @@ kernel. The module maps symmetric metric tensor components to a flattened
 one-dimensional array using local and global batch indexing for memory access. The
 kernel is wrapped with offloading pragmas to facilitate execution.
 
-Author: Dalton Moone.
+Author: Dalton J. Moone
 """
 
 import sympy as sp
@@ -27,7 +27,7 @@ def u0_massive(u0_expr: sp.Expr) -> None:
     """
     # Step 1: Define C function metadata
     includes = ["BHaH_defines.h"]
-    desc = """@brief Computes the initial time-component of the 4-velocity (u^0).
+    desc = """ Computes the initial time-component of the 4-velocity (u^0).
 
     Solves the quadratic Hamiltonian constraint equation:
         g_munu u^mu u^nu = -1

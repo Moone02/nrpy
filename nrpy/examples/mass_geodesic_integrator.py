@@ -18,7 +18,7 @@ subject to the normalization constraint $u^\mu u_\mu = -1$.
 Numerical fidelity is validated by monitoring constants of motion
 associated with the spacetime's symmetries, including Killing vectors and tensors.
 
-Author: Dalton Moone.
+Author: Dalton J. Moone
 """
 
 import os

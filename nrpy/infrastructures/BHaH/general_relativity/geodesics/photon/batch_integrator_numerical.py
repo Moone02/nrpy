@@ -20,7 +20,7 @@ traveled components. Intercepting unphysical spacetime regions after calculation
 ensures constraint solver convergence. Evaluating conserved quantities establishes a
 data baseline before the pipeline mutates the state vectors.
 
-Author: Dalton Moone.
+Author: Dalton J. Moone
 """
 
 import nrpy.c_function as cfc
@@ -67,7 +67,7 @@ def batch_integrator_numerical(spacetime_name: str) -> None:
             ["cuda_runtime.h", "cuda_intrinsics.h", "BHaH_global_device_defines.h"]
         )
 
-    desc = r"""@brief Central Host-bound CPU orchestrator for the batched Split-Pipeline relativistic ray tracing loop.
+    desc = r""" Central Host-bound CPU orchestrator for the batched Split-Pipeline relativistic ray tracing loop.
 
     This function acts as the primary loop for evaluating photon geodesics $x^\mu$.
     It utilizes a TimeSlotManager to bin active rays by their physical coordinate time $t$.

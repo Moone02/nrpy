@@ -10,7 +10,7 @@ Arrays (SoA) bundles. It unpacks photon state vectors from global memory into
 registers, invokes the numerical evaluators for the metric and connection components,
 and writes the computed tensor components back into their respective memory bundles.
 
-Author: Dalton Moone.
+Author: Dalton J. Moone
 """
 
 import nrpy.c_function as cfc
@@ -174,7 +174,7 @@ def interpolation_kernel(spacetime_name: str) -> None:
     if parallelization == "cuda":
         includes.append("cuda_intrinsics.h")
 
-    desc = rf"""@brief Orchestrates the memory kernel for the {spacetime_name} interpolation engine.
+    desc = rf""" Orchestrates the memory kernel for the {spacetime_name} interpolation engine.
 
     @param d_f_bundle Pointer to the state vector bundle $f^{{\mu}}$ in memory.
     @param d_metric_bundle Pointer to the destination metric bundle $g_{{\mu\nu}}$ in memory.

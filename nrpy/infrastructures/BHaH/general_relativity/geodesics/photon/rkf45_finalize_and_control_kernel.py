@@ -16,7 +16,7 @@ commits the updated state, advances the affine parameter, resets the retry count
 and sets the ray status to active; otherwise, it increments the retries and sets a
 rejected or failure status.
 
-Author: Dalton Moone.
+Author: Dalton J. Moone
 """
 
 import nrpy.c_function as cfc
@@ -296,7 +296,7 @@ def rkf45_finalize_and_control_kernel() -> None:
     if parallelization == "cuda":
         includes.append("cuda_intrinsics.h")
 
-    desc = r"""@brief Finalizes the RKF45 step, checks errors, and updates state/stepsize.
+    desc = r""" Finalizes the RKF45 step, checks errors, and updates state/stepsize.
 
     @param d_f_persistent Pointer to the persistent state $f^{\mu}$ (updated on acceptance).
     @param d_f_start Pointer to the base state $f^{\mu}$ (read-only).

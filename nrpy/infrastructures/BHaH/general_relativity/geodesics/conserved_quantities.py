@@ -9,7 +9,7 @@ these quantities. A Structure of Arrays (SoA) layout provides uniform memory map
 Statically allocated execution buffers map to the memory hierarchy. A pagination loop
 orchestrates data transfers.
 
-Author: Dalton Moone.
+Author: Dalton J. Moone
 """
 
 from typing import List
@@ -300,7 +300,7 @@ def conserved_quantities(spacetime_name: str, particle_type: str = "photon") -> 
     if parallelization == "cuda":
         includes.append("cuda_intrinsics.h")
 
-    desc = r"""@brief Computes conserved quantities for a batch of trajectories.
+    desc = r""" Computes conserved quantities for a batch of trajectories.
     @param all_photons The master Structure of Arrays containing the state vectors $f^\mu$.
     @param num_rays The total number of photon trajectories.
     @param cq_result The array of diagnostic structures to be populated.

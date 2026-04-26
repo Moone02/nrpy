@@ -13,7 +13,7 @@ polynomials. Mapping this logic directly to local memory space minimizes global 
 transfers and maintains all intermediate state reconstructions within local hardware
 threads.
 
-Author: Dalton Moone.
+Author: Dalton J. Moone
 """
 
 import nrpy.c_function as cfc
@@ -22,7 +22,7 @@ import nrpy.c_function as cfc
 def find_event_time_and_state() -> None:
     """Define find_event_time_and_state C function configuration."""
     includes = ["BHaH_defines.h"]
-    desc = r"""@brief Portable high-performance second-order root-finding.
+    desc = r""" Portable high-performance second-order root-finding.
 
     @param f_local The thread-local state array for step $f^\mu_{n}$.
     @param f_p_local The thread-local state array for step $f^\mu_{n-1}$.

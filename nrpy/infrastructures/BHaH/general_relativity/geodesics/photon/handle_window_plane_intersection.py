@@ -19,7 +19,7 @@ window center acts as the mapping anchor to place intersections within the activ
 boundaries, while global state values are mapped to immediate local variables to
 minimize memory latency.
 
-Author: Dalton Moone.
+Author: Dalton J. Moone
 """
 
 import nrpy.c_function as cfc
@@ -42,7 +42,7 @@ def handle_window_plane_intersection() -> None:
         includes.append("cuda_intrinsics.h")
 
     # Define the Doxygen-formatted description for the C function.
-    desc = r"""@brief Processes a window plane intersection without terminating the trajectory.
+    desc = r""" Processes a window plane intersection without terminating the trajectory.
 
     @param f_local Thread-local array containing the 9-component photon state $f^\mu$.
     @param lam_intersect The explicit affine parameter $\lambda$ of the intersection.

@@ -12,7 +12,7 @@ dynamically formats read and write macros, access patterns, and mathematical
 instructions based on the target architecture, mapping SIMD operations to native
 hardware intrinsics where applicable.
 
-Author: Dalton Moone.
+Author: Dalton J. Moone
 """
 
 import sympy as sp
@@ -73,7 +73,7 @@ def p0_reverse_kernel(p0_expr: sp.Expr) -> None:
     #pragma omp parallel for
     for(int i = 0; i < chunk_size; i++) {
     """
-        loop_postamble = "    } // END OMP PARALLEL FOR"
+        loop_postamble = "    } // END LOOP: for i over chunk_size rays"
 
     # Generate the raw C math string from the SymPy expression.
     body_math = ccg.c_codegen(
@@ -179,7 +179,7 @@ def p0_reverse_kernel(p0_expr: sp.Expr) -> None:
     if parallelization == "cuda":
         includes.append("cuda_intrinsics.h")
 
-    desc = r"""@brief Orchestrates the kernel for the initial temporal momentum calculation.
+    desc = r""" Orchestrates the kernel for the initial temporal momentum calculation.
 
     @param d_f_bundle Pointer to the state vector bundle $f^{\mu}$ in memory.
     @param d_metric_bundle Pointer to the pre-calculated metric bundle $g_{\mu\nu}$ in memory.

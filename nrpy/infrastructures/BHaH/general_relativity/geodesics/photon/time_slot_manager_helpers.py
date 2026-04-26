@@ -8,7 +8,7 @@ temporally enforces the split-pipeline architecture required for relativistic ra
 tracing. Atomic operations and speculative memory writes guarantee thread safety and
 mathematical consistency during concurrent orchestration.
 
-Author: Dalton Moone.
+Author: Dalton J. Moone
 """
 
 from nrpy.infrastructures.BHaH import BHaH_defines_h as Bdefines_h
@@ -36,7 +36,7 @@ def time_slot_manager_helpers() -> None:
     //==========================================
     // ARENA ALLOCATION & INITIALIZATION
     //==========================================
-    // @brief Initializes the temporal arena structures for photon binning.
+    //  Initializes the temporal arena structures for photon binning.
     static inline void slot_manager_init(TimeSlotManager *tsm, double t_min, double t_max, double delta_t_slot, long int num_rays) {
         tsm->t_min = t_min;
         tsm->t_max = t_max;
@@ -66,7 +66,7 @@ def time_slot_manager_helpers() -> None:
     //==========================================
     // ARENA DEALLOCATION
     //==========================================
-    // @brief Frees all dynamically allocated host-side memory tied to the temporal arena.
+    //  Frees all dynamically allocated host-side memory tied to the temporal arena.
     static inline void slot_manager_free(TimeSlotManager *tsm) {
         if (!tsm) return;
         free(tsm->photon_next_ptrs);
@@ -77,7 +77,7 @@ def time_slot_manager_helpers() -> None:
     //==========================================
     // TEMPORAL INDEXING
     //==========================================
-    // @brief Computes the designated slot index for a given physical coordinate time $t$.
+    //  Computes the designated slot index for a given physical coordinate time $t$.
     static inline int slot_get_index(const TimeSlotManager *tsm, double t) {
         if (isnan(t) || t < tsm->t_min || t >= tsm->t_max) return -1;
         return (int)floor((t - tsm->t_min) / tsm->delta_t_slot);
@@ -86,7 +86,7 @@ def time_slot_manager_helpers() -> None:
     //==========================================
     // PHOTON REGISTRATION
     //==========================================
-    // @brief Atomically pushes a photon's global index into the appropriate temporal bin.
+    //  Atomically pushes a photon's global index into the appropriate temporal bin.
     // Implements a lock-free linked list insertion using a Compare-and-Swap (CAS) loop.
     static inline void slot_add_photon(TimeSlotManager *tsm, int slot_idx, long int photon_idx) {
         // Prevent index propagation beyond the pre-allocated manager capacity.
@@ -115,7 +115,7 @@ def time_slot_manager_helpers() -> None:
     //==========================================
     // PHOTON EXTRACTION
     //==========================================
-    // @brief Atomically pops a specific number of photons from a designated time slot into a contiguous buffer.
+    //  Atomically pops a specific number of photons from a designated time slot into a contiguous buffer.
     // Utilizes a CAS-based pop mechanism to safely extract the head of the linked list.
     static inline void slot_remove_chunk(TimeSlotManager *tsm, int slot_idx, long int *chunk_buffer, long int chunk_size) {
         // Iterator tracking the current number of successfully extracted photons.

@@ -6,7 +6,7 @@ This script reads binary blueprints to render the final lensed image. It maps ph
 photon trajectories onto a static background texture and an accretion disk geometry,
 using r_min and r_max to define source bounds.
 
-Author: Dalton Moone.
+Author: Dalton J. Moone
 """
 
 import argparse

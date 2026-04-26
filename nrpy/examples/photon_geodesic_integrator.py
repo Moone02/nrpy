@@ -22,7 +22,7 @@ Physics Context:
     Numerical fidelity is validated by monitoring constants of motion
     associated with the spacetime's symmetries (Killing vectors and tensors).
 
-Author: Dalton Moone.
+Author: Dalton J. Moone
 """
 
 import os

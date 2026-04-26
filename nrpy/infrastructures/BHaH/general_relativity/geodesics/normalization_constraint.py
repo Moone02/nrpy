@@ -9,7 +9,7 @@ of Arrays (SoA) definition ensures uniform memory mapping. The module registers 
 function that maps SymPy expressions to a bounded kernel architecture, utilizing the
 configured parallelization strategy.
 
-Author: Dalton Moone.
+Author: Dalton J. Moone
 """
 
 import sympy as sp
@@ -178,7 +178,7 @@ def normalization_constraint(norm_expr: sp.Expr, PARTICLE: str) -> None:
     # Variables strictly ordered immediately prior to registration
     includes = ["BHaH_defines.h", "BHaH_function_prototypes.h", "math.h"]
 
-    desc = rf"""@brief Computes the normalization constraint for a batch of trajectories.
+    desc = rf""" Computes the normalization constraint for a batch of trajectories.
     @param d_f_bundle The device pointer array containing the state vectors $f^\mu$.
     @param d_metric_bundle The device pointer array containing the symmetric metric tensor $g_{{\mu\nu}}$.
     @param d_norm_bundle The device array of diagnostic constraint structures to be populated.

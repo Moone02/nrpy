@@ -15,7 +15,7 @@ are synchronized directly into a persistent blueprint array, and existing result
 pre-loaded into staging buffers to prevent overwriting valid memory with uninitialized
 data during asynchronous transfers.
 
-Author: Dalton Moone.
+Author: Dalton J. Moone
 """
 
 import nrpy.c_function as cfc
@@ -187,7 +187,7 @@ def calculate_and_fill_blueprint_data_universal() -> None:
     if parallelization == "cuda":
         includes.append("cuda_intrinsics.h")
 
-    desc = r"""@brief Evaluates the blueprint data for a batch of photon trajectories.
+    desc = r""" Evaluates the blueprint data for a batch of photon trajectories.
     @param all_photons The master Structure of Arrays containing the state vectors.
     @param num_rays The total number of photon trajectories.
     @param result The array of blueprint data structures to be populated.

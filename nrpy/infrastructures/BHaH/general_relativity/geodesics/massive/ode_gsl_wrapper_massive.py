@@ -10,7 +10,7 @@ ODE integration. Inline geometric evaluations prevent the need for pre-computed
 global memory grids. Reusing the GSL output array $f$ as the target buffer avoids an
 intermediate memory copy.
 
-Author: Dalton Moone.
+Author: Dalton J. Moone
 """
 
 import nrpy.c_function as cfc
@@ -29,7 +29,7 @@ def ode_gsl_wrapper_massive(spacetime_name: str) -> None:
     # Define C-function arguments and metadata
     includes = ["BHaH_defines.h", "BHaH_function_prototypes.h", "gsl/gsl_errno.h"]
 
-    desc = rf"""@brief GSL-compatible wrapper for massive particle geodesics in {spacetime_name}.
+    desc = rf""" GSL-compatible wrapper for massive particle geodesics in {spacetime_name}.
 
     Unpacks the GSL parameters void pointer into the global commondata struct,
     computes the local metric $g_{{\mu\nu}}$ and Christoffel symbols $\Gamma^\alpha_{{\mu\nu}}$

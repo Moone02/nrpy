@@ -11,7 +11,7 @@ geodesic equations. A boundary guard prevents out-of-bounds memory access for
 threads exceeding the active chunk. The stage index dictates the offset for memory
 alignment.
 
-Author: Dalton Moone.
+Author: Dalton J. Moone
 """
 
 from typing import List
@@ -172,7 +172,7 @@ def calculate_ode_rhs_kernel(
     #pragma omp parallel for
     for(long int i = 0; i < chunk_size; i++) {
     """
-        loop_postamble = "    } // END OMP PARALLEL FOR"
+        loop_postamble = "    } // END LOOP: for i over chunk_size rays"
         body_math = raw_c_code
 
     core_math = rf"""
@@ -249,7 +249,7 @@ def calculate_ode_rhs_kernel(
     if parallelization == "cuda":
         includes.append("cuda_intrinsics.h")
 
-    desc = r"""@brief Orchestrates the memory kernel for computing the photon geodesic ODE right-hand sides.
+    desc = r""" Orchestrates the memory kernel for computing the photon geodesic ODE right-hand sides.
 
     @param d_f_temp_bundle Pointer to the intermediate state bundle $f^{\mu}$ in memory.
     @param d_metric_bundle Pointer to the pre-calculated metric bundle $g_{\mu\nu}$ in memory.

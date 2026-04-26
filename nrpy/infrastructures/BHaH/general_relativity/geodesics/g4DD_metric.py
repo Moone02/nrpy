@@ -9,7 +9,7 @@ whether the particle is massive or a photon. Unpacking these coordinates from a
 flattened, thread-local state vector into registers reduces memory latency during
 geodesic integration.
 
-Author: Dalton Moone.
+Author: Dalton J. Moone
 """
 
 # Import standard modules for typing
@@ -89,7 +89,7 @@ def g4DD_metric(
 
     # Define C-Function metadata in strict chronological order
     includes = ["BHaH_defines.h"]
-    desc = rf"""@brief Computes the 10 unique components of the {spacetime_name} metric $g_{{mu nu}}$ for a {PARTICLE} particle.
+    desc = rf""" Computes the 10 unique components of the {spacetime_name} metric $g_{{mu nu}}$ for a {PARTICLE} particle.
     @param commondata Struct containing global spacetime parameters.
     @param f_local Thread-local array containing the 1D flattened state vector.
     @param metric_local Thread-local array where the symmetric metric components are stored."""

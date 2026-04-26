@@ -18,7 +18,7 @@ the active chunk. Parallelized batch processing distributes execution across thr
 Processing memory in static bundles protects hardware limits. A synchronization
 transfer updates the master Structure of Arrays state.
 
-Author: Dalton Moone.
+Author: Dalton J. Moone
 """
 
 import nrpy.c_function as cfc
@@ -260,7 +260,9 @@ def set_initial_conditions_kernel(spacetime_name: str) -> None:
     //==========================================
     #undef IDX_F
     #undef IDX_H
-    """.replace("{cd_access}", cd_access)
+    """.replace(
+        "{cd_access}", cd_access
+    )
 
     kernel_body = f"{loop_preamble}\n{core_math}\n{loop_postamble}"
 
@@ -482,7 +484,9 @@ def set_initial_conditions_kernel(spacetime_name: str) -> None:
     //==========================================
     BHAH_FREE_DEVICE(d_f_bundle);
     BHAH_FREE_DEVICE(d_h_bundle);
-    """.replace("{host_loop_code}", str(host_loop_code))
+    """.replace(
+        "{host_loop_code}", str(host_loop_code)
+    )
 
     # Establish the final strings to satisfy the Translation Unit Inlining Mandate.
     prefunc = f"{kernel_prefunc}"
@@ -491,7 +495,7 @@ def set_initial_conditions_kernel(spacetime_name: str) -> None:
     if parallelization == "cuda":
         includes.append("cuda_intrinsics.h")
 
-    desc = r"""@brief Initializes Cartesian starting conditions for photons.
+    desc = r""" Initializes Cartesian starting conditions for photons.
 
     Detailed algorithm: Maps global thread IDs to pixel coordinates to calculate initial
     spatial coordinates $x, y, z$ and unnormalized momenta $p^x, p^y, p^z$. Explicitly enforces

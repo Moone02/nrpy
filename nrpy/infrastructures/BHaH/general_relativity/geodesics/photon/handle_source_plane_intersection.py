@@ -13,7 +13,7 @@ the minimum and maximum radial disk bounds. Valid impacts are stored persistentl
 the blueprint structures. It relies on constant memory caching to process physical
 impact parameters.
 
-Author: Dalton Moone.
+Author: Dalton J. Moone
 """
 
 import nrpy.c_function as cfc
@@ -56,7 +56,7 @@ def handle_source_plane_intersection() -> None:
         includes.append("BHaH_device_defines.h")
         includes.append("cuda_intrinsics.h")
 
-    desc = r"""@brief Processes a terminal intersection with the source emission plane.
+    desc = r""" Processes a terminal intersection with the source emission plane.
 
     @param source_event_f_intersect Thread-local state array holding the 9-component intersection state $f^\mu$.
     @param lam_intersect The explicit affine parameter $\lambda$ of the intersection.

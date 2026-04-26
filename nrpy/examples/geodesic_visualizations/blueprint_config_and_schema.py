@@ -6,7 +6,7 @@ This module defines Python-side binary layout matching C `blueprint_data_t`,
 shared termination-type constants expected in serialized blueprint files, and
 common visualization defaults used by renderer and diagnostic scripts.
 
-Author: Dalton Moone.
+Author: Dalton J. Moone
 """
 
 import numpy as np

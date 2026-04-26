@@ -9,7 +9,7 @@ vector, adjusting the array size based on whether the target is a massive partic
 a photon. Unpacking these variables into a thread-local execution context and storing
 mathematical intermediates in registers reduces memory latency.
 
-Author: Dalton Moone.
+Author: Dalton J. Moone
 """
 
 # Import standard modules
@@ -90,7 +90,7 @@ def connections(
 
     # Define C-Function metadata in strict chronological order
     includes = ["BHaH_defines.h"]
-    desc = rf"""@brief Computes the 40 unique Christoffel symbols $Gamma^alpha_{{mu nu}}$ for the {spacetime_name} metric.
+    desc = rf""" Computes the 40 unique Christoffel symbols $Gamma^alpha_{{mu nu}}$ for the {spacetime_name} metric.
     @param commondata Struct containing global spacetime parameters.
     @param f_local Thread-local array containing the 1D flattened state vector.
     @param Gamma_local Thread-local array where the connection components are stored."""
