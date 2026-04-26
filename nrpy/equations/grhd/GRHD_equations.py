@@ -446,7 +446,7 @@ class GRHD_Equations:
                         T4UD[0][j + 1] * self.GammahatUDD[j][i][k] * betaU[k]
                     )
                     third_termD[i] += (
-                        sp.sympify(1.0 / 2.0)
+                        sp.Rational(1, 2)
                         * covhatdD_gammaDD[i][j][k]
                         * (
                             T4UU[0][0] * betaU[j] * betaU[k]
