@@ -260,9 +260,7 @@ def set_initial_conditions_kernel(spacetime_name: str) -> None:
     //==========================================
     #undef IDX_F
     #undef IDX_H
-    """.replace(
-        "{cd_access}", cd_access
-    )
+    """.replace("{cd_access}", cd_access)
 
     kernel_body = f"{loop_preamble}\n{core_math}\n{loop_postamble}"
 
@@ -484,9 +482,7 @@ def set_initial_conditions_kernel(spacetime_name: str) -> None:
     //==========================================
     BHAH_FREE_DEVICE(d_f_bundle);
     BHAH_FREE_DEVICE(d_h_bundle);
-    """.replace(
-        "{host_loop_code}", str(host_loop_code)
-    )
+    """.replace("{host_loop_code}", str(host_loop_code))
 
     # Establish the final strings to satisfy the Translation Unit Inlining Mandate.
     prefunc = f"{kernel_prefunc}"
