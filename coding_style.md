@@ -884,6 +884,7 @@ Every closing brace that ends a non-trivial block must carry a `// END ...` comm
 
 - Keyword is ALL-CAPS after `// ` (with one space).
 - A colon follows the keyword in all cases.
+- Single-statement control-flow bodies must not use curly braces in new code. Write the statement directly under the control-flow header instead of introducing a one-statement braced block.
 - Every end-curly-brace comment includes a brief description; there are no block-type exceptions.
 - Primary goal: let the reader identify at a glance exactly what the brace is closing.
 - Use the keyword to identify the syntactic construct being closed; use the description to preserve the highest-signal semantic context.
@@ -928,7 +929,22 @@ Prefer:
 - `} // END LOOP: for i1 over theta points on the horizon surface`
 - `} // END BLOCK: theta/phi stencil bounds and center-index sanity checks`
 
-Omit end comments only when the block body is fewer than 5 lines and the opening brace is visible without scrolling.
+Do not write one-statement braced blocks such as:
+
+```c
+for (int h = 0; h < max_num_horizons; h++) {
+  bah_horizon_active[h] = 1; // Activate all horizons.
+} // END LOOP: activating all horizons outside BBH mode
+```
+
+Instead, write the same one-statement body without braces:
+
+```c
+for (int h = 0; h < max_num_horizons; h++)
+  bah_horizon_active[h] = 1; // Activate all horizons.
+```
+
+Omit end comments only when a multi-statement block body is fewer than 5 lines and the opening brace is visible without scrolling. This exception does not permit one-statement braced blocks.
 
 ### 11. Function Documentation (Doxygen)
 
