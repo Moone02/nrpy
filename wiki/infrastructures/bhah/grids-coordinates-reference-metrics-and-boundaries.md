@@ -13,8 +13,12 @@ coordinate-system wrappers so generated code can dispatch by
 `params->CoordSystem_hash`.
 
 Grids with angular coordinates must use each coordinate system's defining
-angular bounds and an even number of gridpoints in every angular direction;
-inner boundary filling relies on the bounds and on an even azimuthal count.
+angular bounds. The number of phi gridpoints must be even wherever an inner
+boundary identification uses the half-turn `phi -> phi + pi`, at a pole, the
+origin, the cylindrical axis, or the `SymTP` focal segment. `SymTP` and
+`SinhSymTP` also need an even `xx1` count, and a `RingHoleySinhSpherical` grid
+with fewer than `2 NGHOSTS` theta gridpoints needs even `Nphi`, and even
+`Ntheta` unless `Nphi = 2`; every other theta count may be odd or even.
 [Hard Requirements For Angular Inner Boundaries](#hard-requirements-for-angular-inner-boundaries)
 states these requirements before
 [Inner Ghost Points In Interpolation Stencils](#inner-ghost-points-in-interpolation-stencils)
@@ -168,8 +172,24 @@ Evidence (descriptive behavior): [apply_bcs_inner_only.py](../../../nrpy/infrast
 
 ### Hard Requirements For Angular Inner Boundaries
 
-Every angular coordinate must span its coordinate system's defining interval,
-and every angular direction must have an even number of interior gridpoints.
+Every angular coordinate must span its coordinate system's defining interval.
+Where the table below lists an identification with the half-turn
+`phi -> phi + pi`, at a pole, the origin, the cylindrical axis, or the `SymTP`
+focal segment, the phi direction must also have an even number of interior
+gridpoints; `HoleySinhSpherical` poles use the same half-turn as the
+`Spherical` poles. `SymTP` and `SinhSymTP` also need an even `xx1` count, for
+a different reason: an odd count puts a row of cell centers at `xx1 = pi/2`,
+where the `SymTP` inverse map `Cart_to_xx[1]`, used by both systems through
+their `SymTP` eigencoordinate, takes the square root of a difference that
+roundoff can make negative, and `bcstruct_set_up()` then converts NaN to an
+index.
+`RingHoleySinhSpherical` needs no even count when `Ntheta >= 2 NGHOSTS`, which
+keeps its theta ghost points strictly between the poles. A coarser theta grid
+needs even `Nphi`, and even `Ntheta` unless `Nphi = 2`: an odd `Ntheta` puts a
+theta ghost point exactly on a pole, where `bcstruct_set_up()` exits for
+`Nphi > 2`, and an even `Ntheta` sends theta ghost points across a pole, where
+the half-turn applies. Every other angular count, including the wedge counts,
+may be odd.
 These are required inputs to the inner-boundary mapping, not adjustable
 defaults. The bounds are interval endpoints, which are cell faces rather than
 the first and last cell centers. `ReferenceMetric` defines them, and
@@ -177,14 +197,14 @@ the first and last cell centers. `ReferenceMetric` defines them, and
 `xxmin*`, `xxmax*`, and `PI` are not parameter-file inputs. The counts are the
 final `Nxx*` after that function multiplies every count other than 2 by
 `convergence_factor` and truncates the product to an integer, so a
-`convergence_factor` that makes an angular count odd gives an excluded
-configuration.
+`convergence_factor` that makes a count odd where it must be even gives an
+excluded configuration.
 
 | Coordinate systems | Angular coordinates and defining bounds | Identifications used by inner boundaries |
 | --- | --- | --- |
 | `Spherical`, `SinhSpherical`, `SinhSphericalv2n*` | theta = `xx1` in `[0, pi]`; phi = `xx2` in `[-pi, pi]` | seam `phi -> phi +/- 2 pi`; poles `theta -> -theta` or `2 pi - theta` with `phi -> phi + pi`; origin `r -> -r`, `theta -> pi - theta`, `phi -> phi + pi` |
 | `HoleySinhSpherical` | theta = `xx1` in `[0, pi]`; phi = `xx2` in `[-pi, pi]` | seam and poles; the inner radial face is an outer boundary |
-| `RingHoleySinhSpherical` | theta = `xx1` in `[pi/4, 3 pi/4]`; phi = `xx2` in `[-pi, pi]` | seam only; the theta faces and the inner radial face are outer boundaries |
+| `RingHoleySinhSpherical` | theta = `xx1` in `[pi/4, 3 pi/4]`; phi = `xx2` in `[-pi, pi]` | when `Ntheta >= 2 NGHOSTS`, seam only, and the theta faces are outer boundaries; the inner radial face is an outer boundary |
 | `Cylindrical`, `SinhCylindrical`, `SinhCylindricalv2n*` | phi = `xx1` in `[-pi, pi]` | seam; axis `rho -> -rho` with `phi -> phi + pi` |
 | `SymTP`, `SinhSymTP` | `xx1` in `[0, pi]`; phi = `xx2` in `[-pi, pi]` | seam; poles `xx1 -> -xx1` or `2 pi - xx1` with `phi -> phi + pi`; focal segment `xx0 -> -xx0` with `phi -> phi + pi` |
 | `LWedgeHSinhSph`, `UWedgeHSinhSph` | theta = `xx1` in `[pi/4, 3 pi/4]`; phi = `xx2` in `[-pi/4, pi/4]` | none; with eigencoordinate `Cartesian`, every ghost point is a pure outer boundary point |
@@ -198,23 +218,24 @@ Stored coordinates are cell centered:
 `dxx_d = (xxmax_d - xxmin_d)/Nxx_d`. On the standard `Spherical` grid with
 zero-based interior indices j and k, `theta_j = (j + 1/2) pi/Ntheta` and
 `phi_k = -pi + (k + 1/2) 2 pi/Nphi`. The seam identification maps k to
-`k +/- Nphi`. A shift `phi -> phi + pi` moves k by exactly `Nphi/2` cells, so it
-lands on a stored phi value only when `Nphi` is even. The reflections
-`theta -> -theta`, `theta -> 2 pi - theta`, and `theta -> pi - theta` map theta
-cell centers onto theta cell centers for theta in `[0, pi]`. With the prescribed
-bounds and even counts, every identification in the table therefore recovers an
-existing same-grid point. Even theta counts belong to the prescribed angular
-lattice; the theta reflections do not depend on them.
+`k +/- Nphi` for any `Nphi`. A shift `phi -> phi + pi` moves k by exactly
+`Nphi/2` cells, so it lands on a stored phi value only when `Nphi` is even. The
+reflections `theta -> -theta`, `theta -> 2 pi - theta`, and `theta -> pi - theta`
+map j to `-1 - j`, `2 Ntheta - 1 - j`, and `Ntheta - 1 - j`, so they map theta
+cell centers onto theta cell centers for any `Ntheta`. With the prescribed
+bounds and the even counts above, every identification in the table therefore
+recovers an existing same-grid point.
 
-Evidence (public/scientific contract): [reference_metric.py](../../../nrpy/reference_metric.py), `spherical_like`, `cylindrical_like`, `prolate_spheroidal_like`, and `spherical_wedge_like`; corroboration: [reference_metric_Spherical.py](../../../nrpy/tests/reference_metric_Spherical.py), `trusted_dict` entries `xxmin_1`, `xxmax_1`, `xxmin_2`, and `xxmax_2`; [bcstruct_set_up.py](../../../nrpy/infrastructures/BHaH/CurviBoundaryConditions/bcstruct_set_up.py), `Cfunction__EigenCoord_set_x0x1x2_inbounds__i0i1i2_inbounds_single_pt` (no test covers excluded angular configurations; none is permitted)
+Evidence (public/scientific contract): [reference_metric.py](../../../nrpy/reference_metric.py), `spherical_like`, `cylindrical_like`, `prolate_spheroidal_like` (including its `SymTP` `Cart_to_xx`), and `spherical_wedge_like`; corroboration: [numerical_grids_and_timestep.py](../../../nrpy/infrastructures/BHaH/numerical_grids_and_timestep.py), `register_CFunction_numerical_grid_params_Nxx_dxx_xx`; [reference_metric_Spherical.py](../../../nrpy/tests/reference_metric_Spherical.py), `trusted_dict` entries `xxmin_1`, `xxmax_1`, `xxmin_2`, and `xxmax_2`; [bcstruct_set_up.py](../../../nrpy/infrastructures/BHaH/CurviBoundaryConditions/bcstruct_set_up.py), `Cfunction__EigenCoord_set_x0x1x2_inbounds__i0i1i2_inbounds_single_pt` (no test covers excluded angular configurations; none is permitted)
 
 Boundary filling relies on these requirements and cannot repair a grid that
 violates them, because it only copies stored values. `bcstruct_set_up()` exits
 when a dst position does not match its src position; that exit reports a
 misaligned map but does not make it valid. A grid-setup function, exporter,
-combiner, or reader that accepts other angular bounds or counts does not make
-them a permitted simulation: shifted or shortened angular intervals and odd
-angular counts are excluded configurations. Do not use them to claim a
+combiner, or reader that accepts other angular bounds, or an odd count where the
+requirements above need an even one, does not make them a permitted simulation:
+shifted or shortened angular intervals and those odd counts are excluded
+configurations. Do not use them to claim a
 regression or to justify coordinate bounds checks, interpolation repairs, extra
 modes, or coordinate-specific branches;
 [Contribution Style And Static Analysis](../../architecture/contribution-style-and-static-analysis.md)
