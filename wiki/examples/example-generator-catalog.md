@@ -62,31 +62,23 @@ generation, build, or runtime coverage.
 | `wave_equation_curvilinear.py` | `python -m nrpy.examples.wave_equation_curvilinear [--cuda] [--floating_point_precision TYPE] [--disable_intrinsics] [--disable_rfm_precompute]` | Standalone BHaH single-coordinate curvilinear wave project | Python, C or CUDA toolchain, `make` | Configured Ubuntu/macOS OpenMP build and local CUDA build; no executable/result check | [Wave Equation Generators](wave-equation-generators.md) |
 | `wave_equation_multicoordinates.py` | `python -m nrpy.examples.wave_equation_multicoordinates [--cuda] [--floating_point_precision TYPE] [--disable_intrinsics] [--disable_rfm_precompute]` | Standalone BHaH multicoordinate wave project | Python, C or CUDA toolchain, `make` | Configured Ubuntu/macOS OpenMP build and local CUDA build; no executable/result check | [Wave Equation Generators](wave-equation-generators.md) |
 
-Claim evidence:
-- Claim: The Dendro generators emit complete, standalone applications named `Dendro_NRPy_BSSN` and `Dendro_NRPy_fCCZ4`, each with KO enabled by default and a code-generation-time W/chi option; the `dendro-validation` CI job generates, builds, and runs both applications in W and chi variants through `dendro_application_check.py`.
-- Role: public generator interface and CI behavior
-- Deciding authority: `nrpy/examples/dendro_bssn.py`, `parse_args`, `SOLVER_NAME`, and `main`; `nrpy/examples/dendro_fccz4.py`, `parse_args`, `SOLVER_NAME`, and `main`; `.github/workflows/main.yml`, `dendro-validation`; `nrpy/examples/tests/dendro_application_check.py`, `Leg.run`.
-- Corroboration: `nrpy/infrastructures/Dendro/CMakeLists.py`, `output_CFunctions_function_prototypes_and_construct_CMakeLists`, uses the selected solver name for the emitted CMake project.
+Evidence (descriptive behavior): `nrpy/examples/dendro_bssn.py`, `parse_args`, `SOLVER_NAME`, and `main`; `nrpy/examples/dendro_fccz4.py`, `parse_args`, `SOLVER_NAME`, and `main`; corroboration: `nrpy/infrastructures/Dendro/CMakeLists.py`, `output_CFunctions_function_prototypes_and_construct_CMakeLists`, uses the selected solver name for the emitted CMake project
+
+Evidence (CI behavior): `.github/workflows/main.yml`, `dendro-validation`; `nrpy/examples/tests/dendro_application_check.py`, `Leg.run`
 
 The `seobnrv5_aligned_spin_inspiral.py` row's validation-route cell states that
 CI builds and ten-input-compares only the calibration/production variants,
 leaving the additional `-nrpy_calibrated` variants build-only.
 
-Claim evidence:
-- Claim: `seobnrv5_aligned_spin_inspiral.py`'s configured CI route builds and ten-input-compares only the calibration/production variants (each approximant × {production, `-calibration_no_spin`, `-calibration_spin`}); the additional `-nrpy_calibrated` variants are generated and built in `codegen-ubuntu`/`codegen-mac` but are not included in the `sebob-consistency-test` comparison.
-- Role: CI behavior
-- Deciding authority: [main.yml](../../.github/workflows/main.yml), jobs `codegen-ubuntu`, `codegen-mac`, `sebob-consistency-test`
-- Corroboration: [sebob_consistency_check.py](../../nrpy/examples/tests/sebob_consistency_check.py), `__main__` invocation list
+Evidence (CI behavior): [main.yml](../../.github/workflows/main.yml), jobs `codegen-ubuntu`, `codegen-mac`, `sebob-consistency-test`; corroboration: [sebob_consistency_check.py](../../nrpy/examples/tests/sebob_consistency_check.py), `__main__` invocation list
 
 The `sebobv1_jax.py` row's validation-route cell states that CI generates and
 installs the package and calls the coefficient function once without checking
 returned values.
 
-Claim evidence:
-- Claim: Both `codegen-ubuntu` and `codegen-mac` generate `sebobv1_jax`, run `pip install .` in the generated project, import `SEOBNRv5_aligned_spin_coefficients`, call it once without a JAX transformation such as `jax.jit`, with the Python-scalar inputs `(1.5, 0.3, -0.2, 0.02, 2.4627455127717882e-05, 50.0)`, and print the returned `Commondata`. The step fails only if generation, installation, import, or the call raises; it asserts no returned field or value and does not run the generated pytest, a float32 input, a traced function, or an accelerator.
-- Role: CI behavior
-- Deciding authority: [main.yml](../../.github/workflows/main.yml), jobs `codegen-ubuntu` and `codegen-mac`
-- Corroboration: `none available`; no other configured file restates these job commands
+[Generated Project
+CI](../validation/generated-project-ci.md#sebobv1_jax-install-and-call-step)
+gives the exact configured `sebobv1_jax` CI step and its evidence.
 
 Companion groups:
 

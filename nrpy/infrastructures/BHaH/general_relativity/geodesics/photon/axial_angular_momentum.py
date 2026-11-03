@@ -199,7 +199,7 @@ def axial_angular_momentum(normalized_eom: bool = False) -> None:
         num_rays < 0) {
         fprintf(stderr, "ERROR: Invalid axial-angular-momentum output arguments.\n");
         return 1;
-    }
+    } // END IF: angular momentum arguments invalid
 
     FILE *angular_momentum_file = fopen(filename, "wb");
     if (angular_momentum_file == NULL) {
@@ -208,7 +208,7 @@ def axial_angular_momentum(normalized_eom: bool = False) -> None:
             "ERROR: Could not open axial-angular-momentum file '%s' for writing.\n",
             filename);
         return 1;
-    }
+    } // END IF: angular momentum file unavailable
 
     for (long int photon_index = 0; photon_index < num_rays; ++photon_index) {
         const uint64_t serialized_photon_index = (uint64_t)photon_index;

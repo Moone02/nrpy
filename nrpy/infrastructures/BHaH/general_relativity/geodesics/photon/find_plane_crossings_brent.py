@@ -266,10 +266,10 @@ def plane_crossing_brent_refine_candidate(
 static double plane_crossing_host_ReadCUDA(const double *value) { return *value; }
 static void plane_crossing_host_WriteCUDA(double *target, const double value) {
     *target = value;
-}
+} // END FUNCTION: plane_crossing_host_WriteCUDA
 static double plane_crossing_host_MulCUDA(const double a, const double b) {
     return a * b;
-}
+} // END FUNCTION: plane_crossing_host_MulCUDA
 static double plane_crossing_host_FusedMulAddCUDA(
     const double a, const double b, const double c) { return fma(a, b, c); }
 """
@@ -279,7 +279,7 @@ static double plane_crossing_signed_distance(
     return normal[0] * (state[1] - center[0]) +
            normal[1] * (state[2] - center[1]) +
            normal[2] * (state[3] - center[2]);
-}}
+}} // END FUNCTION: plane_crossing_signed_distance
 
 static bool plane_crossing_rk5_trial(
     const commondata_struct *commondata,
@@ -301,27 +301,27 @@ static bool plane_crossing_rk5_trial(
     {trial_stencil_setup}
     for (int component = 0; component < 9; ++component) {{
         stage_state[component] = candidate->state_before[component];
-    }}
+    }} // END LOOP: component copies anchor state
     for (int stage = 1; stage <= 6; ++stage) {{
         {trial_geometry_call}
         {trial_status_check}
         for (int component = 0; component < 10; ++component) {{
             if (!isfinite(metric[component])) return false;
-        }}
+        }} // END LOOP: component validates metric
         for (int component = 0; component < 40; ++component) {{
             if (!isfinite(geometry[component])) return false;
-        }}
+        }} // END LOOP: component validates Christoffels
         plane_crossing_calculate_ode_rhs_kernel(
             stage_state, metric, geometry, {rhs_args}k,
             stage, chunk_size, stream_idx);
         for (int component = 0; component < 9; ++component) {{
             if (!isfinite(k[(stage - 1) * 9 + component])) return false;
-        }}
+        }} // END LOOP: component validates RKF45 derivatives
         if (stage < 6) {{
             plane_crossing_rkf45_stage_update(
                 candidate->state_before, k, h, stage,
                 (int)chunk_size, stage_state, stream_idx);
-        }}
+        }} // END IF: advance intermediate RKF45 stage
     }} // END LOOP: evaluate RKF45 stages
     for (int component = 0; component < 9; ++component) {{
         const double update =
@@ -346,7 +346,7 @@ static bool plane_crossing_rk5_trial(
     root->parameter_interval_width = NAN;
     for (int component = 0; component < 9; ++component) {
         root->state[component] = NAN;
-    }
+    } // END LOOP: component initializes root state
     if (!candidate->recorded ||
         !isfinite(candidate->parameter_before) ||
         !isfinite(candidate->parameter_after) ||
@@ -357,7 +357,7 @@ static bool plane_crossing_rk5_trial(
         commondata->plane_crossing_parameter_tolerance <= 0.0) return;
     for (int component = 0; component < 9; ++component) {
         if (!isfinite(candidate->state_before[component])) return;
-    }
+    } // END LOOP: component validates anchor state
 
     double normal[3], center[3];
     if (candidate->plane_type == NON_TERMINAL_PLANE_EVENT) {
@@ -367,20 +367,22 @@ static bool plane_crossing_rk5_trial(
         center[0] = commondata->non_terminal_plane_center_x;
         center[1] = commondata->non_terminal_plane_center_y;
         center[2] = commondata->non_terminal_plane_center_z;
-    } else if (candidate->plane_type == TERMINAL_PLANE_EVENT) {
+    } // END IF: select nonterminal plane geometry
+    else if (candidate->plane_type == TERMINAL_PLANE_EVENT) {
         normal[0] = commondata->terminal_plane_normal_x;
         normal[1] = commondata->terminal_plane_normal_y;
         normal[2] = commondata->terminal_plane_normal_z;
         center[0] = commondata->terminal_plane_center_x;
         center[1] = commondata->terminal_plane_center_y;
         center[2] = commondata->terminal_plane_center_z;
-    } else return;
+    } // END ELSE IF: select terminal plane geometry
+    else return;
     const double normal_length = hypot(hypot(normal[0], normal[1]), normal[2]);
     if (!isfinite(normal_length) || normal_length <= 1.0e-14) return;
     for (int axis = 0; axis < 3; ++axis) {
         if (!isfinite(center[axis])) return;
         normal[axis] /= normal_length;
-    }
+    } // END LOOP: axis normalizes plane normal
 
     const REAL anchor_cartesian[3] = {
         (REAL)candidate->state_before[1],
@@ -394,7 +396,7 @@ static bool plane_crossing_rk5_trial(
         TIME_WINDOW_MANAGER_NUMERICAL_SUCCESS) {
         root->status = PLANE_CROSSING_ROOT_RKF45_FAILURE;
         return;
-    }
+    } // END IF: anchor stencil unavailable
 
     double endpoint_state[9];
     if (!plane_crossing_rk5_trial(
@@ -403,7 +405,7 @@ static bool plane_crossing_rk5_trial(
             candidate->parameter_after, endpoint_state)) {
         root->status = PLANE_CROSSING_ROOT_RKF45_FAILURE;
         return;
-    }
+    } // END IF: endpoint RKF45 trial failed
     const double anchor_distance = plane_crossing_signed_distance(
         candidate->state_before, normal, center);
     const double endpoint_distance = plane_crossing_signed_distance(
@@ -411,7 +413,7 @@ static bool plane_crossing_rk5_trial(
     if (!isfinite(anchor_distance) || !isfinite(endpoint_distance)) {
         root->status = PLANE_CROSSING_ROOT_RKF45_FAILURE;
         return;
-    }
+    } // END IF: endpoint plane distance nonfinite
     double low = fmin(candidate->parameter_before, candidate->parameter_after);
     double high = fmax(candidate->parameter_before, candidate->parameter_after);
     double f_low = candidate->parameter_before < candidate->parameter_after
@@ -433,9 +435,9 @@ static bool plane_crossing_rk5_trial(
         const double *state = at_anchor ? candidate->state_before : endpoint_state;
         for (int component = 0; component < 9; ++component) {
             root->state[component] = state[component];
-        }
+        } // END LOOP: component copies endpoint root
         return;
-    }
+    } // END IF: endpoint lies on plane
 
     root->status = PLANE_CROSSING_ROOT_ITERATION_LIMIT;
     for (int iteration = 1;
@@ -445,7 +447,7 @@ static bool plane_crossing_rk5_trial(
         if (signbit(f_low) == signbit(f_high)) {
             root->status = PLANE_CROSSING_ROOT_INVALID_BRACKET;
             return;
-        }
+        } // END IF: invalid Brent bracket
         const double width = high - low;
         double trial_parameter = low + 0.5 * width;
         if (have_previous && f_low != f_high &&
@@ -457,14 +459,15 @@ static bool plane_crossing_rk5_trial(
                     ((f_high - f_low) * (f_high - previous_distance)) +
                 previous_parameter * f_low * f_high /
                     ((previous_distance - f_low) * (previous_distance - f_high));
-        } else if (f_low != f_high) {
+        } // END IF: inverse quadratic Brent trial
+        else if (f_low != f_high) {
             trial_parameter = high - f_high * width / (f_high - f_low);
-        }
+        } // END ELSE IF: secant Brent trial
         if (!isfinite(trial_parameter) ||
             trial_parameter <= low + 0.1 * width ||
             trial_parameter >= high - 0.1 * width) {
             trial_parameter = low + 0.5 * width;
-        }
+        } // END IF: bisect unsafe Brent trial
         if (trial_parameter <= low || trial_parameter >= high) return;
 
         double trial_state[9];
@@ -474,20 +477,21 @@ static bool plane_crossing_rk5_trial(
                 trial_parameter, trial_state)) {
             root->status = PLANE_CROSSING_ROOT_RKF45_FAILURE;
             return;
-        }
+        } // END IF: Brent RKF45 trial failed
         const double trial_distance = plane_crossing_signed_distance(
             trial_state, normal, center);
         if (!isfinite(trial_distance)) {
             root->status = PLANE_CROSSING_ROOT_RKF45_FAILURE;
             return;
-        }
+        } // END IF: trial plane distance nonfinite
         root->iterations = iteration;
         root->parameter = trial_parameter;
         root->plane_distance = trial_distance;
         if (trial_distance == 0.0) {
             low = high = trial_parameter;
             f_low = f_high = 0.0;
-        } else {
+        } // END IF: trial lies on plane
+        else {
             const bool replace_low = signbit(trial_distance) == signbit(f_low);
             previous_parameter = replace_low ? low : high;
             previous_distance = replace_low ? f_low : f_high;
@@ -495,23 +499,24 @@ static bool plane_crossing_rk5_trial(
             if (replace_low) {
                 low = trial_parameter;
                 f_low = trial_distance;
-            } else {
+            } // END IF: replace lower bracket endpoint
+            else {
                 high = trial_parameter;
                 f_high = trial_distance;
-            }
-        }
+            } // END ELSE: replace upper bracket endpoint
+        } // END ELSE: update signed crossing bracket
         root->parameter_interval_width = high - low;
         if (fabs(trial_distance) <= commondata->plane_crossing_residual_tolerance &&
             root->parameter_interval_width <=
                 commondata->plane_crossing_parameter_tolerance) {
             for (int component = 0; component < 9; ++component) {
                 root->state[component] = trial_state[component];
-            }
+            } // END LOOP: component copies converged state
             root->found = true;
             root->status = PLANE_CROSSING_ROOT_FOUND;
             return;
-        }
-    }
+        } // END IF: Brent tolerances satisfied
+    } // END LOOP: iteration refines Brent bracket
 """
     if analytical:
         spatial_setup = """    const REAL anchor_cartesian[3] = {
@@ -526,7 +531,7 @@ static bool plane_crossing_rk5_trial(
         TIME_WINDOW_MANAGER_NUMERICAL_SUCCESS) {
         root->status = PLANE_CROSSING_ROOT_RKF45_FAILURE;
         return;
-    }
+    } // END IF: anchor stencil unavailable
 
 """
         body = body.replace(spatial_setup, "")
@@ -591,7 +596,7 @@ def find_plane_crossings_brent(normalized_eom: bool = False) -> None:
             (3 * sizeof(terminal_plane_crossing_result_t))) {
         fprintf(stderr, "ERROR: too many photon plane candidates.\n");
         exit(EXIT_FAILURE);
-    }
+    } // END IF: crossing candidate capacity exceeded
     const long int candidate_capacity = 4 * num_rays;
     terminal_plane_crossing_result_t *terminal_candidates =
         (terminal_plane_crossing_result_t *)calloc(
@@ -605,7 +610,7 @@ def find_plane_crossings_brent(normalized_eom: bool = False) -> None:
         free(terminal_candidates);
         free(chunk_indices);
         exit(EXIT_FAILURE);
-    }
+    } // END IF: crossing array allocation failed
 
     TimeSlotManager crossing_slots;
     slot_manager_init(&crossing_slots, commondata->slot_manager_t_min,
@@ -641,11 +646,11 @@ def find_plane_crossings_brent(normalized_eom: bool = False) -> None:
             if (slot < 0) {
                 ++outside_slots;
                 continue;
-            }
+            } // END IF: crossing outside time slots
             slot_add_photon(&crossing_slots, slot,
                             4 * photon + candidate_number);
-        }
-    }
+        } // END LOOP: candidate_number schedules recorded crossings
+    } // END LOOP: photon initializes crossing results
 
     for (int slot = crossing_slots.num_slots - 1; slot >= 0; --slot) {
         if (crossing_slots.slot_counts[slot] == 0) continue;
@@ -675,7 +680,7 @@ def find_plane_crossings_brent(normalized_eom: bool = False) -> None:
                     #pragma omp atomic update
                     ++failures[PLANE_CROSSING_ROOT_RKF45_FAILURE];
                     continue;
-                }
+                } // END IF: numerical time window unavailable
                 photon_plane_crossing_root_t root;
                 plane_crossing_brent_refine_candidate(
                     commondata, numerical_params, spatial_context,
@@ -684,24 +689,25 @@ def find_plane_crossings_brent(normalized_eom: bool = False) -> None:
                     #pragma omp atomic update
                     ++failures[root.status];
                     continue;
-                }
+                } // END IF: crossing refinement failed
                 bool plane_valid;
                 if (candidate_number == 0) {
                     plane_valid = handle_non_terminal_plane_intersection(
                         &root, &non_terminal_results[photon], commondata);
-                } else {
+                } // END IF: project nonterminal crossing
+                else {
                     terminal_plane_crossing_result_t *result =
                         &terminal_candidates[3 * photon + candidate_number - 1];
                     plane_valid = handle_terminal_plane_intersection(
                         &root, result, commondata);
-                }
+                } // END ELSE: project terminal crossing
                 if (!plane_valid) {
                     #pragma omp atomic update
                     ++plane_geometry_failures;
-                }
-            }
-        }
-    }
+                } // END IF: crossing plane geometry invalid
+            } // END LOOP: lane refines crossing candidate
+        } // END WHILE: process remaining slot candidates
+    } // END LOOP: slot processes crossing times
 
     for (long int photon = 0; photon < num_rays; ++photon) {
         terminal_plane_crossing_result_t *selected = &terminal_results[photon];
@@ -713,8 +719,8 @@ def find_plane_crossings_brent(normalized_eom: bool = False) -> None:
                 *selected = *trial;
                 selected->selected_candidate_number = candidate_number;
                 break;
-            }
-        }
+            } // END IF: select first bounded crossing
+        } // END LOOP: candidate_number selects terminal crossing
         non_terminal_plane_crossing_result_t *non_terminal =
             &non_terminal_results[photon];
         if (selected->found && non_terminal->found &&
@@ -722,8 +728,8 @@ def find_plane_crossings_brent(normalized_eom: bool = False) -> None:
             *non_terminal = (non_terminal_plane_crossing_result_t){0};
             non_terminal->null_constraint_abs = NAN;
             non_terminal->Lz = NAN;
-        }
-    }
+        } // END IF: discard later nonterminal crossing
+    } // END LOOP: photon selects plane results
     if (terminal_overflow_count || outside_slots ||
         plane_geometry_failures || failures[1] ||
         failures[2] || failures[3] || failures[4]) {
@@ -736,7 +742,7 @@ def find_plane_crossings_brent(normalized_eom: bool = False) -> None:
                 terminal_overflow_count, outside_slots,
                 failures[1], failures[2], failures[3],
                 failures[4], plane_geometry_failures);
-    }
+    } // END IF: report crossing refinement failures
     slot_manager_free(&crossing_slots);
     free(chunk_indices);
     free(terminal_candidates);
@@ -795,14 +801,14 @@ def find_plane_crossings_brent_analytical(
     if ((size_t)num_rays > SIZE_MAX / (3 * sizeof(terminal_plane_crossing_result_t))) {
         fprintf(stderr, "ERROR: too many photon plane candidates.\n");
         exit(EXIT_FAILURE);
-    }
+    } // END IF: crossing candidate capacity exceeded
     terminal_plane_crossing_result_t *terminal_candidates =
         (terminal_plane_crossing_result_t *)calloc(
             (size_t)(3 * num_rays), sizeof(*terminal_candidates));
     if (terminal_candidates == NULL) {
         fprintf(stderr, "ERROR: could not allocate plane crossing results.\n");
         exit(EXIT_FAILURE);
-    }
+    } // END IF: crossing array allocation failed
     long int failures[5] = {0};
     long int plane_geometry_failures = 0;
     long int terminal_overflow_count = 0;
@@ -834,19 +840,20 @@ def find_plane_crossings_brent_analytical(
                 #pragma omp atomic update
                 ++failures[root.status];
                 continue;
-            }
+            } // END IF: crossing refinement failed
             bool plane_valid;
             if (candidate_number == 0) {
                 plane_valid = handle_non_terminal_plane_intersection@HOST@(
                     &root, &non_terminal_results[photon], commondata);
-            } else {
+            } // END IF: project nonterminal crossing
+            else {
                 terminal_plane_crossing_result_t *result =
                     &terminal_candidates[3 * photon + candidate_number - 1];
                 plane_valid = handle_terminal_plane_intersection@HOST@(
                     &root, result, commondata);
-            }
+            } // END ELSE: project terminal crossing
             if (!plane_valid) ++plane_geometry_failures;
-        }
+        } // END LOOP: candidate_number refines recorded crossings
         terminal_plane_crossing_result_t *selected = &terminal_results[photon];
         for (int candidate_number = 1; candidate_number <= 3; ++candidate_number) {
             const terminal_plane_crossing_result_t *trial =
@@ -855,8 +862,8 @@ def find_plane_crossings_brent_analytical(
                 *selected = *trial;
                 selected->selected_candidate_number = candidate_number;
                 break;
-            }
-        }
+            } // END IF: select first bounded crossing
+        } // END LOOP: candidate_number selects terminal crossing
         non_terminal_plane_crossing_result_t *non_terminal =
             &non_terminal_results[photon];
         if (selected->found && non_terminal->found &&
@@ -864,8 +871,8 @@ def find_plane_crossings_brent_analytical(
             *non_terminal = (non_terminal_plane_crossing_result_t){0};
             non_terminal->null_constraint_abs = NAN;
             non_terminal->Lz = NAN;
-        }
-    }
+        } // END IF: discard later nonterminal crossing
+    } // END LOOP: photon refines plane crossings
     if (terminal_overflow_count || plane_geometry_failures || failures[1] ||
         failures[2] || failures[3] || failures[4]) {
         fprintf(stderr,
@@ -875,7 +882,7 @@ def find_plane_crossings_brent_analytical(
                 "iteration limit=%ld, plane geometry failure=%ld.\n",
                 terminal_overflow_count, failures[1], failures[2], failures[3],
                 failures[4], plane_geometry_failures);
-    }
+    } // END IF: report crossing refinement failures
     free(terminal_candidates);
 """.replace("@HOST@", projection_suffix).replace(
         "@NON_TERMINAL_PRECEDES_TERMINAL@", non_terminal_precedes_terminal

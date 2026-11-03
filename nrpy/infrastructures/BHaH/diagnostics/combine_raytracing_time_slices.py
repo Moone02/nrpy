@@ -1260,9 +1260,8 @@ def inspect_combined_file(path: Path) -> None:
 
 def main() -> None:
     """
-    Drive CLI execution.
+    Inspect a combined raytracing file or combine time slices into one file.
 
-    :return: None.
     :raises RuntimeError: If discovery, validation, layout, or output writing fails.
     """
     # Step 1: Dispatch inspect mode before any input discovery.

@@ -59,7 +59,7 @@ def event_detection_manager_kernel(
             if (!isfinite(normal_sq) || normal_sq <= 1.0e-28) {
                 d_status_bundle[i] = FAILURE_GENERIC;
                 continue;
-            }
+            } // END IF: nonterminal plane normal invalid
             const double signed_distance =
                 (x - commondata->non_terminal_plane_center_x) * nx +
                 (y - commondata->non_terminal_plane_center_y) * ny +
@@ -67,7 +67,7 @@ def event_detection_manager_kernel(
             if (!isfinite(signed_distance)) {
                 d_status_bundle[i] = FAILURE_GENERIC;
                 continue;
-            }
+            } // END IF: nonterminal plane distance nonfinite
             const bool side = signed_distance > 0.0;
             if (side != d_on_pos_non_terminal_plane_prev[i]) {
                 photon_plane_crossing_candidate_t *candidate =
@@ -75,13 +75,13 @@ def event_detection_manager_kernel(
                 for (int component = 0; component < 9; ++component) {
                     candidate->state_before[component] =
                         d_f_start_bundle[IDX_F(component, i)];
-                }
+                } // END LOOP: component saves nonterminal anchor
                 candidate->parameter_before = d_integration_param_before[i];
                 candidate->parameter_after = d_integration_param_after[i];
                 candidate->recorded = true;
-            }
+            } // END IF: record nonterminal crossing step
             d_on_pos_non_terminal_plane_prev[i] = side;
-        }
+        } // END IF: detect enabled nonterminal crossing
 
         if (commondata->terminal_plane_enabled &&
             !crossings->additional_terminal_crossing_detected) {
@@ -92,7 +92,7 @@ def event_detection_manager_kernel(
             if (!isfinite(normal_sq) || normal_sq <= 1.0e-28) {
                 d_status_bundle[i] = FAILURE_GENERIC;
                 continue;
-            }
+            } // END IF: terminal plane normal invalid
             const double signed_distance =
                 (x - commondata->terminal_plane_center_x) * nx +
                 (y - commondata->terminal_plane_center_y) * ny +
@@ -100,50 +100,53 @@ def event_detection_manager_kernel(
             if (!isfinite(signed_distance)) {
                 d_status_bundle[i] = FAILURE_GENERIC;
                 continue;
-            }
+            } // END IF: terminal plane distance nonfinite
             const bool side = signed_distance > 0.0;
             if (side != d_on_pos_terminal_plane_prev[i]) {
                 photon_plane_crossing_candidate_t *candidate = NULL;
                 if (crossings->terminal_candidate_count == 0) {
                     candidate = &crossings->terminal_candidate_1;
-                } else if (crossings->terminal_candidate_count == 1) {
+                } // END IF: select first terminal candidate
+                else if (crossings->terminal_candidate_count == 1) {
                     candidate = &crossings->terminal_candidate_2;
-                } else if (crossings->terminal_candidate_count == 2) {
+                } // END ELSE IF: select second terminal candidate
+                else if (crossings->terminal_candidate_count == 2) {
                     candidate = &crossings->terminal_candidate_3;
-                } else {
+                } // END ELSE IF: select third terminal candidate
+                else {
                     crossings->additional_terminal_crossing_detected = true;
-                }
+                } // END ELSE: terminal crossing capacity exceeded
                 if (candidate != NULL) {
                     for (int component = 0; component < 9; ++component) {
                         candidate->state_before[component] =
                             d_f_start_bundle[IDX_F(component, i)];
-                    }
+                    } // END LOOP: component saves terminal anchor
                     candidate->parameter_before = d_integration_param_before[i];
                     candidate->parameter_after = d_integration_param_after[i];
                     candidate->recorded = true;
                     ++crossings->terminal_candidate_count;
-                }
-            }
+                } // END IF: save available terminal candidate
+            } // END IF: record terminal crossing step
             d_on_pos_terminal_plane_prev[i] = side;
-        }
+        } // END IF: detect enabled terminal crossing
 
         const double log_energy_measure = d_log_energy_bundle[i];
         if (log_energy_measure > commondata->evolution_measure_max) {
             d_status_bundle[i] = STOP_CONDITION_EVOLUTION_MEASURE_EXCEEDED;
-        }
+        } // END IF: photon energy limit exceeded
         const double radius_squared = x * x + y * y + z * z;
         if (radius_squared > commondata->r_escape * commondata->r_escape &&
             d_status_bundle[i] == ACTIVE) {
             d_status_bundle[i] = STOP_CONDITION_COORD_RADIUS_EXCEEDED;
-        }
+        } // END IF: photon escape radius exceeded
         const double coordinate_time = @COORDINATE_TIME@;
         if (d_status_bundle[i] == ACTIVE &&
             (!isfinite(coordinate_time) ||
              coordinate_time < commondata->slot_manager_t_min ||
              coordinate_time >= commondata->t_start + 1.0e-5)) {
             d_status_bundle[i] = STOP_CONDITION_T_MAX_EXCEEDED;
-        }
-    }
+        } // END IF: photon coordinate time invalid
+    } // END LOOP: i processes accepted photon steps
     #undef IDX_F
 """.replace("@COORDINATE_TIME@", coordinate_time)
     if analytical:
@@ -164,7 +167,8 @@ def event_detection_manager_kernel(
             "    if (i >= chunk_size) return;",
         ).replace("continue;", "return;")
         kernel_body = kernel_body.replace(
-            "    }\n    #undef IDX_F", "    #undef IDX_F"
+            "    } // END LOOP: i processes accepted photon steps\n    #undef IDX_F",
+            "    #undef IDX_F",
         ).replace("commondata->", "d_commondata.")
         cuda_args = {
             "d_f_bundle": "const double *restrict",
@@ -197,7 +201,27 @@ def event_detection_manager_kernel(
     cfc.register_CFunction(
         includes=includes,
         prefunc=prefunc,
-        desc="Record accepted crossing steps and apply photon stop conditions.",
+        desc="""Record accepted crossing steps and apply photon stop conditions.
+
+        State arrays use nine components with stride BUNDLE_CAPACITY.
+        Integration parameters are affine parameters for direct evolution and
+        coordinate times for normalized evolution. Rejected steps are skipped.
+        CUDA uses the common parameters already stored in d_commondata.
+
+        @param[in] commondata Plane geometry, stop thresholds, and numerical time limits; unused by the CUDA host launcher.
+        @param[in] d_f_bundle Accepted photon states in component-major chunk storage.
+        @param[in] d_f_start_bundle Photon states at the start of each accepted RKF45 step.
+        @param[in] d_log_energy_bundle Logarithmic photon energy measures at the accepted states.
+        @param[in] d_integration_param_before Integration parameters before each accepted step.
+        @param[in] d_integration_param_after Integration parameters after each accepted step.
+        @param[in,out] d_status_bundle Chunk termination statuses; only ACTIVE entries are processed.
+        @param[in,out] d_on_pos_non_terminal_plane_prev Saved nonterminal plane sides, updated when the plane is checked.
+        @param[in,out] d_on_pos_terminal_plane_prev Saved terminal plane sides, updated when the plane is checked.
+        @param[in,out] plane_crossing_candidates Global photon crossing records, updated with accepted crossing steps.
+        @param[in] d_chunk_buffer Mapping from chunk entries to global photon indices.
+        @param chunk_size Number of photon entries in the chunk.
+        @param stream_idx CUDA launch stream index; unused by OpenMP.
+        """,
         cfunc_type="void",
         name="event_detection_manager_kernel",
         params=(

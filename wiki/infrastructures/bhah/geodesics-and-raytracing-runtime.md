@@ -32,11 +32,7 @@ the particle-independent forwarding `main` from `geodesics/main_single.py`.
 Both single-photon generators register optional event-plane parameters and the
 crossing functions used by their integrators.
 
-Claim evidence:
-- Claim: The standalone batch-photon entrypoint registers angular tile-grid controls, delegates observer-tetrad construction to the shared initializer, assigns normalized image-sample coordinates, and is distinct from both single-photon programs and evolution-time diagnostics.
-- Role: generated evidence
-- Deciding authority: `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/main_batch.py` — `main`
-- Corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/calculate_and_fill_blueprint_data_universal.py` — normalized record fields
+Evidence (generated evidence): `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/main_batch.py` — `main`; corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/calculate_and_fill_blueprint_data_universal.py` — normalized record fields
 
 The shared `set_initial_conditions_kernel` receives one metric evaluated at the
 observer event and constructs one validated metric-orthonormal tetrad per call.
@@ -51,11 +47,7 @@ magnitude to `E_camera = 1` before any normalized-variable conversion. This
 affine normalization is distinct from the hypersurface-normal measure
 `|alpha p^0|` used by later termination diagnostics.
 
-Claim evidence:
-- Claim: `set_initial_conditions_kernel` constructs one validated metric-orthonormal camera tetrad per call, initializes unit camera-tetrad energy magnitude `E_camera=1`, writes complete contravariant momentum, optionally initializes batch or single-photon plane-side flags, and performs normalized-variable conversion afterward when requested; the later hypersurface-normal energy magnitude is `|alpha p^0|`.
-- Role: public/scientific contract
-- Deciding authority: `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/set_initial_conditions_kernel.py` — observer initialization
-- Corroboration: `nrpy/examples/photon_batch_geodesic_integrator_numerical.py`, `nrpy/examples/photon_single_geodesic_integrator_analytical.py`, `nrpy/examples/photon_single_geodesic_integrator_numerical.py`, `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/single_integrator_analytical.py`, and `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/single_integrator_numerical.py` — shared observer and plane-side initialization arguments
+Evidence (public/scientific contract): `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/set_initial_conditions_kernel.py` — observer initialization; corroboration: `nrpy/examples/photon_batch_geodesic_integrator_numerical.py`, `nrpy/examples/photon_single_geodesic_integrator_analytical.py`, `nrpy/examples/photon_single_geodesic_integrator_numerical.py`, `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/single_integrator_analytical.py`, and `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/single_integrator_numerical.py` — shared observer and plane-side initialization arguments
 
 `batch_integrator_numerical` is the host orchestrator for photon batches. It
 registers integration limits and RKF45 controls in `commondata`, allocates the
@@ -72,11 +64,7 @@ manager applies the shared upper-only `evolution_measure_max` cutoff. Its
 normalization sidecar stores `|C_direct|` for direct EOM and
 `|exp(2u)(C_normalized - 1)|` for normalized EOM.
 
-Claim evidence:
-- Claim: `batch_integrator_numerical` orchestrates host-side photon batches, manages flat state, geometry, saved crossing-step, and result arrays, reuses trial-locked spatial centers for accepted-state metric refresh, computes the common log-energy bundle, and processes active rays through coordinate-time slots.
-- Role: generated evidence
-- Deciding authority: `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/batch_integrator_numerical.py` — `batch_integrator_numerical`
-- Corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/time_slot_manager_helpers.py` — `TimeSlotManager`
+Evidence (generated evidence): `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/batch_integrator_numerical.py` — `batch_integrator_numerical`; corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/time_slot_manager_helpers.py` — `TimeSlotManager`
 
 The RKF45 kernels are deliberately split. `interpolation_kernel` evaluates
 spacetime-specialized `g4DD_metric` and `connections` helpers for each ray and
@@ -90,11 +78,7 @@ control kernel commits accepted states; the accepted-state metric refresh,
 log-energy calculation, event manager, and time-slot helpers then decide which
 rays remain active and which step sizes advance.
 
-Claim evidence:
-- Claim: The split RKF45 pipeline writes ten metric and forty Christoffel components, evaluates the selected photon RHS at each stage, skips the stage-6 intermediate update, commits accepted states, and delegates downstream metric, energy, control, and termination decisions to the remaining kernels.
-- Role: public/scientific contract
-- Deciding authority: `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/interpolation_kernel.py`, `calculate_ode_rhs_kernel.py`, and `rkf45_stage_update.py` — generated kernel interfaces
-- Corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/rkf45_finalize_and_control_kernel.py` — acceptance/control
+Evidence (public/scientific contract): `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/interpolation_kernel.py`, `calculate_ode_rhs_kernel.py`, and `rkf45_stage_update.py` — generated kernel interfaces; corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/rkf45_finalize_and_control_kernel.py` — acceptance/control
 
 `event_detection_manager_kernel` applies log-energy and coordinate-radius
 termination rules and checks enabled planes after accepted RKF45 steps. In
@@ -128,11 +112,7 @@ The rows contain refined plane states, local coordinates, Brent iteration
 counts, and signed plane distances. Analytical batches transfer CUDA crossing
 records to the host before refinement.
 
-Claim evidence:
-- Claim: Analytical and numerical photon integrators save accepted crossing steps and refine plane states after evolution; batches also evaluate requested diagnostics at those states.
-- Role: descriptive behavior
-- Deciding authority: `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/event_detection_manager_kernel.py` — `event_detection_manager_kernel`
-- Corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/find_plane_crossings_brent.py` — analytical and numerical refinement and terminal selection; `single_integrator_analytical.py` and `single_integrator_numerical.py` — single-photon crossing output; `batch_integrator_analytical.py` and `batch_integrator_numerical.py` — sparse crossing files and plane diagnostics; `handle_non_terminal_plane_intersection.py` and `handle_terminal_plane_intersection.py` — local coordinates and radius filtering
+Evidence (descriptive behavior): `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/event_detection_manager_kernel.py` — `event_detection_manager_kernel`; corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/find_plane_crossings_brent.py` — analytical and numerical refinement and terminal selection; `single_integrator_analytical.py` and `single_integrator_numerical.py` — single-photon crossing output; `batch_integrator_analytical.py` and `batch_integrator_numerical.py` — sparse crossing files and plane diagnostics; `handle_non_terminal_plane_intersection.py` and `handle_terminal_plane_intersection.py` — local coordinates and radius filtering
 
 Blueprint headers carry tile identity/counts, `alpha_w`, `alpha_h`, and binary-layout
 version 8. Each native same-build record is 124 bytes. Records carry nonterminal
@@ -149,11 +129,7 @@ vertical raster flip, while plane diagnostics remain available to
 `blueprint_analysis.py`. That analysis also consumes optional matching
 normalization sidecars and plots their magnitudes by termination status.
 
-Claim evidence:
-- Claim: Blueprint binary-layout version 8 uses 124-byte records for terminal texture coordinates, refined nonterminal crossing diagnostics, final affine parameter and coordinate time, final angles, and normalized image-sample fractions; the renderer preserves the documented vertical raster flip.
-- Role: generated evidence
-- Deciding authority: `nrpy/examples/geodesic_visualizations/blueprint_config_and_schema.py` — binary-layout constants and dtype
-- Corroboration: `nrpy/examples/geodesic_visualizations/visualize_lensed_image.py` — image placement
+Evidence (generated evidence): `nrpy/examples/geodesic_visualizations/blueprint_config_and_schema.py` — binary-layout constants and dtype; corroboration: `nrpy/examples/geodesic_visualizations/visualize_lensed_image.py` — image placement
 
 Metric and connection generation is shared by photon and massive geodesic
 runtimes. `g4DD_metric` writes the upper-triangular 10-component covariant
@@ -165,11 +141,7 @@ the spacetime-specialized massive-geodesic GSL wrapper casts the GSL parameter
 pointer to `commondata_struct`, evaluates metric and connection locally, calls
 `calculate_ode_rhs_massive`, and returns `GSL_SUCCESS`.
 
-Claim evidence:
-- Claim: Analytic metric/connection helpers write ten metric and forty Christoffel components, while the massive GSL wrapper evaluates the specialized RHS and returns `GSL_SUCCESS`.
-- Role: public/scientific contract
-- Deciding authority: `nrpy/infrastructures/BHaH/general_relativity/geodesics/g4DD_metric.py`, `connections.py`, and `massive/ode_gsl_wrapper_massive.py` — generated helper registrations
-- Corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/massive/calculate_ode_rhs_massive.py` — massive RHS
+Evidence (public/scientific contract): `nrpy/infrastructures/BHaH/general_relativity/geodesics/g4DD_metric.py`, `connections.py`, and `massive/ode_gsl_wrapper_massive.py` — generated helper registrations; corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/massive/calculate_ode_rhs_massive.py` — massive RHS
 
 Numerical-spacetime interpolation is separate from analytic metric evaluation.
 `register_CFunction_numerical_interpolation` emits a CPU wrapper that assumes a
@@ -229,23 +201,11 @@ observer metric. Optional terminal and nonterminal normalization diagnostics
 use temporary statuses, skip failed diagnostic samples, and leave their
 sidecar entries as `NAN` without replacing a physical termination status.
 
-Claim evidence:
-- Claim: Numerical interpolation uses authoritative combined-container slice times, preserves the full logical grid including ghost zones, performs two-dimensional native spatial Lagrange interpolation with analytic basis derivatives and azimuthal tensor rotation, uses a nonuniform temporal barycentric basis, reuses caller-supplied trial-locked spatial centers, supplies RK stage coordinate time for normalized EOM, classifies ray-local spatial and temporal interpolation failures separately, and uses nominal spacing only for approximate synthetic temporal-stencil edge times.
-- Role: public/scientific contract
-- Deciding authority: `nrpy/infrastructures/BHaH/general_relativity/geodesics/interpolation/azimuthal_symmetry_spatial_lagrange_interpolation.py`, `temporal_lagrange_interpolation.py`, and `time_window_manager_numerical.py` — spatial interpolation, temporal interpolation, and time-window behavior
-- Corroboration: `nrpy/infrastructures/BHaH/diagnostics/combine_raytracing_time_slices.py` — combined layout and metadata; `nrpy/infrastructures/BHaH/interpolation/differentiate_interpolation_lagrange_uniform.h` — uniform-basis derivative helper
+Evidence (public/scientific contract): `nrpy/infrastructures/BHaH/general_relativity/geodesics/interpolation/azimuthal_symmetry_spatial_lagrange_interpolation.py`, `temporal_lagrange_interpolation.py`, and `time_window_manager_numerical.py` — spatial interpolation, temporal interpolation, and time-window behavior; corroboration: `nrpy/infrastructures/BHaH/diagnostics/combine_raytracing_time_slices.py` — combined layout and metadata; `nrpy/infrastructures/BHaH/interpolation/differentiate_interpolation_lagrange_uniform.h` — uniform-basis derivative helper
 
-Claim evidence:
-- Claim: Optional batch tracking records the first successful RKF45 request that uses synthetic stencil nodes outside `[0, t_numerical_end]`; direct endpoint and diagnostic interpolations are excluded, and each tile writes fixed-order per-photon records with `NaN` times for false flags.
-- Role: runtime diagnostic output
-- Deciding authority: `nrpy/infrastructures/BHaH/general_relativity/geodesics/interpolation/numerical_interpolation.py` and `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/batch_integrator_numerical.py` — stencil classification, per-photon storage, and binary output
-- Corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/main_batch.py` — optional parameter, per-tile filename, and runtime telemetry
+Evidence (runtime diagnostic output): `nrpy/infrastructures/BHaH/general_relativity/geodesics/interpolation/numerical_interpolation.py` and `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/batch_integrator_numerical.py` — stencil classification, per-photon storage, and binary output; corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/main_batch.py` — optional parameter, per-tile filename, and runtime telemetry
 
-Claim evidence:
-- Claim: The numerical single-photon integrator passes tracking storage only to RKF45 stage interpolations and prints each boundary flag and first request time during cleanup when `perform_synthetic_slice_check` is enabled; diagnostic interpolations pass null tracking pointers.
-- Role: runtime diagnostic output
-- Deciding authority: `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/single_integrator_numerical.py` — single-photon tracker storage, evolution calls, and terminal reporting
-- Corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/interpolation/numerical_interpolation.py` — synthetic-node detection and first-request recording
+Evidence (runtime diagnostic output): `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/single_integrator_numerical.py` — single-photon tracker storage, evolution calls, and terminal reporting; corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/interpolation/numerical_interpolation.py` — synthetic-node detection and first-request recording
 
 Numerical endpoint dispatch is piecewise constant. At or below the first stored
 time, the first slice is spatially interpolated; at or above the selected final
@@ -258,11 +218,7 @@ stored Christoffels at endpoints. The `g4DD_d0` padding policy is not controlled
 by `--raytracing-static-christoffels`; that flag changes the exported final
 Christoffel payload only.
 
-Claim evidence:
-- Claim: Numerical endpoint dispatch reuses the first/final stored slices as piecewise-constant continuations; frozen `g4DD_d0` nodes retain endpoint metric and spatial-derivative data but zero metric time derivatives, while `--raytracing-static-christoffels` affects only exported GammaUDD data.
-- Role: public/scientific contract
-- Deciding authority: `nrpy/infrastructures/BHaH/general_relativity/geodesics/interpolation/numerical_interpolation.py` — endpoint dispatch; `output_raytracing_data.py` — payload mode
-- Corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/interpolation/temporal_lagrange_interpolation.py` — temporal endpoint handling
+Evidence (public/scientific contract): `nrpy/infrastructures/BHaH/general_relativity/geodesics/interpolation/numerical_interpolation.py` — endpoint dispatch; `output_raytracing_data.py` — payload mode; corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/interpolation/temporal_lagrange_interpolation.py` — temporal endpoint handling
 
 Startup reads `.bin` `NGHOSTS` metadata and uses that value to convert between
 native coordinates and stored grid indices, including the two stored azimuthal
@@ -274,11 +230,30 @@ the requested native stencil; the relevant `.par` controls are
 `observer_x/y/z`, `r_escape`, and
 `numerical_spacetime_spatial_interp_half_width`.
 
-Claim evidence:
-- Claim: Numerical interpolation uses the `.bin` ghost-zone count for stored grid indices, independently of the finite-difference `NGHOSTS` macro; startup rejects insufficient ghost-zone capacity and observer or positive Cartesian `r_escape` probes that cannot support the requested native stencil.
-- Role: public/scientific contract
-- Deciding authority: `nrpy/infrastructures/BHaH/general_relativity/geodesics/interpolation/time_window_manager_numerical.py` — metadata loading and startup domain validation; `nrpy/infrastructures/BHaH/general_relativity/geodesics/interpolation/azimuthal_symmetry_spatial_lagrange_interpolation.py` — stored grid indices
-- Corroboration: `nrpy/infrastructures/BHaH/xx_tofrom_Cart.py` — Cartesian-to-native inversion and nearest stored index
+Evidence (public/scientific contract): `nrpy/infrastructures/BHaH/general_relativity/geodesics/interpolation/time_window_manager_numerical.py` — metadata loading and startup domain validation; `nrpy/infrastructures/BHaH/general_relativity/geodesics/interpolation/azimuthal_symmetry_spatial_lagrange_interpolation.py` — stored grid indices; corroboration: `nrpy/infrastructures/BHaH/xx_tofrom_Cart.py` — Cartesian-to-native inversion and nearest stored index
+
+The spatial helper `azimuthal_symmetry_spatial_lagrange_interpolation` supports
+`SinhCylindricalv2n2` data with exactly two stored phi planes separated by pi.
+The generated function rejects other plane counts or separations. It builds
+`2*numerical_spacetime_spatial_interp_half_width + 1` stencil points in each
+of the two non-azimuthal native directions around the selected center. The
+center can be fixed by the caller for an RKF45 trial or selected from the
+photon position.
+
+The stencil reads the full stored grid, including ghost zones.
+`azimuthal_symmetry_spatial_lagrange_point_index_from_full_payload_indices`
+checks each storage index and converts it to the serialized point-record
+index. Cartesian metric and connection components are accumulated directly
+with the value weights; metric methods also use differentiated Lagrange
+weights for the two native derivatives. The old reflected-node mapping and
+per-node rotation are absent. After accumulation, the helper rotates the
+interpolated tensors by `target_phi - phi_ref` to the target azimuth. Metric
+methods obtain the phi derivative from that rotation and transform the native
+spatial derivatives to Cartesian derivatives with the inverse reference-metric
+Jacobian. This describes the generated calculation; it does not establish a
+boundary-interpolation convergence rate.
+
+Evidence (descriptive behavior): [azimuthal_symmetry_spatial_lagrange_interpolation.py](../../../nrpy/infrastructures/BHaH/general_relativity/geodesics/interpolation/azimuthal_symmetry_spatial_lagrange_interpolation.py), `register_CFunction_azimuthal_symmetry_spatial_lagrange_interpolation`; corroboration: [output_raytracing_data.py](../../../nrpy/infrastructures/BHaH/diagnostics/output_raytracing_data.py), `register_CFunction_output_raytracing_data` (Cartesian tensor records including ghost zones)
 
 Evolution-time raytracing export lives under BHaH diagnostics. When enabled by
 `register_all_diagnostics`, the diagnostics function calls
@@ -296,11 +271,7 @@ stored and applies its own endpoint policy. `combine_raytracing_time_slices.py`
 then parses those stage-1 files, validates headers, sorts by simulation time,
 and writes a read-only stacked container for downstream interpolation.
 
-Claim evidence:
-- Claim: Evolution-time export is host/OpenMP, single-grid, SinhCylindricalv2n2-only in the documented path; it writes mode-selected Cartesian metric/geometry payloads over the full logical grid, and optional static Christoffels affect only GammaUDD values on the last scheduled output while the default remains nonstatic.
-- Role: generated evidence
-- Deciding authority: `nrpy/infrastructures/BHaH/diagnostics/diagnostics.py` and `output_raytracing_data.py` — diagnostics registration and exporter
-- Corroboration: `nrpy/infrastructures/BHaH/diagnostics/combine_raytracing_time_slices.py` — stage-1 validation and combined container
+Evidence (generated evidence): `nrpy/infrastructures/BHaH/diagnostics/diagnostics.py` and `output_raytracing_data.py` — diagnostics registration and exporter; corroboration: `nrpy/infrastructures/BHaH/diagnostics/combine_raytracing_time_slices.py` — stage-1 validation and combined container
 
 ## Sources
 
@@ -329,6 +300,7 @@ Claim evidence:
 - [azimuthal_symmetry_spatial_lagrange_interpolation.py](../../../nrpy/infrastructures/BHaH/general_relativity/geodesics/interpolation/azimuthal_symmetry_spatial_lagrange_interpolation.py) - `register_CFunction_azimuthal_symmetry_spatial_lagrange_interpolation`
 - [temporal_lagrange_interpolation.py](../../../nrpy/infrastructures/BHaH/general_relativity/geodesics/interpolation/temporal_lagrange_interpolation.py) - `register_CFunction_temporal_lagrange_interpolation`
 - [differentiate_interpolation_lagrange_uniform.h](../../../nrpy/infrastructures/BHaH/interpolation/differentiate_interpolation_lagrange_uniform.h) - `compute_lagrange_basis_derivative_coeffs_xi`
+- [xx_tofrom_Cart.py](../../../nrpy/infrastructures/BHaH/xx_tofrom_Cart.py) - `register_CFunction_Cart_to_xx_and_nearest_i0i1i2_assume_valid`
 - [output_raytracing_data.py](../../../nrpy/infrastructures/BHaH/diagnostics/output_raytracing_data.py) - `register_CFunction_output_raytracing_data`, `raytracing_data_point_index_from_logical_indices`
 - [combine_raytracing_time_slices.py](../../../nrpy/infrastructures/BHaH/diagnostics/combine_raytracing_time_slices.py) - `InputSliceInfo`, `Layout`
 - [diagnostics.py](../../../nrpy/infrastructures/BHaH/diagnostics/diagnostics.py) - `register_all_diagnostics`, `enable_raytracing_data_output`
@@ -339,3 +311,4 @@ Claim evidence:
 - [Diagnostics Output And Checkpointing](diagnostics-output-and-checkpointing.md)
 - [Geodesics](../../equations/general-relativity/geodesics.md)
 - [Black Hole Evolution](../../examples/black-hole-evolution.md)
+- Depends on: [Grids, Coordinates, Reference Metrics, And Boundaries](grids-coordinates-reference-metrics-and-boundaries.md)

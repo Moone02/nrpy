@@ -41,11 +41,7 @@ production mode and cannot be combined with either calibration flag):
 | `-seobnrv5_nrnqc_bob` | `seobnrv5_nrnqc_bob` | native numerical-relativity NQC | BOB-informed merger-ringdown | BHaH C project with GSL |
 | `-seobnrv5_nrpy` | `seobnrv5_nrpy` | native numerical-relativity NQC | native SEOBNRv5 merger-ringdown | BHaH C project with GSL |
 
-Claim evidence:
-- Claim: `nrpy.examples.seobnrv5_aligned_spin_inspiral` defaults to `-seobnrv5_bob` when no approximant flag is supplied, then optionally accepts one of three mutually exclusive calibration/selector flags (`-calibration_no_spin`, `-calibration_spin`, `-nrpy_calibrated`), where `-nrpy_calibrated` selects the NRPy-calibrated `a6`/`Delta_t_NS` fit in production mode and cannot be combined with either calibration flag; the three approximant flags map to generated project names `seobnrv5_bob`, `seobnrv5_nrnqc_bob`, and `seobnrv5_nrpy` with the NQC/merger-ringdown/dependency-class combinations in the adjacent table.
-- Role: descriptive behavior
-- Deciding authority: [seobnrv5_aligned_spin_inspiral.py](../../nrpy/examples/seobnrv5_aligned_spin_inspiral.py), `argparse` flag block and the `project_name` base-name assignment in the module `__main__` body
-- Corroboration: none available; no registered test exercises this generator's flag parsing or table-mapped output
+Evidence (descriptive behavior): [seobnrv5_aligned_spin_inspiral.py](../../nrpy/examples/seobnrv5_aligned_spin_inspiral.py), `argparse` flag block and the `project_name` base-name assignment in the module `__main__` body (no registered test exercises this generator's flag parsing or table-mapped output)
 
 Project-name expansion is string-based. The script starts from the approximant
 base name, then appends `_calibration_no_spin` for `-calibration_no_spin`,
@@ -59,11 +55,7 @@ writes `project/seobnrv5_nrpy_calibration_spin/`, and
 `project/seobnrv5_bob_nrpy_calibrated/`. These flags also flow into SEOBNRv5
 aligned-spin coefficient registration, so they are not only naming suffixes.
 
-Claim evidence:
-- Claim: Project-name expansion is string-based: the generator starts from the approximant base name, then appends `_calibration_no_spin`, `_calibration_spin`, or `_nrpy_calibrated`; it rejects combining the two calibration flags and rejects combining `-nrpy_calibrated` with either calibration flag, so `-seobnrv5_bob -calibration_no_spin` writes `project/seobnrv5_bob_calibration_no_spin/`, `-seobnrv5_nrpy -calibration_spin` writes `project/seobnrv5_nrpy_calibration_spin/`, and `-seobnrv5_bob -nrpy_calibrated` writes `project/seobnrv5_bob_nrpy_calibrated/`.
-- Role: descriptive behavior
-- Deciding authority: [seobnrv5_aligned_spin_inspiral.py](../../nrpy/examples/seobnrv5_aligned_spin_inspiral.py), `project_name` string-assignment block and the `calibration_no_spin`/`calibration_spin`/`nrpy_calibrated` `ValueError` guards
-- Corroboration: none available; no registered test exercises this generator's project-name string construction
+Evidence (descriptive behavior): [seobnrv5_aligned_spin_inspiral.py](../../nrpy/examples/seobnrv5_aligned_spin_inspiral.py), `project_name` string-assignment block and the `calibration_no_spin`/`calibration_spin`/`nrpy_calibrated` `ValueError` guards (no registered test exercises this generator's project-name string construction)
 
 The SEOBNRv5 waveform projects are GSL-backed C projects. The generator sets
 `Infrastructure` to `BHaH`, registers C functions for commondata I/O,
@@ -102,11 +94,9 @@ the package, imports the coefficient function, and calls it once with
 Python-scalar inputs; it does not run the generated basic test or check any
 returned value, JAX accelerator, or numerical result.
 
-Claim evidence:
-- Claim: Both `codegen-ubuntu` and `codegen-mac` generate `sebobv1_jax`, run `pip install .` in the generated project, import `SEOBNRv5_aligned_spin_coefficients`, call it once without a JAX transformation such as `jax.jit`, with the Python-scalar inputs `(1.5, 0.3, -0.2, 0.02, 2.4627455127717882e-05, 50.0)`, and print the returned `Commondata`. The step fails only if generation, installation, import, or the call raises; it asserts no returned field or value and does not run the generated pytest, a float32 input, a traced function, or an accelerator.
-- Role: CI behavior
-- Deciding authority: [main.yml](../../.github/workflows/main.yml), jobs `codegen-ubuntu` and `codegen-mac`
-- Corroboration: `none available`; no other configured file restates these job commands
+[Generated Project
+CI](../validation/generated-project-ci.md#sebobv1_jax-install-and-call-step)
+gives the exact configured `sebobv1_jax` CI step and its evidence.
 
 The generated metadata declares `jax`, `jaxlib>=0.4.0`, and
 `numpy>=1.21.0`; official JAX [Installation](https://docs.jax.dev/en/latest/installation.html)
@@ -148,11 +138,7 @@ approximants depending on externally supplied calibration coefficients that
 this harness runs with placeholder parfile defaults. `sebobv2_consistency_check`
 has no calibration-mode variants and is unaffected by this behavior.
 
-Claim evidence:
-- Claim: For calibration-mode approximants (`_calibration_no_spin`/`_calibration_spin` in the directory name), the SEOBNRv5-family consistency script treats each input set's trusted/current executable run as its own success/failure outcome instead of letting a crash propagate: an input set where both executables succeed or both fail contributes no regression signal (excluded from the median rather than aborting the script), but an input set where one succeeds and the other crashes is reported as a regression and fails the run regardless of the median comparison; `sebobv2_consistency_check` has no calibration-mode variants and is unaffected.
-- Role: descriptive behavior
-- Deciding authority: [sebob_consistency_check.py](../../nrpy/examples/tests/sebob_consistency_check.py), `process_input_set`, `__main__` (asymmetric-failure and consistent-failure branches)
-- Corroboration: none available; reproducing this branch requires built trusted/current SEOBNRv5 calibration-mode executables not rebuilt in this pass
+Evidence (descriptive behavior): [sebob_consistency_check.py](../../nrpy/examples/tests/sebob_consistency_check.py), `process_input_set`, `__main__` (asymmetric-failure and consistent-failure branches)
 
 These consistency scripts document the example workflow, not a new validation
 subsystem. The broader CI page is context for where generated projects are
