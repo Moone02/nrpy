@@ -16,9 +16,8 @@ Grids with angular coordinates must use each coordinate system's defining
 angular bounds. The number of phi gridpoints must be even wherever an inner
 boundary identification uses the half-turn `phi -> phi + pi`, at a pole, the
 origin, the cylindrical axis, or the `SymTP` focal segment. `SymTP` and
-`SinhSymTP` also need an even `xx1` count, and a `RingHoleySinhSpherical` grid
-with fewer than `2 NGHOSTS` theta gridpoints needs even `Nphi`, and even
-`Ntheta` unless `Nphi = 2`; every other theta count may be odd or even.
+`SinhSymTP` also need an even `xx1` count, and `RingHoleySinhSpherical` needs
+`Ntheta >= 2 NGHOSTS`; every other theta count may be odd or even.
 [Hard Requirements For Angular Inner Boundaries](#hard-requirements-for-angular-inner-boundaries)
 states these requirements before
 [Inner Ghost Points In Interpolation Stencils](#inner-ghost-points-in-interpolation-stencils)
@@ -170,6 +169,14 @@ such as `apply_inner_bcs` or `apply_inner_boundaries` refer to
 
 Evidence (descriptive behavior): [apply_bcs_inner_only.py](../../../nrpy/infrastructures/BHaH/CurviBoundaryConditions/apply_bcs_inner_only.py), `generate_apply_bcs_inner_only__kernel_body`; corroboration: [apply_bcs_inner_only_specific_gfs.py](../../../nrpy/infrastructures/BHaH/CurviBoundaryConditions/apply_bcs_inner_only_specific_gfs.py), `register_CFunction_apply_bcs_inner_only_specific_gfs`
 
+The second-order extrapolation in `apply_bcs_outerextrap_and_inner()` sets
+each pure outer point from the three points next to it along the inward normal
+of its face. Every direction with an outer face therefore needs at least three
+interior gridpoints; with fewer, the extrapolation reads ghost points that do
+not yet hold valid values.
+
+Evidence (descriptive behavior): [apply_bcs_outerextrap_and_inner.py](../../../nrpy/infrastructures/BHaH/CurviBoundaryConditions/apply_bcs_outerextrap_and_inner.py), `generate_apply_bcs_outerextrap_and_inner_only__kernel_body` (no test fills a grid)
+
 ### Hard Requirements For Angular Inner Boundaries
 
 Every angular coordinate must span its coordinate system's defining interval.
@@ -183,13 +190,17 @@ where the `SymTP` inverse map `Cart_to_xx[1]`, used by both systems through
 their `SymTP` eigencoordinate, takes the square root of a difference that
 roundoff can make negative, and `bcstruct_set_up()` then converts NaN to an
 index.
-`RingHoleySinhSpherical` needs no even count when `Ntheta >= 2 NGHOSTS`, which
-keeps its theta ghost points strictly between the poles. A coarser theta grid
-needs even `Nphi`, and even `Ntheta` unless `Nphi = 2`: an odd `Ntheta` puts a
-theta ghost point exactly on a pole, where `bcstruct_set_up()` exits for
-`Nphi > 2`, and an even `Ntheta` sends theta ghost points across a pole, where
-the half-turn applies. Every other angular count, including the wedge counts,
-may be odd.
+`RingHoleySinhSpherical` needs `Ntheta >= 2 NGHOSTS`, which keeps every theta
+ghost point strictly between the poles; neither of its counts then needs to be
+even. A coarser theta grid is an excluded configuration: its theta ghost points
+reach a pole, where `bcstruct_set_up()` can exit or can map some inner boundary
+points to other inner boundary points, which the single copy pass of
+`apply_bcs_inner_only()` can leave unfilled. Every other angular count,
+including the wedge counts, may be odd. On a single grid, the 1D setup
+`Ntheta = Nphi = 2` on `Spherical`, `SinhSpherical`, `SinhSphericalv2n*`, and
+`HoleySinhSpherical`, and the axisymmetric setup with a phi count of 2, meet
+these requirements; on `SymTP` and `SinhSymTP`, the axisymmetric setup also
+needs an even `xx1` count.
 These are required inputs to the inner-boundary mapping, not adjustable
 defaults. The bounds are interval endpoints, which are cell faces rather than
 the first and last cell centers. `ReferenceMetric` defines them, and
@@ -197,14 +208,14 @@ the first and last cell centers. `ReferenceMetric` defines them, and
 `xxmin*`, `xxmax*`, and `PI` are not parameter-file inputs. The counts are the
 final `Nxx*` after that function multiplies every count other than 2 by
 `convergence_factor` and truncates the product to an integer, so a
-`convergence_factor` that makes a count odd where it must be even gives an
+`convergence_factor` that makes a count violate these requirements gives an
 excluded configuration.
 
 | Coordinate systems | Angular coordinates and defining bounds | Identifications used by inner boundaries |
 | --- | --- | --- |
 | `Spherical`, `SinhSpherical`, `SinhSphericalv2n*` | theta = `xx1` in `[0, pi]`; phi = `xx2` in `[-pi, pi]` | seam `phi -> phi +/- 2 pi`; poles `theta -> -theta` or `2 pi - theta` with `phi -> phi + pi`; origin `r -> -r`, `theta -> pi - theta`, `phi -> phi + pi` |
 | `HoleySinhSpherical` | theta = `xx1` in `[0, pi]`; phi = `xx2` in `[-pi, pi]` | seam and poles; the inner radial face is an outer boundary |
-| `RingHoleySinhSpherical` | theta = `xx1` in `[pi/4, 3 pi/4]`; phi = `xx2` in `[-pi, pi]` | when `Ntheta >= 2 NGHOSTS`, seam only, and the theta faces are outer boundaries; the inner radial face is an outer boundary |
+| `RingHoleySinhSpherical` | theta = `xx1` in `[pi/4, 3 pi/4]`; phi = `xx2` in `[-pi, pi]` | seam only; the theta faces and the inner radial face are outer boundaries |
 | `Cylindrical`, `SinhCylindrical`, `SinhCylindricalv2n*` | phi = `xx1` in `[-pi, pi]` | seam; axis `rho -> -rho` with `phi -> phi + pi` |
 | `SymTP`, `SinhSymTP` | `xx1` in `[0, pi]`; phi = `xx2` in `[-pi, pi]` | seam; poles `xx1 -> -xx1` or `2 pi - xx1` with `phi -> phi + pi`; focal segment `xx0 -> -xx0` with `phi -> phi + pi` |
 | `LWedgeHSinhSph`, `UWedgeHSinhSph` | theta = `xx1` in `[pi/4, 3 pi/4]`; phi = `xx2` in `[-pi/4, pi/4]` | none; with eigencoordinate `Cartesian`, every ghost point is a pure outer boundary point |
@@ -226,16 +237,17 @@ cell centers onto theta cell centers for any `Ntheta`. With the prescribed
 bounds and the even counts above, every identification in the table therefore
 recovers an existing same-grid point.
 
-Evidence (public/scientific contract): [reference_metric.py](../../../nrpy/reference_metric.py), `spherical_like`, `cylindrical_like`, `prolate_spheroidal_like` (including its `SymTP` `Cart_to_xx`), and `spherical_wedge_like`; corroboration: [numerical_grids_and_timestep.py](../../../nrpy/infrastructures/BHaH/numerical_grids_and_timestep.py), `register_CFunction_numerical_grid_params_Nxx_dxx_xx`; [reference_metric_Spherical.py](../../../nrpy/tests/reference_metric_Spherical.py), `trusted_dict` entries `xxmin_1`, `xxmax_1`, `xxmin_2`, and `xxmax_2`; [bcstruct_set_up.py](../../../nrpy/infrastructures/BHaH/CurviBoundaryConditions/bcstruct_set_up.py), `Cfunction__EigenCoord_set_x0x1x2_inbounds__i0i1i2_inbounds_single_pt` (no test covers excluded angular configurations; none is permitted)
+Evidence (public/scientific contract): [reference_metric.py](../../../nrpy/reference_metric.py), `spherical_like`, `cylindrical_like`, `prolate_spheroidal_like` (including its `SymTP` `Cart_to_xx`), and `spherical_wedge_like`; corroboration: [numerical_grids_and_timestep.py](../../../nrpy/infrastructures/BHaH/numerical_grids_and_timestep.py), `register_CFunction_numerical_grid_params_Nxx_dxx_xx`; [apply_bcs_inner_only.py](../../../nrpy/infrastructures/BHaH/CurviBoundaryConditions/apply_bcs_inner_only.py), `generate_apply_bcs_inner_only__kernel_body`; [wave_equation_curvilinear.py](../../../nrpy/examples/wave_equation_curvilinear.py), `Nxx_dict`; [reference_metric_Spherical.py](../../../nrpy/tests/reference_metric_Spherical.py), `trusted_dict` entries `xxmin_1`, `xxmax_1`, `xxmin_2`, and `xxmax_2`; [bcstruct_set_up.py](../../../nrpy/infrastructures/BHaH/CurviBoundaryConditions/bcstruct_set_up.py), `Cfunction__EigenCoord_set_x0x1x2_inbounds__i0i1i2_inbounds_single_pt` (no test covers excluded angular configurations; none is permitted)
 
 Boundary filling relies on these requirements and cannot repair a grid that
 violates them, because it only copies stored values. `bcstruct_set_up()` exits
 when a dst position does not match its src position; that exit reports a
 misaligned map but does not make it valid. A grid-setup function, exporter,
-combiner, or reader that accepts other angular bounds, or an odd count where the
-requirements above need an even one, does not make them a permitted simulation:
-shifted or shortened angular intervals and those odd counts are excluded
-configurations. Do not use them to claim a
+combiner, or reader that accepts other angular bounds, an odd count where the
+requirements above need an even one, or a `RingHoleySinhSpherical` grid with
+`Ntheta < 2 NGHOSTS` does not make them a permitted simulation: shifted or
+shortened angular intervals, those odd counts, and those coarse ring grids are
+excluded configurations. Do not use them to claim a
 regression or to justify coordinate bounds checks, interpolation repairs, extra
 modes, or coordinate-specific branches;
 [Contribution Style And Static Analysis](../../architecture/contribution-style-and-static-analysis.md)
@@ -336,11 +348,12 @@ an explicit change of Cartesian basis.
 - [bcstruct_set_up.py](../../../nrpy/infrastructures/BHaH/CurviBoundaryConditions/bcstruct_set_up.py) - `register_CFunction_bcstruct_set_up`
 - [BHaH_defines.py](../../../nrpy/infrastructures/BHaH/CurviBoundaryConditions/BHaH_defines.py) - `register_BHaH_defines_h`, `BHaH_defines_set_gridfunction_defines_with_parity_types`, `register_griddata_commondata`
 - [apply_bcs_outerradiation_and_inner.py](../../../nrpy/infrastructures/BHaH/CurviBoundaryConditions/apply_bcs_outerradiation_and_inner.py) - `register_CFunction_apply_bcs_outerradiation_and_inner`, `setup_Cfunction_radiation_bcs`
-- [apply_bcs_outerextrap_and_inner.py](../../../nrpy/infrastructures/BHaH/CurviBoundaryConditions/apply_bcs_outerextrap_and_inner.py) - `register_CFunction_apply_bcs_outerextrap_and_inner`, `register_CFunction_apply_bcs_outerextrap_and_inner_specific_gfs`
+- [apply_bcs_outerextrap_and_inner.py](../../../nrpy/infrastructures/BHaH/CurviBoundaryConditions/apply_bcs_outerextrap_and_inner.py) - `register_CFunction_apply_bcs_outerextrap_and_inner`, `register_CFunction_apply_bcs_outerextrap_and_inner_specific_gfs`, `generate_apply_bcs_outerextrap_and_inner_only__kernel_body`
 - [apply_bcs_inner_only.py](../../../nrpy/infrastructures/BHaH/CurviBoundaryConditions/apply_bcs_inner_only.py) - `register_CFunction_apply_bcs_inner_only`, `generate_apply_bcs_inner_only__kernel_body`
 - [apply_bcs_inner_only_specific_gfs.py](../../../nrpy/infrastructures/BHaH/CurviBoundaryConditions/apply_bcs_inner_only_specific_gfs.py) - `register_CFunction_apply_bcs_inner_only_specific_gfs`
 - [reference_metric.py](../../../nrpy/reference_metric.py) - `ReferenceMetric.__init__`, `spherical_like`, `cylindrical_like`, `prolate_spheroidal_like`, `spherical_wedge_like`
 - [reference_metric_Spherical.py](../../../nrpy/tests/reference_metric_Spherical.py) - `trusted_dict`
+- [wave_equation_curvilinear.py](../../../nrpy/examples/wave_equation_curvilinear.py) - `Nxx_dict`
 - [interpolation_3d_general__uniform_src_grid.py](../../../nrpy/infrastructures/BHaH/BHaHAHA/interpolation_3d_general__uniform_src_grid.py) - `register_CFunction_interpolation_3d_general__uniform_src_grid`
 - [diagnostic_gfs_set.py](../../../nrpy/infrastructures/BHaH/general_relativity/diagnostic_gfs_set.py) - `register_CFunction_diagnostic_gfs_set`
 - [diagnostics.py](../../../nrpy/infrastructures/BHaH/diagnostics/diagnostics.py) - `register_all_diagnostics`
