@@ -36,6 +36,7 @@ pages where a first-pass owner exists.
 | GridFunction | Registered evolved, auxiliary, or diagnostic grid quantity; see [Gridfunctions And Parameters](core/gridfunctions-and-parameters.md). |
 | commondata | Generated data that is common across grids, usually represented through `commondata_struct`; see [Gridfunctions And Parameters](core/gridfunctions-and-parameters.md). |
 | reference metric | Coordinate-system-aware metric context used by symbolic equations and infrastructures; see [Reference Metrics](core/reference-metrics.md). |
+| inner boundary point | Ghost point that `bcstruct_set_up()` maps to a different stored src point; `apply_bcs_inner_only()` and `apply_bcs_inner_only_specific_gfs()` copy the src value with its parity sign (informal names: `apply_inner_bcs`, `apply_inner_boundaries`; `build_apply_inner_bcs_block()` emits an `apply_bcs_inner_only()` call in the ADM initial-data reader); see [Grids, Coordinates, Reference Metrics, And Boundaries](infrastructures/bhah/grids-coordinates-reference-metrics-and-boundaries.md). |
 | indexed expression | Tensor or vector structure built with `nrpy.indexedexp`; see [Indexed Expressions](core/indexed-expressions.md). |
 | ADM | Arnowitt-Deser-Misner 3+1 quantities used by GR conversions and initial-data pages; see [Metric Conversions And Matter](equations/general-relativity/metric-conversions-and-matter.md). |
 | BSSN | Baumgarte-Shapiro-Shibata-Nakamura formulation family implemented by NRPy equation modules; see [BSSN Family](equations/general-relativity/bssn-family.md). |

@@ -330,6 +330,16 @@ establish the accuracy of the extracted modes.
 
 Evidence (descriptive behavior): [psi4.py](../../../nrpy/infrastructures/BHaH/general_relativity/psi4/psi4.py), `register_CFunction_psi4`; [psi4_spinweightm2_decomposition.py](../../../nrpy/infrastructures/BHaH/general_relativity/psi4_spinweightm2_decomposition.py) and [superB psi4_spinweightm2_decomposition.py](../../../nrpy/infrastructures/superB/general_relativity/psi4_spinweightm2_decomposition.py), `register_CFunction_psi4_spinweightm2_decomposition`; [grid.py](../../../nrpy/grid.py), `Cart_origin`; [cmdline_input_and_parfiles.py](../../../nrpy/infrastructures/BHaH/cmdline_input_and_parfiles.py), `register_CFunction_cmdline_input_and_parfile_parser`; corroboration: [xx_tofrom_Cart.py](../../../nrpy/infrastructures/BHaH/xx_tofrom_Cart.py), `register_CFunction_Cart_to_xx_and_nearest_i0i1i2_assume_valid`, which subtracts `Cart_origin*` from the global Cartesian point before the inverse map
 
+Shell interpolation runs only when the unclamped nearest index of every shell
+point lies in the grid interior; otherwise every mode at that radius is written
+as zero. Its stencils read the `DIAG_PSI4_REGF` and `DIAG_PSI4_IMGF` inner ghost
+points filled by `apply_bcs_inner_only_specific_gfs()`; no outer fill reaches
+these channels, as
+[Inner Ghost Points In Interpolation Stencils](grids-coordinates-reference-metrics-and-boundaries.md#inner-ghost-points-in-interpolation-stencils)
+describes.
+
+Evidence (descriptive behavior): [psi4_spinweightm2_decomposition.py](../../../nrpy/infrastructures/BHaH/general_relativity/psi4_spinweightm2_decomposition.py), `register_CFunction_psi4_spinweightm2_decomposition`; corroboration: [diagnostic_gfs_set.py](../../../nrpy/infrastructures/BHaH/general_relativity/diagnostic_gfs_set.py), `register_CFunction_diagnostic_gfs_set`
+
 `spin_weight_minus2_sph_harmonics` is registered in the BHaH special-functions
 branch. It registers `swm2sh_maximum_l_mode_to_compute` in commondata and emits
 a switch over every `m` in the inclusive source range `[-l, +l]` for every

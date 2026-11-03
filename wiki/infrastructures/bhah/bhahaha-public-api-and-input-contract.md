@@ -110,7 +110,11 @@ feed BHaH orchestration and should not be described as public C ABI.
 The generated app checks that `bah_num_resolutions_multigrid` is positive and
 that active `bah_Ntheta_array_multigrid` and `bah_Nphi_array_multigrid`
 entries are positive before running; the current check does not enforce an
-upper bound against the generated array length or `MAX_RESOLUTIONS`.
+upper bound against the generated array length or `MAX_RESOLUTIONS`. Every
+active entry must also be even, as the
+[angular inner-boundary requirements](grids-coordinates-reference-metrics-and-boundaries.md#hard-requirements-for-angular-inner-boundaries)
+prescribe for BHaHAHA's spherical grids with theta in `[0, pi]` and phi in
+`[-pi, pi]`; the check does not test parity, and the default entries are even.
 BBH mode is also generated-app policy: when enabled, it requires exactly three
 horizons, requires valid non-overlapping individual/common horizon indices,
 starts the two individual horizons active, and starts the common horizon
