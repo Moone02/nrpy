@@ -60,11 +60,7 @@ from the keys `BSSN_SSL_H` and `BSSN_SSL_SIGMA`. A line written under a
 coefficient's CodeParameter name (`C_CAHD`, `SSL_h`, `SSL_sigma`) instead of its
 key is reported as having no effect.
 
-Claim evidence:
-- Claim: The W and chi BSSN variants receive the corresponding CAHD factor using the minimum physical block spacing; the slow-start lapse subtracts `W SSL_h exp(-t^2/(2 SSL_sigma^2)) (alpha - W)` from the lapse right-hand side with `t` the RK stage time and `W` taken from the selected conformal factor, while KO is not scaled by W. The coefficients `C_CAHD`, `SSL_h`, and `SSL_sigma` are read from the keys `BSSN_CAHD_C`, `BSSN_SSL_H`, and `BSSN_SSL_SIGMA`, and a line under a CodeParameter name is never read. The conformal representation is a code-generation choice, not a runtime switch.
-- Role: descriptive behavior
-- Deciding authority: `nrpy/infrastructures/Dendro/general_relativity/rhs_eval.py`, `register_CFunction_rhs_eval`; `nrpy/infrastructures/Dendro/CodeParameters.py`, `Q1_TOML_PARAMETER_NAMES` and `output_toml_bindings`; `nrpy/examples/dendro_bssn.py`, `parse_args` and `main`.
-- Corroboration: `nrpy/infrastructures/Dendro/general_relativity/ADM_to_BSSN.py`, `register_CFunction_ADM_to_BSSN`, uses the selected conformal factor in initial-data conversion; `nrpy/examples/tests/dendro_application_check.py`, `Leg.run_negatives`, the unread-key warning case.
+Evidence (descriptive behavior): `nrpy/infrastructures/Dendro/general_relativity/rhs_eval.py`, `register_CFunction_rhs_eval`; `nrpy/infrastructures/Dendro/CodeParameters.py`, `Q1_TOML_PARAMETER_NAMES` and `output_toml_bindings`; `nrpy/examples/dendro_bssn.py`, `parse_args` and `main`; corroboration: `nrpy/infrastructures/Dendro/general_relativity/ADM_to_BSSN.py`, `register_CFunction_ADM_to_BSSN`, uses the selected conformal factor in initial-data conversion; `nrpy/examples/tests/dendro_application_check.py`, `Leg.run_negatives`, the unread-key warning case
 
 The initial octree is seeded with Dendro-GR's analytic
 `punctureDataPhysicalCoord` prescription, adapted into the generated entry
@@ -85,11 +81,7 @@ TwoPunctures -> ADM_to_BSSN -> zip/exchange/unzip -> physical boundary
 only interior values, and the following unzip and physical-boundary fill
 supply the padding that `initial_data_lambdaU` differentiates.
 
-Claim evidence:
-- Claim: Fresh evolution loads a precomputed TwoPunctures solution, converts its ADM data, computes the initial connection field from exchanged block data, then zips and floors/projects owned evolved nodes.
-- Role: descriptive behavior
-- Deciding authority: `nrpy/infrastructures/Dendro/main_cpp.py`, `output_main_cpp`; `nrpy/infrastructures/Dendro/solver_context.py`, `Ctx::initialize` within `output_solver_context_cpp`.
-- Corroboration: `nrpy/infrastructures/Dendro/general_relativity/floor_the_lapse_and_conformal_factor.py` and `enforce_detgbar_equals_detghat_trAzero.py`, owned-node CFunction signatures.
+Evidence (descriptive behavior): `nrpy/infrastructures/Dendro/main_cpp.py`, `output_main_cpp`; `nrpy/infrastructures/Dendro/solver_context.py`, `Ctx::initialize` within `output_solver_context_cpp`; corroboration: `nrpy/infrastructures/Dendro/general_relativity/floor_the_lapse_and_conformal_factor.py` and `enforce_detgbar_equals_detghat_trAzero.py`, owned-node CFunction signatures
 
 Apparent-horizon searches interpolate selected evolved BSSN fields and then
 convert each search point to ADM variables. `BSSN_to_ADM` reconstructs grid
@@ -97,20 +89,24 @@ fields used by ADM surface quantities; waveform extraction evaluates Psi4
 directly from the selected BSSN fields. Generated runtime services also provide
 physical boundaries, conformal-factor volume-weighted and unique-node constraint
 diagnostics, checkpoint and restart, and scheduled output. ADM surface
-quantities are written to `*_ADM.dat`: at the effective gravitational-wave output cadence,
+quantities are written by rank 0 to `*_ADM.dat`: at the effective gravitational-wave output cadence,
 unless that frequency is 0, one row with the step, time, the last listed
 extraction radius, and the ADM energy `E`, linear momentum `P_i`, and angular
 momentum `J_i`, printed with up to ten significant digits (default notation,
-trailing zeros dropped).
+trailing zeros dropped). This output, and the labeled diagnostic, Psi4 mode,
+`*_GW_L2.dat`, `*_BHLocations.dat`, parameter-dump, and VTU output described
+below, is the same in the fCCZ4 application.
 
 These columns are finite-radius surface integrals, not asymptotic ADM
 invariants. They are evaluated on the coordinate sphere of radius `r`, the last
 entry of `BSSN_GW_RADAII`, about the coordinate origin (no key moves the center).
 That entry is the outermost radius only for an ascending list, and no check
 enforces that order: wavelet mode 6 requires only that the first radius exceed 8
-and that the last radius not be below the first. The Lebedev quadrature uses the
-coordinate unit normal `n^i` and the area weight `4 pi r^2 w`. With the
-physical metric `gamma_ij` and extrinsic curvature `K_ij`:
+and that the last radius not be below the first. An empty `BSSN_GW_RADAII` is
+rejected at startup, so the list always has a last entry. The Lebedev
+quadrature uses the coordinate unit normal `n^i` and the area weight
+`4 pi r^2 w`. With the physical metric `gamma_ij` and extrinsic curvature
+`K_ij`:
 
 ```text
 E   = (1/16 pi) oint (d_j gamma_ij - d_i gamma_jj) n^i dS
@@ -126,26 +122,21 @@ helper compares the `E` and `J_z` of `*_ADM.dat` at its extraction radius with t
 solved TwoPunctures `E` and `J_z` scaled by `(1 + E/(2r))^3` and
 `1/(1 + E/(2r))^2`.
 
+Evidence (descriptive behavior): `nrpy/infrastructures/Dendro/solver_context.py`, `Ctx::adm_output` within `output_solver_context_cpp`; `nrpy/infrastructures/Dendro/general_relativity/adm_quantities.py`, `register_CFunction_adm_quantities`, and `adm_quantities_surface_data.py`, `register_CFunction_adm_quantities_surface_data` (the mass-flux and `K_ij - gamma_ij K` inputs); `nrpy/infrastructures/Dendro/main_cpp.py`, `output_main_cpp`, the `BSSN_GW_EXTRACT_FREQ` and `BSSN_GW_RADAII` reads; `Ctx::update_output_frequencies`; corroboration: `nrpy/examples/tests/dendro_application_check.py`, `Leg.check_run_a`, the closed-form comparison of the solved energy and angular momentum and the column use
+
 The labeled ASCII diagnostic files (`*_ADM.dat`, the
 constraint files, the Psi4 mode files, `*_GW_L2.dat`, and
 `*_BHLocations.dat`) open with column labels in the style of BHaHAHA's horizon
 diagnostics files: when the file is missing or empty, rank 0 first writes a
-title line naming the formulation and evolved conformal factor, then one
-`# column N = <name>: <meaning>` line per column. Dendro-GR writes
+`# <title>` line naming the formulation and evolved conformal factor and a `#`
+line, then one `# column N = <name>: <meaning>` line per column; a file that
+already has content receives no further labels. The step and time columns are
+named `TimeStep` and `time` (`t` in the Psi4 files), and the constraint and
+puncture-location columns use descriptive generated labels. Dendro-GR writes
 uncommented header lines for its corresponding waveform-norm and puncture
 location files. A restart appends below the existing local labels.
 
-Claim evidence:
-- Claim: At the effective gravitational-wave output cadence, unless that frequency is 0, rank 0 appends one row to `<BSSN_PROFILE_FILE_PREFIX>_ADM.dat` with the step, time, the last listed extraction radius `r`, and the seven ADM surface quantities (energy, three linear-momentum and three angular-momentum components). Each is a Lebedev-quadrature integral over the coordinate sphere of radius `r` about the coordinate origin with the coordinate unit normal and area weights `4 pi r^2 w`: a finite-radius value, not an asymptotic invariant. Values are printed with up to ten significant digits in default notation. An empty `BSSN_GW_RADAII` is rejected at startup, so the list always has a last entry. This applies to the fCCZ4 application as well.
-- Role: descriptive behavior
-- Deciding authority: `nrpy/infrastructures/Dendro/solver_context.py`, `Ctx::adm_output` within `output_solver_context_cpp`; `nrpy/infrastructures/Dendro/general_relativity/adm_quantities.py`, `register_CFunction_adm_quantities`, and `adm_quantities_surface_data.py`, `register_CFunction_adm_quantities_surface_data` (the mass-flux and `K_ij - gamma_ij K` inputs); `nrpy/infrastructures/Dendro/main_cpp.py`, `output_main_cpp`, the `BSSN_GW_EXTRACT_FREQ` and `BSSN_GW_RADAII` reads; `Ctx::update_output_frequencies`.
-- Corroboration: `nrpy/examples/tests/dendro_application_check.py`, `Leg.check_run_a`, the closed-form comparison of the solved energy and angular momentum and the column use.
-
-Claim evidence:
-- Claim: When `*_ADM.dat`, either constraint file, a `*_GW_l<l>_m<m>.dat` file, `*_GW_L2.dat`, or `*_BHLocations.dat` is missing or empty, rank 0 writes `# <title>`, `#`, and one `# column N = <name>: <meaning>` line per column before the first row; a file that already has content receives no further labels. The step and time columns are named `TimeStep` and `time` (`t` in the Psi4 files); Psi4 radius columns are `r0`, `r1`, ..., as in native `BSSN_GR`'s mode-file headers (native `*_GW_L2.dat` labels them `r=<radius>`); the constraint and puncture-location columns use descriptive generated labels. Native waveform-norm and puncture-location files instead use uncommented headers. This applies to the fCCZ4 application as well.
-- Role: descriptive behavior
-- Deciding authority: `nrpy/infrastructures/Dendro/solver_context.py`, `open_labeled_output` and its output paths within `output_solver_context_cpp`, and `diagnostic_meanings`.
-- Corroboration: `nrpy/infrastructures/BHaH/BHaHAHA/diagnostics_file_output.py`, the horizon diagnostics header this format follows; `nrpy/examples/tests/dendro_application_check.py`, `parse_table` and `parse_modes`, which read the labels.
+Evidence (descriptive behavior): `nrpy/infrastructures/Dendro/solver_context.py`, `open_labeled_output` and its output paths within `output_solver_context_cpp`, and `diagnostic_meanings`; corroboration: `nrpy/infrastructures/BHaH/BHaHAHA/diagnostics_file_output.py`, the horizon diagnostics header this format follows; `nrpy/examples/tests/dendro_application_check.py`, `parse_table` and `parse_modes`, which read the labels
 
 Each mode entry is `4 pi sum_i w_i Psi4(theta_i, phi_i) conj(sY_lm(theta_i, phi_i))`,
 the projection of Psi4 onto the spin-weight -2 spherical harmonic `sY_lm`. The
@@ -161,7 +152,8 @@ factor.
 
 Each Psi4 mode goes to its own `*_GW_l<l>_m<m>.dat` file, with Dendro-GR
 `BSSN_GR`'s name and row layout: the step, time and one complex `(Re,Im)` pair
-per extraction radius. Instead of native's uncommented step-0 header line, the
+per extraction radius, in scientific notation with 10 digits after the decimal
+point. Instead of native's uncommented step-0 header line, the
 column labels keep its names (`TimeStep`, `t`, `r0`, `r1`, ...) and give each
 radius's value. A reader that takes column names from native's first line, such
 as `BSSN_GR/scripts/getstrain.py` with `pandas.read_csv(sep='\t')`, must instead
@@ -169,11 +161,7 @@ skip `#` lines and name the columns from the labels. Files are written for every
 `l` from 2 to the largest entry of `BSSN_GW_L_MODES`; native `BSSN_GR` writes
 only the listed `l` values, which is the same set for the default list.
 
-Claim evidence:
-- Claim: Rank 0 appends each (l, m) mode, for l = 2..max(`BSSN_GW_L_MODES`) and m = -l..l, to `<BSSN_PROFILE_FILE_PREFIX>_GW_l<l>_m<m>.dat`: column labels, then one row per extraction step with the step, time and one `(Re,Im)` pair per extraction radius, in scientific notation with 10 digits after the decimal point. Each entry is `4 pi` times the Lebedev-weighted sum of Psi4 times the conjugate spin-weight -2 harmonic on coordinate spheres about the origin, with no radius factor; native `BSSN_GR` extracts the same way. Native `BSSN_GR` uses the same name and row layout, with an uncommented step-0 header line instead of the labels, and writes only the listed l values. This applies to the fCCZ4 application as well.
-- Role: descriptive behavior
-- Deciding authority: `nrpy/infrastructures/Dendro/solver_context.py`, `Ctx::gravitational_wave_output` within `output_solver_context_cpp`; `nrpy/infrastructures/Dendro/general_relativity/gravitational_waves.py`, `register_CFunction_gravitational_waves`; `nrpy/infrastructures/Dendro/general_relativity/psi4_eval.py`, `register_CFunction_psi4_eval` (the tetrad seeds).
-- Corroboration: Dendro-GR `BSSN_GR/include/gwExtract.h`, `GW::extractFarFieldPsi4`, per-mode file writer.
+Evidence (descriptive behavior): `nrpy/infrastructures/Dendro/solver_context.py`, `Ctx::gravitational_wave_output` within `output_solver_context_cpp`; `nrpy/infrastructures/Dendro/general_relativity/gravitational_waves.py`, `register_CFunction_gravitational_waves`; `nrpy/infrastructures/Dendro/general_relativity/psi4_eval.py`, `register_CFunction_psi4_eval` (the tetrad seeds); corroboration: Dendro-GR `BSSN_GR/include/gwExtract.h`, `GW::extractFarFieldPsi4`, per-mode file writer
 
 At the effective gravitational-wave extraction cadence, rank 0 also appends
 `<BSSN_PROFILE_FILE_PREFIX>_GW_L2.dat`. Each row gives the step and time, then
@@ -196,11 +184,7 @@ restart appends rows below the existing labels.
 The initial fresh-run row uses the initial centers, and evolved rows use the
 centers updated before diagnostics.
 
-Claim evidence:
-- Claim: At each active gravitational-wave extraction step, rank 0 appends `<BSSN_PROFILE_FILE_PREFIX>_GW_L2.dat` with the step, time and one complex pair per radius. Each pair contains the square roots of the MPI-reduced, unweighted sums of the squared real and imaginary interpolated Psi4 samples over valid Lebedev points. Rank 0 also appends `<BSSN_PROFILE_FILE_PREFIX>_BHLocations.dat` with the step, time and coordinates of both tracked puncture centers. Fresh runs write step 0; restarts do not repeat the checkpoint step. The same behavior is used by the fCCZ4 application.
-- Role: descriptive behavior
-- Deciding authority: `nrpy/infrastructures/Dendro/general_relativity/gravitational_waves.py`, `register_CFunction_gravitational_waves`; `nrpy/infrastructures/Dendro/solver_context.py`, `Ctx::gravitational_wave_output` and `Ctx::black_hole_locations_output`; `nrpy/infrastructures/Dendro/main_cpp.py`, `output_main_cpp`.
-- Corroboration: Dendro-GR `BSSN_GR/include/gwExtract.h`, `GW::extractFarFieldPsi4`; Dendro-GR `BSSN_GR/src/dataUtils.cpp`, `writeBHCoordinates`; `nrpy/examples/tests/dendro_application_check.py`, universal output parsing.
+Evidence (descriptive behavior): `nrpy/infrastructures/Dendro/general_relativity/gravitational_waves.py`, `register_CFunction_gravitational_waves`; `nrpy/infrastructures/Dendro/solver_context.py`, `Ctx::gravitational_wave_output` and `Ctx::black_hole_locations_output`; `nrpy/infrastructures/Dendro/main_cpp.py`, `output_main_cpp`; corroboration: Dendro-GR `BSSN_GR/include/gwExtract.h`, `GW::extractFarFieldPsi4`; Dendro-GR `BSSN_GR/src/dataUtils.cpp`, `writeBHCoordinates`; `nrpy/examples/tests/dendro_application_check.py`, universal output parsing
 
 On normal solver startup, rank 0 writes
 `<BSSN_PROFILE_FILE_PREFIX>__PARAM_DUMP__YYYY-MM-DD-HH-MM-SS.toml`, using
@@ -219,11 +203,7 @@ rerun can therefore reuse the same TwoPunctures solution file when its input
 parameters agree. The special `--tpid` utility run does not write an evolution
 parameter dump.
 
-Claim evidence:
-- Claim: A normal solver launch writes one rank-0 TOML file named `<BSSN_PROFILE_FILE_PREFIX>__PARAM_DUMP__YYYY-MM-DD-HH-MM-SS.toml`. It preserves supplied keys and tables, and adds consumed host fallback and registered runtime CodeParameter defaults only when every host fallback and mapped CodeParameter default for a missing key agrees. Inserted floating-point defaults retain enough digits to recover their double values, so the same TwoPunctures solution file can be reused. Conflicting keys remain absent to preserve their distinct call-site behavior. `--tpid` does not write the file. This applies to the fCCZ4 application as well.
-- Role: descriptive behavior
-- Deciding authority: `nrpy/infrastructures/Dendro/main_cpp.py`, `ParameterFile` and `output_main_cpp`; `nrpy/infrastructures/Dendro/CodeParameters.py`, `output_toml_default_assignments`.
-- Corroboration: Dendro-GR `BSSN_GR/src/bssngr_main.cpp`, `writeParamTOMLFile` call; Dendro-GR `BSSN_GR/src/parameters.cpp`, resolved parameter writer.
+Evidence (descriptive behavior): `nrpy/infrastructures/Dendro/main_cpp.py`, `ParameterFile` and `output_main_cpp`; `nrpy/infrastructures/Dendro/CodeParameters.py`, `output_toml_default_assignments`; corroboration: Dendro-GR `BSSN_GR/src/bssngr_main.cpp`, `writeParamTOMLFile` call; Dendro-GR `BSSN_GR/src/parameters.cpp`, resolved parameter writer
 
 VTU output follows Dendro-GR `BSSN_GR`'s selection and defaults. With
 `BSSN_VTU_Z_SLICE_ONLY` (default true) it writes the elements that touch the
@@ -239,14 +219,10 @@ and `At`, and B^i in NRPy's normalization. fCCZ4 adds `Theta_fCCZ4` at index
 `BSSN_VTU_OUTPUT_CONST_INDICES` select, in `BSSN_GR` numbering, `H`,
 `MD0..MD2`, `psi4_real` and `psi4_imag`. Both counts default to 1, so a
 parameter file without these keys writes `alpha` and `H`. Requested constraint
-or Psi4 fields are computed at the output step. Field names are NRPy's (`H`,
-not `C_HAM`).
+or Psi4 fields are computed at the output step, and only when requested. Field
+names are NRPy's (`H`, not `C_HAM`).
 
-Claim evidence:
-- Claim: With `BSSN_VTU_Z_SLICE_ONLY` true (the default), VTU output writes the z-normal slice through the domain center, and otherwise the full volume. It writes the selected evolved fields followed by the selected constraint and Psi4 fields, and computes constraints or Psi4 only when they are selected. Evolved indices refer to the generated field order; constraint indices use `BSSN_GR`'s order (C_HAM, C_MOM0-2, C_PSI4_REAL, C_PSI4_IMG). Both counts default to 1. This applies to the fCCZ4 application as well.
-- Role: descriptive behavior
-- Deciding authority: `nrpy/infrastructures/Dendro/solver_context.py`, `Ctx::write_vtu` within `output_solver_context_cpp`; `nrpy/infrastructures/Dendro/main_cpp.py`, `output_main_cpp`.
-- Corroboration: Dendro-GR `BSSN_GR/src/bssnCtx.cpp`, `BSSNCtx::write_vtu`; `BSSN_GR/src/parameters.cpp`, VTU parameter defaults.
+Evidence (descriptive behavior): `nrpy/infrastructures/Dendro/solver_context.py`, `Ctx::write_vtu` within `output_solver_context_cpp`; `nrpy/infrastructures/Dendro/main_cpp.py`, `output_main_cpp`; corroboration: Dendro-GR `BSSN_GR/src/bssnCtx.cpp`, `BSSNCtx::write_vtu`; `BSSN_GR/src/parameters.cpp`, VTU parameter defaults
 
 After one evolved-state halo exchange and unzip, solver context traverses blocks
 once. For each block it fills the exterior physical padding, calls
@@ -290,11 +266,7 @@ after merger. Matching AMR controls and
 diagnostic norms also does not prove identical mesh histories or evolved
 fields.
 
-Claim evidence:
-- Claim: Native CPU SSL/CAHD evolution uses radial RIT eta even when `ETA_CONST` is present, whereas generated BSSN uses constant eta; native requires its lapse-replacement option to match the generated full-psi W initial lapse. Native KO uses `KO_DISS_SIGMA` only with CAKO off; enabling CAKO selects chi-scaled gauge/other coefficients instead. Native tracks the punctures with a Heun predictor and corrector, selects its integrator by `BSSN_RK_TYPE`, takes its CFL spacing from the X-domain width, and defaults `BSSN_BH{1,2}_CONSTRAINT_R` to 5.0 and `BSSN_SCALE_VTU_AND_GW_EXTRACTION` to false, where the generated solver uses one explicit displacement, RK4, the smallest axis spacing, 1.0, and true. The native radial profile is `eta = (RIT_ETA_CENTRAL - RIT_ETA_OUTER) exp(-(r / RIT_ETA_WIDTH)^4) + RIT_ETA_OUTER` with defaults 2.0, 0.25, and 40.0, and the CPU RHS does not read `ETA_CONST`. The generated shift equations are `d_t beta^i = B^i + advection` and `d_t B^i = beta^j Dhat_j B^i + (3/4)(d_t Lambdabar^i - beta^j Dhat_j Lambdabar^i) - eta B^i`, with `d_t Lambdabar^i` including its own advection; native has `d_t B^i = d_t Gt^i - eta B^i + lambda[2] beta^j d_j B^i - lambda[3] beta^j d_j Gt^i`.
-- Role: descriptive behavior
-- Deciding authority: `nrpy/examples/dendro_bssn.py`, `main`; `nrpy/infrastructures/Dendro/general_relativity/rhs_eval.py`, `register_CFunction_rhs_eval` (the default shift option); `nrpy/equations/general_relativity/BSSN_gauge_RHSs.py`, `BSSN_gauge_RHSs` (the `GammaDriving2ndOrder_Covariant__Hatted` branch); `BSSN_GR/src/bssneqs_SSL_HD_dxsq.cpp`, `B_rhs`; `nrpy/infrastructures/Dendro/solver_context.py`, `Ctx::evolve_excision_centers` within `output_solver_context_cpp`; `nrpy/infrastructures/Dendro/main_cpp.py`, `output_main_cpp`; `BSSN_GR/src/rhs.cpp`, CPU eta, SSL/CAHD include selection, and CAKO branches; `BSSN_GR/src/TwoPunctures.cpp`, lapse replacement.
-- Corroboration: `nrpy/infrastructures/Dendro/CodeParameters.py`, q1 parameter mapping; `BSSN_GR/src/eta_RIT.inc.cpp`, radial formula; `BSSN_GR/src/parameters.cpp`, lapse and CAKO settings, `RIT_ETA_*`, constraint-radius, and scaling defaults; `BSSN_GR/src/bssngr_main.cpp`, post-merger CAKO switch, integrator selection, and CFL spacing; `BSSN_GR/src/grUtils.cpp`, `computeBHLocations`.
+Evidence (descriptive behavior): `nrpy/examples/dendro_bssn.py`, `main`; `nrpy/infrastructures/Dendro/general_relativity/rhs_eval.py`, `register_CFunction_rhs_eval` (the default shift option); `nrpy/equations/general_relativity/BSSN_gauge_RHSs.py`, `BSSN_gauge_RHSs` (the `GammaDriving2ndOrder_Covariant__Hatted` branch); `BSSN_GR/src/bssneqs_SSL_HD_dxsq.cpp`, `B_rhs`; `nrpy/infrastructures/Dendro/solver_context.py`, `Ctx::evolve_excision_centers` within `output_solver_context_cpp`; `nrpy/infrastructures/Dendro/main_cpp.py`, `output_main_cpp`; `BSSN_GR/src/rhs.cpp`, CPU eta, SSL/CAHD include selection, and CAKO branches; `BSSN_GR/src/TwoPunctures.cpp`, lapse replacement; corroboration: `nrpy/infrastructures/Dendro/CodeParameters.py`, q1 parameter mapping; `BSSN_GR/src/eta_RIT.inc.cpp`, radial formula; `BSSN_GR/src/parameters.cpp`, lapse and CAKO settings, `RIT_ETA_*`, constraint-radius, and scaling defaults; `BSSN_GR/src/bssngr_main.cpp`, post-merger CAKO switch, integrator selection, and CFL spacing; `BSSN_GR/src/grUtils.cpp`, `computeBHLocations`
 
 ### Optional Yo et al. adjustments
 
@@ -304,8 +276,8 @@ constraint adjustment to the evolution and shift-driver equations. Its runtime
 coefficient is `YBS_chi`, defaulting to 0, which disables the term; the
 recommended maximum is 2/3 for BSSN and 4/3 for fCCZ4, a customary choice for
 BSSN and a matching choice for fCCZ4, not a stability bound (see
-[BSSN Family](../../equations/general-relativity/bssn-family.md) and
-[fCCZ4](../../equations/general-relativity/fccz4.md)). This is the additional
+[YBS Gamma-Constraint Adjustment](../../equations/general-relativity/ybs-gamma-constraint-adjustment.md)
+and [fCCZ4](../../equations/general-relativity/fccz4.md)). This is the additional
 NRPy coefficient, with Brown's BSSN contribution retained separately. The help cites
 [Yo, Baumgarte, and Shapiro, arXiv:gr-qc/0209066](https://arxiv.org/abs/gr-qc/0209066),
 Eq. (45), and [Yo, Lin, and Cao, arXiv:1205.5111](https://arxiv.org/abs/1205.5111),
@@ -327,11 +299,7 @@ Kreiss--Oliger generation is controlled by
 There are no `--ko` or `--no-ko` arguments. The runtime strength remains
 `KO_DISS_SIGMA`.
 
-Claim evidence:
-- Claim: The Dendro examples expose independent default-off Gamma and momentum adjustments whose runtime strengths `YBS_chi` and `C_YBS_mom` default to 0, which removes each term; the recommended values are advice from the linked equation pages, not a stability guarantee; the momentum coefficient uses the current block's minimum physical spacing, the evolution CFL factor, and the conformal-factor weight `W`, without adding evolved fields.
-- Role: descriptive behavior
-- Deciding authority: `nrpy/examples/dendro_bssn.py` and `nrpy/examples/dendro_fccz4.py`, `parse_args` and `main`; `nrpy/infrastructures/Dendro/general_relativity/rhs_eval.py`, `register_CFunction_rhs_eval`; `nrpy/infrastructures/Dendro/CodeParameters.py`, `Q1_TOML_PARAMETER_NAMES`.
-- Corroboration: `nrpy/equations/general_relativity/BSSN_RHSs.py` and `fCCZ4_RHSs.py`, canonical adjustment construction; the cited Yo et al. equations.
+Evidence (descriptive behavior): `nrpy/examples/dendro_bssn.py` and `nrpy/examples/dendro_fccz4.py`, `parse_args` and `main`; `nrpy/infrastructures/Dendro/general_relativity/rhs_eval.py`, `register_CFunction_rhs_eval`; `nrpy/infrastructures/Dendro/CodeParameters.py`, `Q1_TOML_PARAMETER_NAMES`; corroboration: `nrpy/equations/general_relativity/BSSN_RHSs.py` and `fCCZ4_RHSs.py`, canonical adjustment construction; the cited Yo et al. equations
 
 ### q1 versus generated defaults
 
@@ -357,11 +325,7 @@ Keys](runtime-parameters.md) gives each key's fallback and q1 value. A run from
 the generated file alone therefore has no horizon finder, constant wavelet
 tolerance, no Nyquist refinement, and one VTU field of each kind.
 
-Claim evidence:
-- Claim: The packaged q1 file sets `ETA_CONST = 2.0`, `TPID_FILEPREFIX = "tp_q001"`, `BSSN_CAHD_C = 0.06`, and `BSSN_ELE_ORDER = 6`, whereas the generated `pars/bssn.toml` sets `ETA_CONST = 1.0`, `TPID_FILEPREFIX = "tp"`, `BSSN_CAHD_C = 0.06`, and `BSSN_ELE_ORDER` equal to the `--fd-order` value (the generated `pars/fccz4.toml` sets `BSSN_CAHD_C = 0.15`); the printed run commands name the q1 file; keys that q1 sets and the generated file omits take the host fallbacks in the generated run.
-- Role: descriptive behavior
-- Deciding authority: `nrpy/examples/q1.par.lowres.toml` (the key values); `nrpy/infrastructures/Dendro/param_toml.py`, `generate_default_parfile`; `nrpy/infrastructures/Dendro/general_relativity/rhs_eval.py`, `register_CFunction_rhs_eval` (the CAHD defaults); `nrpy/infrastructures/Dendro/main_cpp.py`, `output_main_cpp` (the host fallbacks); `nrpy/examples/dendro_bssn.py`, `main` (the printed commands).
-- Corroboration: `nrpy/infrastructures/Dendro/CodeParameters.py`, `Q1_TOML_PARAMETER_NAMES`, the key names of the registered coefficients.
+Evidence (descriptive behavior): `nrpy/examples/q1.par.lowres.toml` (the key values); `nrpy/infrastructures/Dendro/param_toml.py`, `generate_default_parfile`; `nrpy/infrastructures/Dendro/general_relativity/rhs_eval.py`, `register_CFunction_rhs_eval` (the CAHD defaults); `nrpy/infrastructures/Dendro/main_cpp.py`, `output_main_cpp` (the host fallbacks); `nrpy/examples/dendro_bssn.py`, `main` (the printed commands); corroboration: `nrpy/infrastructures/Dendro/CodeParameters.py`, `Q1_TOML_PARAMETER_NAMES`, the key names of the registered coefficients
 
 ### TwoPunctures inputs
 
@@ -388,11 +352,7 @@ that the solve ignores is still read, so no unread-key warning appears.
   masses. With zero, the solve iterates the bare masses to the ADM targets
   `q/(1+q)` and `1/(1+q)` (total mass 1) and the two keys are not read.
 
-Claim evidence:
-- Claim: The TwoPunctures solve uses the separation `2 TPID_PAR_B`, momenta built from `|BSSN_BH1.V_Y|` and `|BSSN_BH1.V_X|` as `P_plus = (-p_r, +p_t, 0)` and `P_minus = -P_plus`, zero spins, and either the bare masses `TPID_TARGET_M_PLUS` and `TPID_TARGET_M_MINUS` (when `TPID_GIVE_BARE_MASS` is nonzero) or ADM targets `q/(1+q)` and `1/(1+q)` from the ratio of `BSSN_BH{1,2}.MASS`; the keys `BSSN_BH{1,2}.X`, `.Y`, `.Z`, the spins, `V_Z`, and `BSSN_BH2.V_*` are not inputs of the solve, and `TPID_CENTER_OFFSET` is never read.
-- Role: descriptive behavior
-- Deciding authority: `nrpy/infrastructures/Dendro/main_cpp.py`, `output_main_cpp` (the `commondata` setup and the seed spins); `nrpy/infrastructures/BHaH/general_relativity/TwoPunctures/ID_persist_struct.py`, `register_CFunction_initialize_ID_persist_struct` (mass, momentum, spin, and separation assignment).
-- Corroboration: `nrpy/examples/tests/dendro_application_check.py`, `Leg.check_run_a`, the solved ADM energy and angular momentum and the equal-mass reflection symmetry of the horizons for the q1-like profile.
+Evidence (descriptive behavior): `nrpy/infrastructures/Dendro/main_cpp.py`, `output_main_cpp` (the `commondata` setup and the seed spins); `nrpy/infrastructures/BHaH/general_relativity/TwoPunctures/ID_persist_struct.py`, `register_CFunction_initialize_ID_persist_struct` (mass, momentum, spin, and separation assignment); corroboration: `nrpy/examples/tests/dendro_application_check.py`, `Leg.check_run_a`, the solved ADM energy and angular momentum and the equal-mass reflection symmetry of the horizons for the q1-like profile
 
 ## Sources
 

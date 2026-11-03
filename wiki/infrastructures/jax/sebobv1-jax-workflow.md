@@ -59,9 +59,10 @@ tables for final-spin values and the real/imaginary `(2,2)` QNM data, computes
 `omega_qnm` and `tau_qnm` with `jnp.interp`, and emits a generated
 `Commondata(...)` return expression populated with masses, spins, initial
 frequency, rescaled timestep, coefficients, `rISCO`, `rstop`, QNM values,
-`M_f`, and `a_f`. Every keyword in that return is a field that the example
-registers in `Commondata`. The printed symbolic expressions contain one `Max`,
-from the clamp of `1 - 4 nu` in the final mass, as a `jnp.maximum` call (see
+`M_f`, and `a_f`. Every keyword in that return, including `a_f`, is a field
+that the example registers in `Commondata`; CI checks no returned value. The
+printed symbolic expressions contain one `Max`, from the clamp of `1 - 4 nu` in
+the final mass, as a `jnp.maximum` call (see
 [CSE And Printer Support](../../core/helpers/cse-and-printer-support.md)), so
 the generated module needs no imports beyond `jax`, `jax.numpy`, and
 `Commondata`. `py_codegen()` prints these expressions unexpanded; see
@@ -70,11 +71,7 @@ inputs. The earlier
 mismatch between the return and the registered fields is recorded as resolved in
 [CONTR-0002](../../contradictions.md#contr-0002).
 
-Claim evidence:
-- Claim: The generated `SEOBNRv5_aligned_spin_coefficients` returns `Commondata(...)` using only keywords that `nrpy.examples.sebobv1_jax` registers as `Commondata` fields, including `a_f`. This does not claim that CI checks any returned value.
-- Role: descriptive behavior
-- Deciding authority: [SEOBNRv5_aligned_spin_coefficients.py](../../../nrpy/infrastructures/JAX/sebob/SEOBNRv5_aligned_spin_coefficients.py), `register_PyFunction_SEOBNRv5_aligned_spin_coefficients` emitted return; [sebobv1_jax.py](../../../nrpy/examples/sebobv1_jax.py), `register_commondata_params` call
-- Corroboration: [commondata.py](../../../nrpy/infrastructures/JAX/commondata.py), `register_commondata_params`, rejects unequal list lengths, so a dropped field fails generation; the CONTR-0002 resolution test in [Contradictions](../../contradictions.md#contr-0002) exercises the generated call.
+Evidence (descriptive behavior): [SEOBNRv5_aligned_spin_coefficients.py](../../../nrpy/infrastructures/JAX/sebob/SEOBNRv5_aligned_spin_coefficients.py), `register_PyFunction_SEOBNRv5_aligned_spin_coefficients` emitted return; [sebobv1_jax.py](../../../nrpy/examples/sebobv1_jax.py), `register_commondata_params` call; corroboration: [commondata.py](../../../nrpy/infrastructures/JAX/commondata.py), `register_commondata_params`, rejects unequal list lengths, so a dropped field fails generation; the CONTR-0002 resolution test in [Contradictions](../../contradictions.md#contr-0002) exercises the generated call
 
 The symbolic source behind this narrow surface is
 `SEOBNR_aligned_spin_constants`. Its constructor defines symbolic masses and
@@ -103,11 +100,9 @@ the generated pytest, assert any returned field or numerical value, use a
 float32 input, or test an accelerator, and they do not run the full CONTR-0002
 resolution test.
 
-Claim evidence:
-- Claim: Both `codegen-ubuntu` and `codegen-mac` generate `sebobv1_jax`, run `pip install .` in the generated project, import `SEOBNRv5_aligned_spin_coefficients`, call it once without a JAX transformation such as `jax.jit`, with the Python-scalar inputs `(1.5, 0.3, -0.2, 0.02, 2.4627455127717882e-05, 50.0)`, and print the returned `Commondata`. The step fails only if generation, installation, import, or the call raises; it asserts no returned field or value and does not run the generated pytest, a float32 input, a traced function, or an accelerator.
-- Role: CI behavior
-- Deciding authority: [main.yml](../../../.github/workflows/main.yml), jobs `codegen-ubuntu` and `codegen-mac`
-- Corroboration: `none available`; no other configured file restates these job commands
+[Generated Project
+CI](../../validation/generated-project-ci.md#sebobv1_jax-install-and-call-step)
+gives the exact configured `sebobv1_jax` CI step and its evidence.
 
 ## Sources
 

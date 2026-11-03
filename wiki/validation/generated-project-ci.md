@@ -13,6 +13,8 @@ execution-result snapshots.
 
 ## Detail
 
+### Configured job map
+
 Configured GitHub job map:
 
 | Job | Configured context | Generate/build scope | Run/result-check scope |
@@ -27,39 +29,38 @@ Configured GitHub job map:
 | `sebob-consistency-test` | Configured Ubuntu matrix | Checks out the workflow-selected trusted revision; generates/builds trusted and current SEOBNRv5 variants | Each helper invocation rebuilds both executables, uses exactly ten deterministic inputs, and requires median current/trusted amplitude-plus-phase error not exceed the perturbation-derived baseline. |
 | `sebobv2-consistency-test` | Same Ubuntu matrix shape | Generates/builds trusted and current `sebobv2` at the workflow-selected trusted revision | Uses the same ten-input and median-error criterion. |
 
-Claim evidence:
-- Claim: Both `codegen-ubuntu` and `codegen-mac` generate `sebobv1_jax`, run `pip install .` in the generated project, import `SEOBNRv5_aligned_spin_coefficients`, call it once without a JAX transformation such as `jax.jit`, with the Python-scalar inputs `(1.5, 0.3, -0.2, 0.02, 2.4627455127717882e-05, 50.0)`, and print the returned `Commondata`. The step fails only if generation, installation, import, or the call raises; it asserts no returned field or value and does not run the generated pytest, a float32 input, a traced function, or an accelerator.
-- Role: CI behavior
-- Deciding authority: [main.yml](../../.github/workflows/main.yml), jobs `codegen-ubuntu` and `codegen-mac`
-- Corroboration: `none available`; no other configured file restates these job commands
+Evidence (CI behavior): [`sebob_consistency_check.py`](../../nrpy/examples/tests/sebob_consistency_check.py), module `__main__` entry point, `num_sets`
 
-Claim evidence:
-- Claim: Each `sebob-consistency-test` helper invocation uses exactly ten deterministic input sets.
-- Role: CI behavior
-- Deciding authority: [`sebob_consistency_check.py`](../../nrpy/examples/tests/sebob_consistency_check.py), module `__main__` entry point, `num_sets`
-- Corroboration: `none available`; the workflow invokes the helper but does not independently restate its input count
-
-Claim evidence:
-- Claim: The `sebobv2-consistency-test` helper invocation uses exactly ten deterministic input sets.
-- Role: CI behavior
-- Deciding authority: [`sebobv2_consistency_check.py`](../../nrpy/examples/tests/sebobv2_consistency_check.py), module `__main__` entry point, `num_sets`
-- Corroboration: `none available`; the workflow invokes the helper but does not independently restate its input count
+Evidence (CI behavior): [`sebobv2_consistency_check.py`](../../nrpy/examples/tests/sebobv2_consistency_check.py), module `__main__` entry point, `num_sets`
 
 The `codegen-ubuntu` and `codegen-mac` rows' generate/build-scope cells state
 that both jobs build all SEOBNRv5 approximant/calibration variants (each
 approximant × {production, `-calibration_no_spin`, `-calibration_spin`,
 `-nrpy_calibrated`}) alongside the other named default projects.
 
-Claim evidence:
-- Claim: `codegen-ubuntu` and `codegen-mac` each generate and build the default C/library projects, including all SEOBNRv5 approximant/calibration variants (each approximant × {production, `-calibration_no_spin`, `-calibration_spin`, `-nrpy_calibrated`}), with no generated executable, test, or numerical result run for any of them.
-- Role: CI behavior
-- Deciding authority: [main.yml](../../.github/workflows/main.yml), jobs `codegen-ubuntu`, `codegen-mac`
+Evidence (CI behavior): [main.yml](../../.github/workflows/main.yml), jobs `codegen-ubuntu`, `codegen-mac`
+
+### `sebobv1_jax` install-and-call step
+
+Both `codegen-ubuntu` and `codegen-mac` generate `sebobv1_jax`, run
+`pip install .` in the generated project, import
+`SEOBNRv5_aligned_spin_coefficients`, and call it once, without a JAX
+transformation such as `jax.jit`, with the Python-scalar inputs
+`(1.5, 0.3, -0.2, 0.02, 2.4627455127717882e-05, 50.0)`; the step prints the
+returned `Commondata`. It fails only if generation, installation, import, or
+the call raises. It asserts no returned field or value and does not run the
+generated pytest, a float32 input, a traced function, or an accelerator.
+
+Evidence (CI behavior): [main.yml](../../.github/workflows/main.yml), jobs `codegen-ubuntu` and `codegen-mac`
+
+### Proof limits of the configured jobs
 
 A successful named build can establish only named generation plus toolchain
 compile/link compatibility. Generation completion or file existence is not a
 semantic result; build does not prove runtime, and process completion does not
 prove semantics. [Code Test Policy](code-test-policy.md) owns validation-layer
-names, proof limits, the status-only gate, and the narrow examples exception.
+names, proof limits, and the status-only gate; [Narrow Examples Product
+Exception](examples-product-exception.md) holds the examples exception.
 
 Einstein Toolkit documents Cactus testsuites as regression comparisons, not
 convergence or physics-correctness tests; see official
@@ -84,6 +85,8 @@ inputs, and workflow configuration does not establish execution outcomes.
 The Charm++ process-success cell is retained descriptive legacy, not precedent
 for adding another generic status-only build or runtime cell.
 
+### Local CI helper
+
 The local `.github/full_nrpy_local_ci.sh` helper is separate from GitHub job
 coverage. It installs dependencies, performs broad static analysis, invokes
 its configured generators, and builds selected non-Carpet/non-superB C/library
@@ -96,6 +99,8 @@ argument parser or CUDA branch, so its extra `--cuda` token is ignored and that
 cell is an ordinary C build. The helper installs no CUDA toolkit, declares no
 GPU runner, runs no generated executable, and checks no GPU result. Treat it as
 a local command recipe requiring a prepared environment, not CI pass evidence.
+
+### Dendro application checks
 
 Dendro's job runs one helper per formulation. The helper generates the W and chi
 applications twice with separate caches and requires byte-identical
@@ -142,6 +147,10 @@ given an unread key must warn about it and still succeed, and a run with
 metadata was found, start from the initial data, and write its first
 constraint row at step 0.
 
+Evidence (CI behavior): [main.yml](../../.github/workflows/main.yml), `dendro-validation`; [dendro_application_check.py](../../nrpy/examples/tests/dendro_application_check.py), `Leg.run`, `Leg.run_variant`, `Leg.check_run_a`, `Leg.check_reference`, `Leg.compare_runs`, `Leg.run_negatives`; corroboration: [dendro_bssn.py](../../nrpy/examples/dendro_bssn.py) and [dendro_fccz4.py](../../nrpy/examples/dendro_fccz4.py), current command-line interface; [CMakeLists.py](../../nrpy/infrastructures/Dendro/CMakeLists.py), Dendrolib master and the selected toml11 release
+
+### Running the Dendro helper
+
 To run the helper, execute `python nrpy/examples/tests/dendro_application_check.py
 --formulation bssn --work-dir DIR` from the repository root; `--formulation fccz4`
 selects the other formulation. Both options
@@ -161,18 +170,18 @@ job on pushes and pull requests to `main` and on its twice-monthly schedule, and
 the helper prints the resolved Dendrolib commit for each variant. The job installs
 `liblapack-dev`, which is not among the packages whose versions the helper prints.
 
-Claim evidence:
-- Claim: The Dendro helper requires `--formulation` and a nonexistent `--work-dir`, defaults to `mpiexec --oversubscribe --bind-to none`, 4 ranks (at least 4), and 4 build jobs, runs only its doctests without arguments, needs network access, always configures with `-DCPU_ARCH=x86-64-v3`, pre-creates `dat/`, `vtu/`, `cp/`, and `bah/` in each run directory, merges `--update-reference` candidates through `black`, and prints the resolved Dendrolib commit per variant; both Dendro workflows set `OMP_NUM_THREADS: 1`, and `main.yml` runs on pushes and pull requests to `main` and on a twice-monthly schedule.
-- Role: CI behavior
-- Deciding authority: [dendro_application_check.py](../../nrpy/examples/tests/dendro_application_check.py), `main`, `Leg.run`, `Leg.generate_and_build`, `Leg.prepare`, `Leg.record_versions`; [main.yml](../../.github/workflows/main.yml), `on` and `dendro-validation`; [dendrolib-canary.yml](../../.github/workflows/dendrolib-canary.yml), `env`
-- Corroboration: none available; the configuration shows the job shape, not any run outcome
+Evidence (CI behavior): [dendro_application_check.py](../../nrpy/examples/tests/dendro_application_check.py), `main`, `Leg.run`, `Leg.generate_and_build`, `Leg.prepare`, `Leg.record_versions`; [main.yml](../../.github/workflows/main.yml), `on` and `dendro-validation`; [dendrolib-canary.yml](../../.github/workflows/dendrolib-canary.yml), `env`
+
+### Dendro stored reference
 
 The stored reference is a generated `trusted_dict` keyed by formulation and
 conformal factor. It changes only through the helper's `--update-reference`
-mode, which writes run A's values as a candidate instead of comparing; the
-candidate is reviewed as a diff and then compared in a second run without the
-flag. An intentional change to the evolution, gauge, remesh, or Dendrolib
-that changes these numerical values requires regenerating the reference in
+mode, which writes run A's values as a candidate instead of comparing and
+writes nothing when any check failed; the helper rejects `--update-reference`
+combined with `--dendrolib-ref`. The candidate is reviewed as a diff and then
+compared in a second run without the flag. An intentional change to the
+evolution, gauge, remesh, or Dendrolib that changes these numerical values
+requires regenerating the reference in
 the same change, and the weekly run against Dendrolib master fails when an upstream
 change alters these values beyond the tolerance. The constraint and ADM rows are
 printed with up to ten significant digits; the horizon radii and circumferences
@@ -186,11 +195,9 @@ vanish for this configuration, so their printed digits are round-off and the
 absolute tolerance, not the stored value, bounds them. The check reports the
 worst entry.
 
-Claim evidence:
-- Claim: the Dendro helper compares run A's constraint and ADM rows and horizon observables at steps 0, 4, and 8 with the stored `trusted_dict` reference within a fixed relative and absolute tolerance, so the weekly Dendrolib-master run fails when an upstream change alters those values beyond the tolerance; the reference changes only through `--update-reference`, which writes a candidate instead of comparing and refuses to write when any check failed or when `--dendrolib-ref` selects an explicit branch or tag.
-- Role: CI behavior
-- Deciding authority: [dendro_application_check.py](../../nrpy/examples/tests/dendro_application_check.py), `REFERENCE_STEPS`, `REFERENCE_RTOL`, `REFERENCE_ATOL`, `read_reference`, `Leg.check_reference`, `Leg.run`, `main`; [dendrolib-canary.yml](../../.github/workflows/dendrolib-canary.yml), `dendro-validation-dendrolib-master`
-- Corroboration: [dendro_application_check_reference.py](../../nrpy/examples/tests/dendro_application_check_reference.py), `trusted_dict`; [Test Oracles And Safe Updates](test-oracles-and-safe-updates.md), `Two-Process Oracle Update`
+Evidence (CI behavior): [dendro_application_check.py](../../nrpy/examples/tests/dendro_application_check.py), `REFERENCE_STEPS`, `REFERENCE_RTOL`, `REFERENCE_ATOL`, `read_reference`, `Leg.check_reference`, `Leg.run`, `main`; [dendrolib-canary.yml](../../.github/workflows/dendrolib-canary.yml), `dendro-validation-dendrolib-master`; corroboration: [dendro_application_check_reference.py](../../nrpy/examples/tests/dendro_application_check_reference.py), `trusted_dict`; [Test Oracles And Safe Updates](test-oracles-and-safe-updates.md), `Two-Process Oracle Update`
+
+### Weekly Dendrolib master run
 
 A separate workflow, `dendrolib-canary.yml`, runs the same helper legs
 weekly and on manual dispatch with `--dendrolib-ref master`. The helper then
@@ -204,32 +211,26 @@ applications or moves their stored-reference values beyond tolerance can fail
 either workflow. Results are evidence only for the resolved revision; reference
 changes require the same review and independent comparison as before.
 
-Claim evidence:
-- Claim: `dendrolib-canary.yml` runs the Dendro helper legs weekly and on manual dispatch against the head of Dendrolib's master branch, printing the resolved commit, while `dendro-validation` in `main.yml` also uses master through the generated CMake project; a pass or failure is evidence only for the printed Dendrolib commit, and the configuration does not establish any run outcome.
-- Role: CI behavior
-- Deciding authority: [dendrolib-canary.yml](../../.github/workflows/dendrolib-canary.yml), `on`, `dendro-validation-dendrolib-master`; [dendro_application_check.py](../../nrpy/examples/tests/dendro_application_check.py), `Leg.generate_and_build`, `--dendrolib-ref`
-- Corroboration: [main.yml](../../.github/workflows/main.yml), `dendro-validation`; [CMakeLists.py](../../nrpy/infrastructures/Dendro/CMakeLists.py), the emitted Dendrolib `FetchContent_Declare`
+Evidence (CI behavior): [dendrolib-canary.yml](../../.github/workflows/dendrolib-canary.yml), `on`, `dendro-validation-dendrolib-master`; [dendro_application_check.py](../../nrpy/examples/tests/dendro_application_check.py), `Leg.generate_and_build`, `--dendrolib-ref`; corroboration: [main.yml](../../.github/workflows/main.yml), `dendro-validation`; [CMakeLists.py](../../nrpy/infrastructures/Dendro/CMakeLists.py), the emitted Dendrolib `FetchContent_Declare`
 
-The helper's profile limits, among them Kreiss-Oliger dissipation enabled,
-`--fd-order 6`, no Yo et al. option, and the packaged q1 file never read, are
-stated in [Production Validation And Deferred
+### Dendro profile limits
+
+The helper's profile limits, among them evolutions of eight steps or fewer,
+Kreiss-Oliger dissipation enabled, `--fd-order 6`, no Yo et al. option, and the
+packaged q1 file never read, are stated in [Production Validation And Deferred
 Checks](../infrastructures/dendro/production-validation-and-deferred-checks.md).
+A pass is therefore not evidence for long-time, merger, or production-resolution
+evolution, for generation with `enable_KreissOliger_dissipation = False`,
+`--fd-order` 4 or 8, or either Yo et al. option, or for the packaged q1
+parameter file and the printed run commands.
 The apt packages, compilers, and `requirements.txt` packages are not pinned; the helper
 prints their resolved versions, and a pass is evidence only for those versions.
 Every subprocess has an argument vector, a timeout, and a bounded log tail on
 failure, and the work directory is removed unconditionally.
 
-Claim evidence:
-- Claim: the `dendro-validation` job generates, builds, runs, and checks both complete, standalone Dendro applications in W and chi variants through `dendro_application_check.py`, with the checks and rejections listed in this section.
-- Role: CI behavior
-- Deciding authority: [main.yml](../../.github/workflows/main.yml), `dendro-validation`; [dendro_application_check.py](../../nrpy/examples/tests/dendro_application_check.py), `Leg.run`, `Leg.run_variant`, `Leg.check_run_a`, `Leg.check_reference`, `Leg.compare_runs`, `Leg.run_negatives`
-- Corroboration: [dendro_bssn.py](../../nrpy/examples/dendro_bssn.py) and [dendro_fccz4.py](../../nrpy/examples/dendro_fccz4.py), current command-line interface; [CMakeLists.py](../../nrpy/infrastructures/Dendro/CMakeLists.py), Dendrolib master and the selected toml11 release
+Evidence (CI behavior): [dendro_application_check.py](../../nrpy/examples/tests/dendro_application_check.py), `PROFILE_P`, `PROFILE_O`, `COMMON_OVERRIDES`, `Leg.generate_and_build`; corroboration: [Production Validation And Deferred Checks](../infrastructures/dendro/production-validation-and-deferred-checks.md), `Detail`
 
-Claim evidence:
-- Claim: the helper's pass results cover only its CI profiles, eight-step or shorter evolutions, and Kreiss-Oliger-enabled generation; they are not evidence for long-time, merger, production-resolution, or Dendro generation with `enable_KreissOliger_dissipation = False`, with `--fd-order` 4 or 8, or with `--ybs-gamma` or `--ybs-momentum`, or for the packaged q1 parameter file and the printed run commands.
-- Role: CI behavior
-- Deciding authority: [dendro_application_check.py](../../nrpy/examples/tests/dendro_application_check.py), `PROFILE_P`, `PROFILE_O`, `COMMON_OVERRIDES`, `Leg.generate_and_build`
-- Corroboration: [Production Validation And Deferred Checks](../infrastructures/dendro/production-validation-and-deferred-checks.md), `Detail`
+### Unsupported or unverified coverage
 
 Explicitly unsupported or unverified by these configurations: CarpetX build or
 runtime; JAX generated basic test, returned-value checks, float32 inputs, or accelerator runtime;
@@ -247,11 +248,9 @@ production-resolution Dendro evolution; geodesic/raytracing projects; GRoovy;
 active MANGA build; Kasner; and scientific correctness beyond the stated
 regression, property, and waveform assertions.
 
-Claim evidence:
-- Claim: the `dendro-validation` job builds each generated Dendro application with the generated CMake project against Dendrolib `master` and runs the helper's checks, including the invalid-input and output-failure cases of `Leg.run_negatives`; it runs no AddressSanitizer or UndefinedBehaviorSanitizer build, no generated C++ self-test under CTest, no fault injected into the generated C++ at run time, and no build against a pinned Dendro-GR commit, so a pass is not evidence for any of these.
-- Role: CI behavior
-- Deciding authority: [main.yml](../../.github/workflows/main.yml), `dendro-validation`; [dendro_application_check.py](../../nrpy/examples/tests/dendro_application_check.py), `Leg.generate_and_build`, `Leg.run_negatives`
-- Corroboration: [CMakeLists.py](../../nrpy/infrastructures/Dendro/CMakeLists.py), `output_CFunctions_function_prototypes_and_construct_CMakeLists`, Dendrolib `GIT_TAG "master"` and no test targets
+Evidence (CI behavior): [main.yml](../../.github/workflows/main.yml), `dendro-validation`; [dendro_application_check.py](../../nrpy/examples/tests/dendro_application_check.py), `Leg.generate_and_build`, `Leg.run_negatives`; corroboration: [CMakeLists.py](../../nrpy/infrastructures/Dendro/CMakeLists.py), `output_CFunctions_function_prototypes_and_construct_CMakeLists`, Dendrolib `GIT_TAG "master"` and no test targets
+
+### Generated project outputs
 
 These jobs intentionally create generated `project/` outputs. Treat those as CI
 products, not committed documentation or hand-authored source, unless a selected

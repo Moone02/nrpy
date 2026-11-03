@@ -794,7 +794,7 @@ def _check_source_registration(pages: List[Path], failures: List[str]) -> None:
 
 def _check_catalog(failures: List[str]) -> None:
     """
-    Check catalog target equality and page status agreement.
+    Check catalog rows cover each normal leaf once and agree with page status.
 
     :param failures: Mutable failure list.
     """
@@ -833,7 +833,7 @@ def _check_catalog(failures: List[str]) -> None:
     counts = Counter(target for target, _, _ in links)
     for page in _wiki_pages():
         count = counts.get(page, 0)
-        if count == 0:
+        if count == 0 and _is_normal_leaf(page):
             _fail(failures, CATALOG, None, f"missing wiki page: {_rel(page)}")
         elif count > 1:
             _fail(failures, CATALOG, None, f"duplicate wiki page: {_rel(page)}")
@@ -1064,30 +1064,14 @@ def _page_header_status(path: Path) -> Optional[str]:
     return status_match.group(1).lower() if status_match else None
 
 
-def _check_glossary_catalog_signal(failures: List[str]) -> None:
+def _check_glossary_links(failures: List[str]) -> None:
     """
-    Check glossary terms link a defining page, name external background, or have a catalog candidate.
+    Check glossary terms link a defining page or name external background.
 
     :param failures: Mutable failure list.
     """
-    if not (CATALOG.exists() and GLOSSARY.exists()):
+    if not GLOSSARY.exists():
         return
-    catalog_header, catalog_rows = _parse_table(CATALOG)
-    try:
-        page_i = catalog_header.index("Page")
-        candidate_i = catalog_header.index("Concept hub candidate")
-    except ValueError:
-        _fail(failures, CATALOG, None, "catalog lacks Concept hub candidate column")
-        return
-
-    candidates: Set[str] = set()
-    for row in catalog_rows:
-        if len(row) <= max(page_i, candidate_i):
-            continue
-        marker = row[candidate_i].strip().lower()
-        if marker and marker not in {"-", "no", "n/a", "none"}:
-            candidates.add(row[page_i].lower())
-
     glossary_header, glossary_rows = _parse_table(GLOSSARY)
     try:
         term_i = glossary_header.index("Term")
@@ -1103,13 +1087,12 @@ def _check_glossary_catalog_signal(failures: List[str]) -> None:
         meaning = row[meaning_i].strip()
         has_owner = bool(re.search(r"\[[^\]]+\]\([^)]+\)", meaning))
         external = "external" in meaning.lower() or "background" in meaning.lower()
-        candidate = any(term.lower() in entry for entry in candidates)
-        if not (has_owner or external or candidate):
+        if not (has_owner or external):
             _fail(
                 failures,
                 GLOSSARY,
                 None,
-                f"glossary term lacks a defining-page link, external/background designation, or catalog candidate: {term}",
+                f"glossary term lacks a defining-page link or external/background designation: {term}",
             )
 
 
@@ -1582,7 +1565,7 @@ def _main() -> int:
     _check_reachability(graph, failures)
     _check_catalog(failures)
     _check_content_dir_indexes(failures)
-    _check_glossary_catalog_signal(failures)
+    _check_glossary_links(failures)
     _check_status_vocabularies(failures)
     _check_source_map_targets(failures)
     _check_contradictions(failures)

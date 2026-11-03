@@ -34,53 +34,41 @@ tri", uses `.agents/skills/trialectic/SKILL.md`; a requested Borda panel (N
 independent agents that rank each other's reports), including "use borda", uses
 `.agents/skills/borda/SKILL.md`, which asks the user for a missing task, N, or output
 name instead of inferring it. Applicable policy may require them; merely mentioning,
-auditing, or editing them does not. Read the selected skill and, for dialectic and
-trialectic, `.agents/review-protocol.md`. Delegate when actual tools offer a concrete
-benefit; never simulate independent agents or duplicate trivial work.
+auditing, or editing them does not. Root reads the selected skill and, for dialectic
+and trialectic, `.agents/review-protocol.md`. Delegate when actual tools offer a
+concrete benefit; never simulate independent agents or duplicate trivial work.
 
 Review subsequent deltas, unresolved findings, and affected code/docs dependencies,
 retaining valid decisions/checks. Mechanical cleanup needs focused verification;
 semantic edits need impact review. Broaden for concrete dependencies, failures,
 missing proof, or user direction, not every small change or resumed task.
-Use [Validation](wiki/validation/index.md) and [Workflows](wiki/workflows.md), retain
-mandatory checks, and reuse passes only while relevant inputs/assumptions/environment
+Use [Validation](wiki/validation/index.md) for code checks and
+[Workflows](wiki/workflows.md) for KB checks; for a runtime failure, follow
+[Evidence-First Debugging](wiki/workflows.md#evidence-first-debugging). Retain
+mandatory checks and reuse passes only while relevant inputs/assumptions/environment
 remain valid. Avoid mirrored tests and unrelated suites. Keep compact checkpoints
 and report paths, checks, and limits concisely. Identify the exact local rule and
 clause when it blocks completion, distinguishing it from your interpretation.
 
 ## Router
 
-| Go to | Use it for |
-| --- | --- |
-| [Architecture](wiki/architecture/index.md) | Project purpose, build/run paths, generated-output boundaries, and contribution rules. |
-| [Core APIs](wiki/core/index.md) | Core codegen APIs, parameters, gridfunctions, indexed expressions, reference metrics, and finite difference support. |
-| [Equations](wiki/equations/index.md) | Symbolic equation families, GR and SEOBNR routes, support helpers, and trusted expression validation. |
-| [Infrastructures](wiki/infrastructures/index.md) | Generated-backend lifecycle and infrastructure routes for BHaH, ETLegacy, CarpetX, superB, JAX, and Dendro. |
-| [Examples](wiki/examples/index.md) | First wave-equation run and black-hole evolution examples. |
-| [Validation](wiki/validation/index.md) | Test and oracle policy, static analysis, expression validation, and generated-project CI. |
-| [Glossary](wiki/glossary.md) | Canonical terms. |
-| [Language For Computational Physicists](wiki/computational-physics-language.md) | Required wording for documentation, comments, messages, and other prose read by people or agents. |
-| [Catalog](wiki/catalog.md) | Global page inventory and query-routing terms. |
-| [Workflows](wiki/workflows.md) | KB ingest, query, and maintenance procedures. |
-| [Lint Checks](wiki/lint/CHECKS.md) | Mechanical and review checks for the KB. |
-| [Sources](raw/SOURCES.md) | Source manifest with provenance, status, and ingest state. |
-| [Source Map](wiki/source-map.md) | Source-to-page dependency seed map and drift follow-up. |
-| [Contradictions](wiki/contradictions.md) | Contested, stale, and reconciled claims. |
-| [Syntheses](wiki/syntheses/index.md) | Cross-branch filed syntheses. |
-| [KB Page Format](wiki/SCHEMA.md) | Required page layout, source use, and maintenance rules. |
-
-## Where Do I Start?
-
 | Task | Read first |
 | --- | --- |
-| Build, run, inspect code generation, generated outputs, or contribution rules | [Architecture](wiki/architecture/index.md) |
-| Find `CFunction`, `c_codegen`, parameters, or gridfunctions | [Core APIs](wiki/core/index.md) |
-| Change equation modules or expression validation | [Equations](wiki/equations/index.md) |
-| Work on BHaH, ETLegacy, CarpetX, superB, JAX, or Dendro generation | [Infrastructures](wiki/infrastructures/index.md) |
+| Build, run, project layout, generated-output boundaries, contribution and style rules | [Architecture](wiki/architecture/index.md) |
+| `CFunction`, `c_codegen`, parameters, gridfunctions, indexed expressions, reference metrics, finite differences, helper modules | [Core APIs](wiki/core/index.md) |
+| Equation modules (GR, GRHD, GRMHD, wave, TOV, SEOBNR, BOB) and trusted-expression validation | [Equations](wiki/equations/index.md) |
+| BHaH, ETLegacy, CarpetX, superB, JAX, or Dendro generation | [Infrastructures](wiki/infrastructures/index.md) |
 | Run or compare example generators | [Examples](wiki/examples/index.md) |
-| Choose test placement or oracle rules, inspect static analysis or expression validation, or review generated-project CI | [Validation](wiki/validation/index.md) |
+| Test placement, oracles, static analysis, expression validation, generated-project CI | [Validation](wiki/validation/index.md) |
+| Compare generated backends side by side | [Syntheses](wiki/syntheses/index.md) |
 | Write or revise prose read by people or agents | [Language For Computational Physicists](wiki/computational-physics-language.md) |
-| Update other KB content | [Workflows](wiki/workflows.md) |
+| Canonical spellings of recurring terms | [Glossary](wiki/glossary.md) |
+| Edit KB pages, sources, catalog, source map, contradictions, or KB checks | [Workflows](wiki/workflows.md) |
+
+Search [Catalog](wiki/catalog.md), [Glossary](wiki/glossary.md),
+[Source Map](wiki/source-map.md), [Contradictions](wiki/contradictions.md), and
+[Sources](raw/SOURCES.md) with `rg -n -i -F '<term, path, or CONTR ID>' <file>`
+and read only the matching rows; do not read these tables whole.
 
 ## Human-Facing Language
 
@@ -101,33 +89,10 @@ substantially revise; do not perform blind replacements across untouched text.
 
 ## Volatile Information Policy
 
-These rules bind every KB manifest and doc under `AGENTS.md`, `wiki/`, and
-`raw/`:
-
-- No maintenance or runtime snapshots: dates, times, timestamps, source
-  revision values or digests, inventory, file, page, or job counts, source
-  access/reconciliation/audit/resolution fields, environment tuples, or
-  recorded run results.
-- No source-tracking hash or `mtime` columns or stored values, and no hashing
-  of sources for KB tracking.
-- Stable scientific and algorithmic values, interface version labels,
-  publication identifiers, technical names such as `CoordSystem_hash`, and
-  opaque components of complete stable source locators remain valid when they
-  carry identity or domain meaning rather than snapshot metadata.
-- Frozen imported evidence under `raw/source-docs/` remains verbatim; its
-  authored manifest registration obeys this policy.
-- Do not output KB maintenance notes to a separate log file. This KB already
-  lives in a git repo: commit history records durable operations, so separate
-  logs are redundant and wasteful.
-
-Git history already records when KB content changed and what changed. Duplicate
-snapshots add maintenance burden without authority.
-
-Source drift is handled by dependency-aware review of changed paths, source
-status, [Source Map](wiki/source-map.md) rows, and affected compiled pages -
-not by stored fingerprints.
-
-Rules for maintaining this KB live in [KB Page Format](wiki/SCHEMA.md).
+`AGENTS.md`, `wiki/`, and `raw/` carry no maintenance or runtime snapshots
+(dates, timestamps, revision values, hashes, inventory counts, run results) and
+no separate maintenance log; git history records changes. Before editing those
+files, follow [KB Page Format](wiki/SCHEMA.md#volatile-information-policy).
 
 ## Protected Workflow File
 
