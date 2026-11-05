@@ -71,7 +71,7 @@ def main(
     if integrator_mode == "Numerical":
         Lz_path_argument = ", Lz_bin_name" if axisymmetric_about_z else ""
         batch_integrator_call = (
-            "batch_integrator_numerical(&commondata, num_rays, results_buffer, "
+            "batch_integrator_numerical(&commondata, num_rays, scan_density_height, results_buffer, "
             "norm_abs_bin_name, norm_abs_non_terminal_bin_name, "
             "synthetic_slice_usage_bin_name, "
             "non_terminal_crossings_path, terminal_crossings_path"
@@ -79,7 +79,7 @@ def main(
         )
     else:
         batch_integrator_call = (
-            "batch_integrator_analytical(&commondata, num_rays, results_buffer, "
+            "batch_integrator_analytical(&commondata, num_rays, scan_density_height, results_buffer, "
             "non_terminal_crossings_path, terminal_crossings_path);"
         )
     analytical_plane_Lz_absence = (
@@ -444,18 +444,37 @@ def main(
                 "FATAL: tile counts, scan_density, and fields of view must be valid.\\n");
         return 1;
     }} // END IF: invalid angular sampling
+    if (commondata.image_plane_crop_enabled &&
+        (!isfinite(commondata.a_min) || !isfinite(commondata.a_max) ||
+         !isfinite(commondata.b_min) || !isfinite(commondata.b_max) ||
+         commondata.a_min < 0.0 || commondata.a_max > 1.0 ||
+         commondata.b_min < 0.0 || commondata.b_max > 1.0 ||
+         commondata.a_min >= commondata.a_max || commondata.b_min >= commondata.b_max)) {{
+        fprintf(stderr, "FATAL: image-plane ranges require finite bounds with 0 <= min < max <= 1.\\n");
+        return 1;
+    }} // END IF: invalid image-plane scan bounds
+    if (commondata.image_plane_crop_enabled &&
+        (commondata.tiles_width != 1 || commondata.tiles_height != 1)) {{
+        fprintf(stderr, "FATAL: cropped image-plane scans require tiles_width=1 and tiles_height=1.\\n");
+        return 1;
+    }} // END IF: cropped scan uses multiple tiles
+    const double selected_height_to_width = commondata.image_plane_crop_enabled
+        ? (commondata.b_max - commondata.b_min) / (commondata.a_max - commondata.a_min)
+        : 1.0;
     const double projected_tile_height_to_width =
         tan(0.5 * commondata.alpha_h) * (double)commondata.tiles_width /
         (tan(0.5 * commondata.alpha_w) * (double)commondata.tiles_height);
     const double scan_density_height_real =
-        (double)scan_density_width * projected_tile_height_to_width;
+        (double)scan_density_width * projected_tile_height_to_width * selected_height_to_width;
     if (!isfinite(scan_density_height_real) ||
         scan_density_height_real < 1.0 ||
         scan_density_height_real > (double)INT_MAX) {{
         fprintf(stderr, "FATAL: derived scan-density height is invalid.\\n");
         return 1;
     }} // END IF: invalid height sample count
-    const int scan_density_height = (int)llround(scan_density_height_real);
+    const int scan_density_height = commondata.image_plane_crop_enabled
+        ? (int)floor(scan_density_height_real)
+        : (int)llround(scan_density_height_real);
     if (scan_density_height <= 0 ||
         (long int)scan_density_height >
             LONG_MAX / (long int)scan_density_width) {{
@@ -515,6 +534,12 @@ def main(
                     ((double)ty +
                      ((double)local_row + 0.5) / (double)scan_density_height) /
                     (double)commondata.tiles_height;
+                if (commondata.image_plane_crop_enabled) {{
+                    results_buffer[i].image_width_fraction = commondata.a_min +
+                        (commondata.a_max - commondata.a_min) * results_buffer[i].image_width_fraction;
+                    results_buffer[i].image_height_fraction = commondata.b_min +
+                        (commondata.b_max - commondata.b_min) * results_buffer[i].image_height_fraction;
+                }} // END IF: serialize cropped camera coordinates
             }} // END LOOP: serialize ray coordinates
 
             char bin_name[256];
@@ -539,6 +564,10 @@ def main(
             header.record_count = record_count;
             header.alpha_w = commondata.alpha_w;
             header.alpha_h = commondata.alpha_h;
+            header.a_min = commondata.image_plane_crop_enabled ? commondata.a_min : 0.0;
+            header.a_max = commondata.image_plane_crop_enabled ? commondata.a_max : 1.0;
+            header.b_min = commondata.image_plane_crop_enabled ? commondata.b_min : 0.0;
+            header.b_max = commondata.image_plane_crop_enabled ? commondata.b_max : 1.0;
 
             if (write_blueprint_file(bin_name, &header, results_buffer, record_count) != 0) {{
                 free(results_buffer);

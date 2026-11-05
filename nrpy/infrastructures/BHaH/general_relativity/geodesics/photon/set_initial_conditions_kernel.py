@@ -59,9 +59,8 @@ batch_structs_c_code = r"""
 
     // Native same-build metadata for one serialized blueprint tile.
     #define BLUEPRINT_MAGIC "NRPYBP01"
-    // Version 8 measures axial angular momentum and signed plane distance
-    // at the refined nonterminal-plane crossing.
-    #define BLUEPRINT_SCHEMA_VERSION 8U
+    // Version 9 stores the exact global image-plane scan bounds.
+    #define BLUEPRINT_SCHEMA_VERSION 9U
     typedef struct {
         char magic[8];
         uint32_t native_schema_version;
@@ -74,6 +73,10 @@ batch_structs_c_code = r"""
         uint64_t record_count;
         double alpha_w; // Width-direction field of view in radians.
         double alpha_h; // Height-direction field of view in radians.
+        double a_min; // Left image-plane boundary.
+        double a_max; // Right image-plane boundary.
+        double b_min; // Lower image-plane boundary.
+        double b_max; // Upper image-plane boundary.
     } __attribute__((packed)) blueprint_header_t; // END STRUCT: blueprint_header_t
 
     // Stores the final physical properties of a photon upon integration termination.
@@ -110,7 +113,7 @@ batch_structs_c_code = r"""
     } __attribute__((packed)) plane_crossing_record_t;
 
 #if defined(__cplusplus)
-    static_assert(sizeof(blueprint_header_t) == 60, "blueprint_header_t size changed");
+    static_assert(sizeof(blueprint_header_t) == 92, "blueprint_header_t size changed");
     static_assert(offsetof(blueprint_header_t, magic) == 0, "blueprint header magic offset changed");
     static_assert(offsetof(blueprint_header_t, native_schema_version) == 8, "blueprint header version offset changed");
     static_assert(offsetof(blueprint_header_t, header_size) == 12, "blueprint header size offset changed");
@@ -122,6 +125,10 @@ batch_structs_c_code = r"""
     static_assert(offsetof(blueprint_header_t, record_count) == 36, "blueprint header count offset changed");
     static_assert(offsetof(blueprint_header_t, alpha_w) == 44, "blueprint alpha_w offset changed");
     static_assert(offsetof(blueprint_header_t, alpha_h) == 52, "blueprint alpha_h offset changed");
+    static_assert(offsetof(blueprint_header_t, a_min) == 60, "blueprint a_min offset changed");
+    static_assert(offsetof(blueprint_header_t, a_max) == 68, "blueprint a_max offset changed");
+    static_assert(offsetof(blueprint_header_t, b_min) == 76, "blueprint b_min offset changed");
+    static_assert(offsetof(blueprint_header_t, b_max) == 84, "blueprint b_max offset changed");
     static_assert(sizeof(blueprint_data_t) == 124, "blueprint_data_t size changed");
     static_assert(sizeof(plane_crossing_record_t) == 108, "plane crossing record size changed");
     static_assert(offsetof(blueprint_data_t, termination_type) == 0, "blueprint termination offset changed");
@@ -141,7 +148,7 @@ batch_structs_c_code = r"""
     static_assert(offsetof(blueprint_data_t, non_terminal_plane_Lz_time) == 108, "blueprint plane Lz time offset changed");
     static_assert(offsetof(blueprint_data_t, non_terminal_plane_signed_distance) == 116, "blueprint plane distance offset changed");
 #else
-    _Static_assert(sizeof(blueprint_header_t) == 60, "blueprint_header_t size changed");
+    _Static_assert(sizeof(blueprint_header_t) == 92, "blueprint_header_t size changed");
     _Static_assert(offsetof(blueprint_header_t, magic) == 0, "blueprint header magic offset changed");
     _Static_assert(offsetof(blueprint_header_t, native_schema_version) == 8, "blueprint header version offset changed");
     _Static_assert(offsetof(blueprint_header_t, header_size) == 12, "blueprint header size offset changed");
@@ -153,6 +160,10 @@ batch_structs_c_code = r"""
     _Static_assert(offsetof(blueprint_header_t, record_count) == 36, "blueprint header count offset changed");
     _Static_assert(offsetof(blueprint_header_t, alpha_w) == 44, "blueprint alpha_w offset changed");
     _Static_assert(offsetof(blueprint_header_t, alpha_h) == 52, "blueprint alpha_h offset changed");
+    _Static_assert(offsetof(blueprint_header_t, a_min) == 60, "blueprint a_min offset changed");
+    _Static_assert(offsetof(blueprint_header_t, a_max) == 68, "blueprint a_max offset changed");
+    _Static_assert(offsetof(blueprint_header_t, b_min) == 76, "blueprint b_min offset changed");
+    _Static_assert(offsetof(blueprint_header_t, b_max) == 84, "blueprint b_max offset changed");
     _Static_assert(sizeof(blueprint_data_t) == 124, "blueprint_data_t size changed");
     _Static_assert(sizeof(plane_crossing_record_t) == 108, "plane crossing record size changed");
     _Static_assert(offsetof(blueprint_data_t, termination_type) == 0, "blueprint termination offset changed");
@@ -217,6 +228,11 @@ def set_initial_conditions_kernel(
     tetrad on the host, validates it, and passes its sixteen contravariant
     components to every ray in the current tile.
 
+    ``image_plane_crop_enabled`` selects the parameter-file bounds ``a_min``,
+    ``a_max``, ``b_min``, and ``b_max``; otherwise the full image is sampled.
+    Cropped scans require one tile. The caller supplies the height sample count,
+    with width and height both one for a single photon at the rectangle center.
+
     Direct momentum state convention before normalized conversion:
 
     ``f[4] = p^0`` and ``f[5:8] = (p^1, p^2, p^3)``.
@@ -232,6 +248,25 @@ def set_initial_conditions_kernel(
         and initialize the photon plane-side flags.
     :param tile_indices_add_to_parfile: Include tile indices in the parameter
         file for a single numerical ray.
+
+    Doctests:
+    >>> import copy
+    >>> saved_params = copy.deepcopy(par.glb_code_params_dict)
+    >>> saved_functions = cfc.CFunction_dict.copy()
+    >>> saved_extras = copy.deepcopy(par.glb_extras_dict)
+    >>> try:
+    ...     set_initial_conditions_kernel()
+    ...     names = ("image_plane_crop_enabled", "a_min", "a_max", "b_min", "b_max")
+    ...     defaults = [par.glb_code_params_dict[name].defaultvalue for name in names]
+    ...     assert defaults == [False, 0.0, 1.0, 0.0, 1.0]
+    ...     assert all(par.glb_code_params_dict[name].add_to_parfile for name in names)
+    ... finally:
+    ...     par.glb_code_params_dict.clear()
+    ...     par.glb_code_params_dict.update(saved_params)
+    ...     cfc.CFunction_dict.clear()
+    ...     cfc.CFunction_dict.update(saved_functions)
+    ...     par.glb_extras_dict.clear()
+    ...     par.glb_extras_dict.update(saved_extras)
     """
     # Step 1: Register tile-sampling state.  Tile indices are the only mutable
     # tile state.  Each tile origin is derived below from the active indices;
@@ -255,6 +290,23 @@ def set_initial_conditions_kernel(
         commondata=True,
         add_to_parfile=True,
         description="Width-side ray-sample count per tile.",
+    )
+    par.register_CodeParameter(
+        "bool",
+        __name__,
+        "image_plane_crop_enabled",
+        False,
+        commondata=True,
+        add_to_parfile=True,
+        description="Restrict the camera scan to the selected a and b ranges; requires one tile.",
+    )
+    par.register_CodeParameters(
+        "REAL",
+        __name__,
+        ["a_min", "a_max", "b_min", "b_max"],
+        [0.0, 1.0, 0.0, 1.0],
+        commondata=True,
+        add_to_parfile=True,
     )
     par.register_CodeParameters(
         "REAL",
@@ -388,21 +440,26 @@ __TETRAD_LOADS__
     //==========================================
     // PIXEL CENTER AND ANGULAR OFFSETS
     //==========================================
-    // Tile indices partition the common normalized image domain [0,1] in each
+    // Tile indices partition the full normalized image domain [0,1] in each
     // direction.  The host validates the derived height-side sample count and
     // passes it as a scalar so CUDA and CPU use identical sample ordering.
     const int scan_density_width = __CD_ACCESS__scan_density;
     const long int sample_idx = start_idx + c;
     const int local_col = (int)(sample_idx % scan_density_width);
     const int local_row = (int)(sample_idx / scan_density_width);
-    const double a =
+    double a =
         ((double)__CD_ACCESS__tile_index_width +
          ((double)local_col + 0.5) / (double)scan_density_width) /
         (double)__CD_ACCESS__tiles_width;
-    const double b =
+    double b =
         ((double)__CD_ACCESS__tile_index_height +
          ((double)local_row + 0.5) / (double)scan_density_height) /
         (double)__CD_ACCESS__tiles_height;
+
+    if (__CD_ACCESS__image_plane_crop_enabled) {
+        a = __CD_ACCESS__a_min + (__CD_ACCESS__a_max - __CD_ACCESS__a_min) * a;
+        b = __CD_ACCESS__b_min + (__CD_ACCESS__b_max - __CD_ACCESS__b_min) * b;
+    } // END IF: cropped image-plane sampling
 
     // Pixel-center sampling uses half-cell offsets. Increasing the column
     // increases the width offset and therefore moves the ray toward e_3;
@@ -1031,22 +1088,24 @@ __TETRAD_SCALAR_DECLARATIONS__
         fprintf(stderr, "ERROR: alpha_w and alpha_h must lie strictly between 0 and pi.\n");
         exit(EXIT_FAILURE);
     }
-    const double projected_tile_height_to_width =
-        tan(0.5 * commondata->alpha_h) * (double)tiles_width /
-        (tan(0.5 * commondata->alpha_w) * (double)tiles_height);
-    const double scan_density_height_real =
-        (double)scan_density_width * projected_tile_height_to_width;
-    if (!isfinite(scan_density_height_real) ||
-        scan_density_height_real < 1.0 ||
-        scan_density_height_real > (double)INT_MAX) {
-        fprintf(stderr, "ERROR: derived scan-density height is invalid.\n");
+    if (commondata->image_plane_crop_enabled &&
+        (!isfinite(commondata->a_min) || !isfinite(commondata->a_max) ||
+         !isfinite(commondata->b_min) || !isfinite(commondata->b_max) ||
+         commondata->a_min < 0.0 || commondata->a_max > 1.0 ||
+         commondata->b_min < 0.0 || commondata->b_max > 1.0 ||
+         commondata->a_min >= commondata->a_max || commondata->b_min >= commondata->b_max)) {
+        fprintf(stderr, "ERROR: image-plane ranges require finite bounds with 0 <= min < max <= 1.\n");
         exit(EXIT_FAILURE);
-    }
-    const int scan_density_height = (int)llround(scan_density_height_real);
+    } // END IF: invalid image-plane scan bounds
+    if (commondata->image_plane_crop_enabled &&
+        (tiles_width != 1 || tiles_height != 1)) {
+        fprintf(stderr, "ERROR: cropped image-plane scans require tiles_width=1 and tiles_height=1.\n");
+        exit(EXIT_FAILURE);
+    } // END IF: cropped scan uses multiple tiles
     if (scan_density_height <= 0) {
-        fprintf(stderr, "ERROR: derived scan-density height rounded to zero.\n");
+        fprintf(stderr, "ERROR: scan-density height must be positive.\n");
         exit(EXIT_FAILURE);
-    }
+    } // END IF: invalid height sample count
     if ((long int)scan_density_height >
         LONG_MAX / (long int)scan_density_width) {
         fprintf(stderr, "ERROR: tile ray count overflowed long int.\n");
@@ -1115,6 +1174,7 @@ __INTEGRATION_PARAM_INITIALIZATION__
     @param[in] commondata Observer, image, and integration parameters; batch
         generation can additionally include event-plane parameters.
     @param num_rays Number of rays in the current tile.
+    @param scan_density_height Caller-selected rows in the current tile; one for a single photon.
     @param[in,out] all_photons Host Structure of Arrays state and optional event flags.
     @param[in] observer_metric Ten independent covariant metric components at the
         observer event, ordered ``(g00,g01,g02,g03,g11,g12,g13,g22,g23,g33)``.
@@ -1126,7 +1186,7 @@ __INTEGRATION_PARAM_INITIALIZATION__
     stream_param = "const int stream_idx" if parallelization == "cuda" else ""
     params = (
         "const commondata_struct *restrict commondata, "
-        "long int num_rays, "
+        "long int num_rays, const int scan_density_height, "
         "PhotonStateSoA *restrict all_photons, "
         "const double observer_metric[10], "
         "double observer_tetrad_out[4][4]"

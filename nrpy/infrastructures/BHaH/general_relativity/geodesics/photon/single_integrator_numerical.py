@@ -82,6 +82,9 @@ def single_integrator_numerical(  # pylint: disable=invalid-name,too-many-locals
     :raises ValueError: If the interpolation method or dataset coordinate system
         is unsupported.
 
+    Terminal candidates must identify the terminal plane explicitly; zero
+    initialization selects the nonterminal plane during Brent refinement.
+
     Doctests:
     >>> import os
     >>> import tempfile
@@ -96,6 +99,8 @@ def single_integrator_numerical(  # pylint: disable=invalid-name,too-many-locals
     >>> "const double trajectory_norm = normalization.C;" in generated
     True
     >>> "fabs(normalization.C)" not in generated
+    True
+    >>> all(f"plane_candidates.terminal_candidate_{candidate}.plane_type = TERMINAL_PLANE_EVENT;" in generated for candidate in range(1, 4))
     True
     >>> with tempfile.TemporaryDirectory() as cache_dir, patch.dict(os.environ, {"XDG_CACHE_HOME": cache_dir}):
     ...     cfc.CFunction_dict.clear()
@@ -833,6 +838,10 @@ the RKF45 integration parameter is lambda and ``f[0]`` is coordinate time.
   bool on_positive_side_of_non_terminal_plane_prev = false;
   bool on_positive_side_of_terminal_plane_prev = false;
   photon_plane_crossing_candidates_t plane_candidates = {{0}};
+  plane_candidates.non_terminal_candidate.plane_type = NON_TERMINAL_PLANE_EVENT;
+  plane_candidates.terminal_candidate_1.plane_type = TERMINAL_PLANE_EVENT;
+  plane_candidates.terminal_candidate_2.plane_type = TERMINAL_PLANE_EVENT;
+  plane_candidates.terminal_candidate_3.plane_type = TERMINAL_PLANE_EVENT;
   non_terminal_plane_crossing_result_t non_terminal_result = {{0}};
   terminal_plane_crossing_result_t terminal_result = {{0}};
   const long int event_chunk_index[1] = {{0}};
@@ -1053,7 +1062,7 @@ the RKF45 integration parameter is lambda and ``f[0]`` is coordinate time.
   initial_photon.on_positive_side_of_terminal_plane_prev =
       &on_positive_side_of_terminal_plane_prev;
   set_initial_conditions_kernel(
-      &commondata, num_rays, &initial_photon, observer_metric, observer_tetrad);
+      &commondata, num_rays, 1, &initial_photon, observer_metric, observer_tetrad);
   // Retain the direct tangent before normalized-EOM conversion. It defines
   // the inertial straight-line reference for an analytic spacetime.
   const double initial_direct_momentum[4] = {{f[4], f[5], f[6], f[7]}};

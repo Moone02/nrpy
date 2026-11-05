@@ -241,6 +241,8 @@ def diagnose_blueprint() -> None:
     print("=================================================================")
     print(" BLUEPRINT DIAGNOSTICS & VISUALIZATION")
     print(f" Grid: {tiles_width}x{tiles_height} Tiles")
+    print(f" a range: [{first_header.a_min!r}, {first_header.a_max!r}]")
+    print(f" b range: [{first_header.b_min!r}, {first_header.b_max!r}]")
     print("=================================================================")
 
     blueprint_files: List[str] = []

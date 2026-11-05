@@ -63,7 +63,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description=(
             "Generate a tiled analytical photon raytracing project. "
-            "The project emits v8 light-blueprint records with normalized "
+            "The project emits v9 light-blueprint records with normalized "
             "image-sample coordinates."
         )
     )
@@ -102,6 +102,17 @@ if __name__ == "__main__":
         metavar=("X", "Y", "Z"),
         help="Observer up/roll direction seed.",
     )
+    for coordinate in ("a", "b"):
+        parser.add_argument(
+            f"--{coordinate}-range",
+            nargs=2,
+            type=float,
+            metavar=("MIN", "MAX"),
+            help=(
+                f"Normalized image-plane {coordinate} range; omitted range defaults to [0, 1]. "
+                "Supplying either range requires one tile; a is horizontal and b is upward."
+            ),
+        )
     parser.add_argument(
         "--observer-fov",
         nargs=2,
@@ -237,6 +248,20 @@ if __name__ == "__main__":
         parser.print_help()
         sys.exit(0)
     args = parser.parse_args()
+
+    image_plane_crop_enabled = args.a_range is not None or args.b_range is not None
+    a_range = args.a_range if args.a_range is not None else [0.0, 1.0]
+    b_range = args.b_range if args.b_range is not None else [0.0, 1.0]
+    for option, bounds in (("--a-range", a_range), ("--b-range", b_range)):
+        if not all(math.isfinite(value) for value in bounds) or not (
+            0.0 <= bounds[0] < bounds[1] <= 1.0
+        ):
+            parser.error(f"{option} requires finite bounds with 0 <= MIN < MAX <= 1.")
+    if image_plane_crop_enabled and args.tile_counts != [1, 1]:
+        parser.error(
+            "--a-range and --b-range require --tile-counts 1 1; "
+            "cropped image-plane scans do not support multiple tiles."
+        )
 
     if any(value <= 0.0 for value in args.observer_fov):
         parser.error("--observer-fov values must be positive.")
@@ -412,6 +437,9 @@ if __name__ == "__main__":
         par.adjust_CodeParam_default(name, value)
     par.adjust_CodeParam_default("alpha_w", args.observer_fov[0])
     par.adjust_CodeParam_default("alpha_h", args.observer_fov[1])
+    par.adjust_CodeParam_default("image_plane_crop_enabled", image_plane_crop_enabled)
+    for name, value in zip(("a_min", "a_max", "b_min", "b_max"), a_range + b_range):
+        par.adjust_CodeParam_default(name, value)
 
     terminal_defaults = {
         "terminal_plane_center_x": -1.0e4,
@@ -489,9 +517,9 @@ if __name__ == "__main__":
     par.adjust_CodeParam_default("t_start", args.t_start)
 
     # Step 6.h: Set width-side ray-sample density for the selected backend.
-    # The initializer derives the height-side density from the fields of view
-    # and tile-count aspect ratio. Final image resolution remains a renderer
-    # setting, not a photon-grid parameter.
+    # The batch driver derives the row count from the fields of view and
+    # selected image-plane ranges, or the tile-count ratio for a full scan.
+    # Final image resolution remains a renderer setting.
     par.adjust_CodeParam_default("scan_density", args.scan_density)
 
     if args.initial_step is not None:
@@ -641,7 +669,7 @@ if __name__ == "__main__":
         CC=compiler,
         src_code_file_ext=ext,
     )
-    # Step 8: Copy the version-6 blueprint file-format definitions, reader,
+    # Step 8: Copy the blueprint file-format definitions, reader,
     # renderer, and diagnostic functions; then print usage instructions.
     vis_dir = os.path.join(
         os.path.dirname(os.path.abspath(__file__)), "geodesic_visualizations"
@@ -695,9 +723,12 @@ if __name__ == "__main__":
     )
     print(f"    {vis_command}\n")
     print(
+        "    The renderer reads the exact image-plane bounds from the blueprint header.\n"
+    )
+    print(
         "    Ray sampling uses "
         f"{c_scan_density} width-side samples per tile; height-side sampling "
-        "is derived from the fields of view and tile-grid aspect ratio.\n"
+        "is derived from the fields of view and selected ranges or tile counts.\n"
     )
 
     blueprint_command = "python3 blueprint_analysis.py"

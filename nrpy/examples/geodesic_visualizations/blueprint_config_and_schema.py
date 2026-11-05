@@ -28,11 +28,11 @@ import numpy as np
 # Nonterminal coordinates are crossing diagnostics; terminal coordinates are
 # terminal-plane texture samples.
 BLUEPRINT_MAGIC = b"NRPYBP01"
-BLUEPRINT_SCHEMA_VERSION = 8
-# Header stores tile identity/counts and FOV metadata. Runtime tile/full pixel
-# dimensions are commondata used during initialization and are not serialized.
-BLUEPRINT_HEADER_FORMAT = "=8sIIIIIIIQdd"
-BLUEPRINT_HEADER_SIZE = 60
+BLUEPRINT_SCHEMA_VERSION = 9
+# Header stores tile identity/counts, full-camera fields of view, and exact
+# global image-plane bounds. Output pixel dimensions are chosen when rendering.
+BLUEPRINT_HEADER_FORMAT = "=8sIIIIIIIQ6d"
+BLUEPRINT_HEADER_SIZE = 92
 BLUEPRINT_RECORD_SIZE = 124
 if struct.calcsize(BLUEPRINT_HEADER_FORMAT) != BLUEPRINT_HEADER_SIZE:
     raise RuntimeError("BLUEPRINT_HEADER_FORMAT does not match header size")

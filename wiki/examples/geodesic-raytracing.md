@@ -200,14 +200,15 @@ The batch generator derives `project_dir` from `--outdir` plus
 `photon_batch_geodesic_integrator_analytical`. It sets `parallelization` to `openmp` unless
 `--cuda` is present. OpenMP uses `gcc`, `-fopenmp`, and C sources; CUDA uses
 `nvcc`, `-lcudart`, `-DUSE_GPU`, `.cu` sources, and copied `cuda_intrinsics.h`.
-Both modes require `--scan-density` for the width-side ray-sample count per tile,
-and `--tile-counts` defaults to `1 1` in both modes. Height-side sampling is
-derived internally from the fields of view and tile-grid aspect ratio.
-Generated programs expose `tiles_width`, `tiles_height`, and `scan_density` as
-angular ray-sampling controls; `--pixel-width` on `visualize_lensed_image.py`
-controls final PNG resampling only. The visualization reads tile counts and
-`alpha_w`/`alpha_h` from blueprint headers rather than accepting them as CLI
-overrides. The CUDA runtime/toolchain facts are limited to
+Both modes require `--scan-density` for the number of photon columns per tile,
+and `--tile-counts` defaults to `1 1`. For a full-image scan without range
+options, `main_batch.main` calculates rows per tile from the projected camera
+height-to-width ratio and the tile-count ratio, using nearest-integer rounding
+with `llround`. Generated programs expose `tiles_width`, `tiles_height`, and
+`scan_density` as photon-sampling parameters. The renderer's `--pixel-width`
+sets output resolution independently of the photon count; it reads tile counts,
+full-camera fields of view, and exact scan bounds from blueprint headers.
+The CUDA runtime/toolchain facts are limited to
 the generator's compiler, flags, and copied helper declarations. NVIDIA's
 official [NVCC guide](https://docs.nvidia.com/cuda/cuda-programming-guide/02-basics/nvcc.html)
 heading `NVCC: The NVIDIA CUDA Compiler` establishes that `nvcc` belongs to the
@@ -219,26 +220,87 @@ Claim evidence:
 - Deciding authority: `nrpy/examples/photon_batch_geodesic_integrator_analytical.py` — argument parser and project generation
 - Corroboration: `nrpy/examples/geodesic_visualizations/visualize_lensed_image.py` — header-driven tile and aspect-ratio handling
 
+The analytical and numerical photon examples, for both batches and single
+photons, accept optional `--a-range A_MIN A_MAX` and `--b-range B_MIN B_MAX`.
+These dimensionless coordinates select a rectangle of the original camera
+image: `a` increases horizontally and `b` increases upward. Each omitted range
+is `[0,1]`. Bounds must be finite and satisfy `0 <= MIN < MAX <= 1`.
+Supplying either option, including an explicit `[0,1]` range, enables cropping.
+Cropped batch scans require `--tile-counts 1 1`; incompatible options stop
+before C generation. The generated batch program and shared initializer also
+reject cropped scans with multiple tiles when parameters are overridden.
+
+For a cropped batch, let $N_a$ be `scan_density`,
+$\Delta a=a_{\max}-a_{\min}$, and $\Delta b=b_{\max}-b_{\min}$. The rows are
+
+$$
+N_b=\left\lfloor N_a\frac{\Delta b}{\Delta a}
+\frac{\tan(\alpha_h/2)}{\tan(\alpha_w/2)}\right\rfloor.
+$$
+
+The selected width still receives $N_a$ photons per row. An empty derived row
+count is an error. The sample centers are
+$a_i=a_{\min}+\Delta a(i+1/2)/N_a$ and
+$b_j=b_{\min}+\Delta b(j+1/2)/N_b$. The full-camera fields of view and observer
+tetrad retain their meanings; cropping selects directions within that camera.
+Without either range option, the existing tile-aware calculation is
+$N_b=\operatorname{llround}[N_a\tan(\alpha_h/2)T_w/
+(\tan(\alpha_w/2)T_h)]$, where $T_w,T_h$ are the tile counts. Each tile has
+$N_aN_b$ photons.
+
+The single-photon integrators pass one column and one row to the shared
+initializer, selecting the cropped rectangle's center independently of its
+aspect ratio. The numerical single-photon program retains runtime tile
+selection for uncropped rays. Its cropped rays require one tile. To compare a
+single photon with a batch sample, match the metric parameters, observer event,
+fields of view, and sample-center coordinates; the analytical examples have
+different default Kerr spins.
+
+Claim evidence:
+- Claim: Image-plane range options select camera directions without reducing the requested column count; cropped scans require one tile, cropped row counts use floor rounding, and single-photon initialization uses one sample at the selected center.
+- Role: generated evidence
+- Deciding authority: `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/main_batch.py` — `main`; `set_initial_conditions_kernel.py` — `set_initial_conditions_kernel`
+- Corroboration: `nrpy/examples/photon_batch_geodesic_integrator_analytical.py`, `photon_batch_geodesic_integrator_numerical.py`, `photon_single_geodesic_integrator_analytical.py`, and `photon_single_geodesic_integrator_numerical.py` — range options and parameter defaults; `single_integrator_analytical.py` and `single_integrator_numerical.py` — one-row initialization
+
 The analytical batch integrator applies the same upper-only log-energy cutoff
 after each accepted state. Its direct-EOM path refreshes the accepted-state
 metric before computing `ln|alpha p^0|`; normalized mode uses `u` directly.
 
 The batch executable produces tiled `light_blueprint_XX_YY.bin` files in its
 project directory. Those binary files are generated output, not KB sources.
-The native same-build blueprint binary layout is version 8 with 124-byte records.
-The header stores tile identity/counts and `alpha_w`/`alpha_h`. Each record stores
+The native same-build blueprint binary layout is version 9 with a 92-byte header
+and 124-byte photon records. The header stores tile identity/counts,
+`alpha_w`/`alpha_h`, and the exact global image-plane scan bounds
+`a_min`, `a_max`, `b_min`, and `b_max`. Full-image scans store `[0,1]` in both
+directions. The renderer reads these bounds automatically; `--pixel-width` spans
+the stored `a` range. For requested pixel width $W$, the output height is
+
+$$
+H=\max\left(1,\left\lfloor W\frac{\Delta b}{\Delta a}
+\frac{\tan(\alpha_h/2)}{\tan(\alpha_w/2)}\right\rfloor\right).
+$$
+
+Floor rounding avoids adding an unsampled row when rendering a cropped scan
+at its sampling width. Output resolution does not add photons. Range arguments
+are not needed when regenerating an image. Retain the texture files and the
+rendering command, including pixel width, terminal-plane texture radii, and any
+debug-color options, to reproduce its appearance. Readers require the current
+binary-layout version; older blueprints must be regenerated with the matching
+photon project and reader.
+
+Each photon record stores
 nonterminal-plane crossing coordinates, affine parameter, and coordinate time;
 terminal-plane texture coordinates; final sphere angles, affine parameter, and
 coordinate time; and normalized `image_width_fraction`/`image_height_fraction`
 sample coordinates. It also stores axial angular momentum, coordinate time, and
-signed plane distance at the first accepted state after a nonterminal crossing.
-The Python field definitions in `blueprint_config_and_schema.py` explicitly say the dtype must match the C
-`blueprint_data_t` layout and that termination enum constants must stay
-synchronized with generated C headers; this is the main binary-layout synchronization
-risk.
+signed plane distance at the Brent-refined nonterminal crossing.
+The Python `BLUEPRINT_DTYPE`, C `blueprint_data_t`, and termination enums must
+agree. Photon record coordinates remain global `(a,b)` values; the renderer
+subtracts the stored minima and divides by the stored range widths before
+placing them in output pixels.
 
 Claim evidence:
-- Claim: Photon batch blueprint files use native same-build binary-layout version 8 with 124-byte records; Python `BLUEPRINT_DTYPE` must match the generated C `blueprint_data_t` layout and termination enums.
+- Claim: Photon batch blueprint files use native same-build binary-layout version 9 with exact image-plane bounds in a 92-byte header and 124-byte photon records; Python `BLUEPRINT_DTYPE` must match the generated C `blueprint_data_t` layout and termination enums.
 - Role: generated evidence
 - Deciding authority: `nrpy/examples/geodesic_visualizations/blueprint_config_and_schema.py` — `BLUEPRINT_SCHEMA_VERSION`, `BLUEPRINT_DTYPE`
 - Corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/calculate_and_fill_blueprint_data_universal.py` — generated record layout
@@ -393,6 +455,8 @@ Claim evidence:
 - [combine_raytracing_time_slices.py](../../nrpy/infrastructures/BHaH/diagnostics/combine_raytracing_time_slices.py) - `InputSliceInfo`, `parse_args`, `--run-metadata`
 - [visualize_trajectory.py](../../nrpy/examples/geodesic_visualizations/visualize_trajectory.py) - `visualize_trajectory`, `plot_trajectory`
 - [blueprint_config_and_schema.py](../../nrpy/examples/geodesic_visualizations/blueprint_config_and_schema.py) - `BLUEPRINT_DTYPE`, `STOP_CONDITION_TERMINAL_PLANE`
+- [main_batch.py](../../nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/main_batch.py) - `main`, photon row counts, global sample coordinates, and saved scan bounds
+- [set_initial_conditions_kernel.py](../../nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/set_initial_conditions_kernel.py) - `set_initial_conditions_kernel`, camera sample mapping and caller-selected row counts
 - [blueprint_io.py](../../nrpy/examples/geodesic_visualizations/blueprint_io.py) - `read_blueprint_header`, `iter_blueprint_chunks`
 - [render_lensed_image.py](../../nrpy/examples/geodesic_visualizations/render_lensed_image.py) - `generate_static_lensed_image`, `_process_blueprint_tile`, `_load_texture`
 - [visualize_lensed_image.py](../../nrpy/examples/geodesic_visualizations/visualize_lensed_image.py) - `main`, `light_blueprint_{i:02d}_{j:02d}.bin`, `urlretrieve`

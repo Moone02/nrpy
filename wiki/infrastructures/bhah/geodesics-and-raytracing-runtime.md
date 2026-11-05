@@ -42,6 +42,26 @@ Batch generators and both single-photon generators initialize each enabled
 plane's starting side when registering their shared initializer.
 Event-plane bases used by crossing handlers are not the metric tetrad used to
 initialize momentum.
+
+`main_batch.main` calculates the photon row count once and passes it through
+the selected batch integrator to `set_initial_conditions_kernel`. The
+initializer checks the supplied count against the allocated rays. Both
+single-photon integrators supply one row and retain one photon, so rectangle
+aspect ratio cannot change their allocation or displace their sample from the
+selected center.
+
+The parameters `image_plane_crop_enabled`, `a_min`, `a_max`, `b_min`, and
+`b_max` describe optional image-plane scanning. The crop flag is false by
+default and both ranges default to `[0,1]`. Cropped scans require one tile.
+The initializer maps sample centers into the selected rectangle before
+constructing momentum. The batch writer applies the same mapping when saving
+global image coordinates. Range selection leaves the full-camera fields of
+view, metric, tetrad, and event-plane geometry unchanged. Cropped batches use
+floor-rounded row counts from the range and tangent half-field-of-view ratios;
+uncropped batches retain the existing nearest-integer tile-aware calculation.
+The [ray-tracing examples](../../examples/geodesic-raytracing.md) give the
+sampling and output-image equations.
+
 The generated ray construction sets the initial camera-tetrad photon energy
 magnitude to `E_camera = 1` before any normalized-variable conversion. This
 affine normalization is distinct from the hypersurface-normal measure
@@ -65,6 +85,20 @@ normalization sidecar stores `|C_direct|` for direct EOM and
 `|exp(2u)(C_normalized - 1)|` for normalized EOM.
 
 Evidence (generated evidence): `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/batch_integrator_numerical.py` — `batch_integrator_numerical`; corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/time_slot_manager_helpers.py` — `TimeSlotManager`
+
+The numerical batch terminal display reports retryable rejections in the latest
+processed photon chunk. Its `RKF45`, `Spatial`, and `Temporal` percentages all
+use the number of attempted photons in that chunk as their denominator.
+`Spatial` covers coordinate inversion, spatial-stencil, and spatial-output
+failures; `Temporal` covers time-stencil and temporal-interpolation failures.
+The integrator saves each trial's incoming status before finalization replaces
+retryable interpolation failures with `REJECTED`. Integer category counts sum
+to the total rejection count; independently rounded percentages can differ
+from the displayed total by one tenth of a percentage point. Terminal failures
+and caps on the next accepted step are excluded. These percentages are separate
+from the smoothed RKF45 attempt rate and are not cumulative over the run.
+
+Evidence (descriptive behavior): `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/batch_integrator_numerical.py` — saved trial statuses, rejection counting, and terminal output in `batch_integrator_numerical`; corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/rkf45_finalize_and_control_kernel.py` — retryable interpolation failures and RKF45 error control
 
 The RKF45 kernels are deliberately split. `interpolation_kernel` evaluates
 spacetime-specialized `g4DD_metric` and `connections` helpers for each ray and
@@ -112,10 +146,18 @@ The rows contain refined plane states, local coordinates, Brent iteration
 counts, and signed plane distances. Analytical batches transfer CUDA crossing
 records to the host before refinement.
 
+The numerical single-photon integrator explicitly initializes the nonterminal
+record with `NON_TERMINAL_PLANE_EVENT` and every terminal record with
+`TERMINAL_PLANE_EVENT`. Brent refinement uses that field to select the plane
+centre and normal. A zero-initialized terminal record instead selects the
+nonterminal geometry, which can reject an otherwise valid terminal crossing.
+
 Evidence (descriptive behavior): `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/event_detection_manager_kernel.py` — `event_detection_manager_kernel`; corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/find_plane_crossings_brent.py` — analytical and numerical refinement and terminal selection; `single_integrator_analytical.py` and `single_integrator_numerical.py` — single-photon crossing output; `batch_integrator_analytical.py` and `batch_integrator_numerical.py` — sparse crossing files and plane diagnostics; `handle_non_terminal_plane_intersection.py` and `handle_terminal_plane_intersection.py` — local coordinates and radius filtering
 
-Blueprint headers carry tile identity/counts, `alpha_w`, `alpha_h`, and binary-layout
-version 8. Each native same-build record is 124 bytes. Records carry nonterminal
+Blueprint headers carry tile identity/counts, `alpha_w`, `alpha_h`, and exact
+`a_min`, `a_max`, `b_min`, and `b_max` scan bounds in binary-layout version 9.
+The header is 92 bytes; each native same-build photon record remains 124 bytes.
+Records carry nonterminal
 crossing coordinates, affine parameter, and coordinate time; terminal-plane
 texture coordinates; final angles, termination affine parameter and coordinate
 time; normalized image-sample fractions; and axial angular momentum, its
@@ -124,8 +166,13 @@ Final records admit spatial- and
 temporal-interpolation failure statuses in addition to the existing physical
 stops and numerical failures; internal `ACTIVE` and `REJECTED` states remain
 invalid serialized outcomes.
-The renderer places rays from the normalized fractions and preserves the
-vertical raster flip, while plane diagnostics remain available to
+The renderer maps the stored scan bounds to the output edges and preserves the
+vertical raster flip. The requested pixel width spans the complete stored
+`a` range; height follows the selected projected camera-plane proportions,
+including the tangent half-field-of-view factors. Output height is rounded
+down, with a minimum of one pixel; output resolution does not add photon
+samples. Readers require version 9 headers and do not infer scan edges from
+sample-center extrema. Plane diagnostics remain available to
 `blueprint_analysis.py`. That analysis also consumes optional matching
 normalization sidecars and plots their magnitudes by termination status.
 
@@ -188,14 +235,18 @@ nonuniform slice times. For `g4DD`, analytic derivatives of that temporal basis
 provide metric time derivatives; `g4DD_d0` and `GammaUDD` instead interpolate
 their stored secondary payloads.
 
-Ray-local interpolation errors have distinct terminal statuses. Coordinate
+Ray-local interpolation errors have distinct statuses. Coordinate
 inversion, spatial-helper, and nonfinite spatial-output failures produce
 `FAILURE_SPATIAL_INTERPOLATION`; temporal-window, temporal-helper, and
 nonfinite final temporal-output failures produce
 `FAILURE_TEMPORAL_INTERPOLATION`. The wrapper fills that ray's interpolation
-scratch outputs with `NAN`. RKF45 finalization and event detection preserve the
-status and last accepted persistent state, after which the existing host
-routing serializes the ray as completed and continues the batch. Observer
+scratch outputs with `NAN`. Numerical batch RKF45 finalization retries stage
+interpolation failures with a halved step magnitude, bounded below by
+`rkf45_h_min`, while preserving the last accepted state. Retryable trials use
+`REJECTED`; exceeding `rkf45_max_retries` retains the interpolation-failure
+status and ends that photon. Single-photon interpolation failures and batch
+accepted-state metric-refresh failures retain their failure status immediately.
+The batch integrator continues the remaining photons. Observer
 interpolation remains fatal because no rays can be initialized without the
 observer metric. Optional terminal and nonterminal normalization diagnostics
 use temporary statuses, skip failed diagnostic samples, and leave their

@@ -115,6 +115,17 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar=("UX", "UY", "UZ"),
         help="Observer up/roll direction seed.",
     )
+    for coordinate in ("a", "b"):
+        parser.add_argument(
+            f"--{coordinate}-range",
+            nargs=2,
+            type=float,
+            metavar=("MIN", "MAX"),
+            help=(
+                f"Normalized image-plane {coordinate} range; omitted range defaults to [0, 1]. "
+                "Supplying either range requires one tile; a is horizontal and b is upward."
+            ),
+        )
     parser.add_argument(
         "--observer-fov",
         nargs=2,
@@ -260,7 +271,19 @@ if __name__ == "__main__":
     if len(sys.argv) == 1:
         _build_parser().print_help()
         sys.exit(0)
-    args = _build_parser().parse_args()
+    arg_parser = _build_parser()
+    args = arg_parser.parse_args()
+
+    image_plane_crop_enabled = args.a_range is not None or args.b_range is not None
+    a_range = args.a_range if args.a_range is not None else [0.0, 1.0]
+    b_range = args.b_range if args.b_range is not None else [0.0, 1.0]
+    for option, bounds in (("--a-range", a_range), ("--b-range", b_range)):
+        if not all(math.isfinite(value) for value in bounds) or not (
+            0.0 <= bounds[0] < bounds[1] <= 1.0
+        ):
+            arg_parser.error(
+                f"{option} requires finite bounds with 0 <= MIN < MAX <= 1."
+            )
 
     if any(value <= 0.0 for value in args.observer_fov):
         raise ValueError("--observer-fov values must be positive.")
@@ -431,6 +454,9 @@ if __name__ == "__main__":
         par.adjust_CodeParam_default(name, value)
     par.adjust_CodeParam_default("alpha_w", args.observer_fov[0])
     par.adjust_CodeParam_default("alpha_h", args.observer_fov[1])
+    par.adjust_CodeParam_default("image_plane_crop_enabled", image_plane_crop_enabled)
+    for name, value in zip(("a_min", "a_max", "b_min", "b_max"), a_range + b_range):
+        par.adjust_CodeParam_default(name, value)
     par.adjust_CodeParam_default("t_start", args.t_start)
     par.adjust_CodeParam_default("initial_h", -0.1 if normalized_eom else 0.1)
     par.adjust_CodeParam_default("r_escape", args.escape_radius)

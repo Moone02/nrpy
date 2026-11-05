@@ -628,7 +628,7 @@ connection, and right-hand-side stages of each trial in execution order.
     );
     double observer_tetrad[4][4];
     set_initial_conditions_kernel(
-      &commondata, num_rays, &all_photons, metric, observer_tetrad
+      &commondata, num_rays, 1, &all_photons, metric, observer_tetrad
     );
 {normalized_momentum_conversion}
     plane_candidates.non_terminal_candidate.photon_index = 0;

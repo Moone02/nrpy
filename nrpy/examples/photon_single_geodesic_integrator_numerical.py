@@ -176,6 +176,17 @@ if __name__ == "__main__":
         metavar=("UX", "UY", "UZ"),
         help="Observer up/roll direction seed.",
     )
+    for coordinate in ("a", "b"):
+        arg_parser.add_argument(
+            f"--{coordinate}-range",
+            nargs=2,
+            type=float,
+            metavar=("MIN", "MAX"),
+            help=(
+                f"Normalized image-plane {coordinate} range; omitted range defaults to [0, 1]. "
+                "Supplying either range requires one tile; a is horizontal and b is upward."
+            ),
+        )
     arg_parser.add_argument(
         "--observer-fov",
         nargs=2,
@@ -360,6 +371,17 @@ if __name__ == "__main__":
         arg_parser.print_help()
         sys.exit(0)
     args = arg_parser.parse_args()
+
+    image_plane_crop_enabled = args.a_range is not None or args.b_range is not None
+    a_range = args.a_range if args.a_range is not None else [0.0, 1.0]
+    b_range = args.b_range if args.b_range is not None else [0.0, 1.0]
+    for option, bounds in (("--a-range", a_range), ("--b-range", b_range)):
+        if not all(math.isfinite(value) for value in bounds) or not (
+            0.0 <= bounds[0] < bounds[1] <= 1.0
+        ):
+            arg_parser.error(
+                f"{option} requires finite bounds with 0 <= MIN < MAX <= 1."
+            )
     normalized_eom = args.eom == "normalized"
     axisymmetric_about_z = args.axisymmetric_about_z
     interpolation_method = args.interpolation_method
@@ -694,6 +716,9 @@ if __name__ == "__main__":
         par.adjust_CodeParam_default(name, value)
     par.adjust_CodeParam_default("alpha_w", args.observer_fov[0])
     par.adjust_CodeParam_default("alpha_h", args.observer_fov[1])
+    par.adjust_CodeParam_default("image_plane_crop_enabled", image_plane_crop_enabled)
+    for name, value in zip(("a_min", "a_max", "b_min", "b_max"), a_range + b_range):
+        par.adjust_CodeParam_default(name, value)
 
     terminal_defaults = {
         "terminal_plane_center_x": -1.0e4,

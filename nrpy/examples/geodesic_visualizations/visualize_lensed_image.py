@@ -69,7 +69,7 @@ def main() -> None:
         "--pixel-width",
         type=int,
         default=750,
-        help="Pixel width of the final output image; does not change ray-grid resolution.",
+        help="Pixel width across the blueprint's stored a range; does not change photon sampling.",
     )
     parser.add_argument(
         "--sphere-image",
@@ -141,6 +141,10 @@ def main() -> None:
         "Blueprint angular aspect ratio: "
         f"{first_header.alpha_w:.6g} x {first_header.alpha_h:.6g} radians"
     )
+    print(
+        f"Image-plane bounds: a=[{first_header.a_min!r}, {first_header.a_max!r}], "
+        f"b=[{first_header.b_min!r}, {first_header.b_max!r}]"
+    )
 
     # The custom sphere image overrides the default downloaded texture when provided.
     if args.sphere_image is None:
@@ -165,9 +169,17 @@ def main() -> None:
     # Physical span encompasses full mathematical diameter of accretion disk geometry.
     source_physical_width = 2.0 * terminal_plane_max_radius
 
-    # Preserve blueprint image aspect ratio while optionally resampling width.
+    # Round height down like cropped photon sampling, so a native-width image
+    # does not introduce an extra row without photons.
     pixel_height = max(
-        1, math.ceil(args.pixel_width * first_header.alpha_h / first_header.alpha_w)
+        1,
+        math.floor(
+            args.pixel_width
+            * (first_header.b_max - first_header.b_min)
+            / (first_header.a_max - first_header.a_min)
+            * math.tan(0.5 * first_header.alpha_h)
+            / math.tan(0.5 * first_header.alpha_w)
+        ),
     )
 
     terminal_plane_texture: Union[str, npt.NDArray[np.float64]]

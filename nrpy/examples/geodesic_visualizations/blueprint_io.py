@@ -22,7 +22,7 @@ except ImportError:
 
 
 class BlueprintHeader(NamedTuple):
-    """Validated tile identity/counts and fields of view from one header."""
+    """Tile identity/counts, camera fields of view, and global image-plane bounds."""
 
     magic: bytes
     schema_version: int
@@ -35,6 +35,10 @@ class BlueprintHeader(NamedTuple):
     record_count: int
     alpha_w: float
     alpha_h: float
+    a_min: float
+    a_max: float
+    b_min: float
+    b_max: float
 
 
 def read_blueprint_header(
@@ -47,6 +51,18 @@ def read_blueprint_header(
     :param expected_tile: Optional expected ``(tile_x, tile_y)`` pair.
     :return: Validated blueprint metadata.
     :raises ValueError: If the binary file is malformed or has the wrong tile.
+
+    Doctests:
+    >>> import tempfile
+    >>> from pathlib import Path
+    >>> with tempfile.TemporaryDirectory() as directory:
+    ...     path = Path(directory) / "light_blueprint_00_00.bin"
+    ...     raw = struct.pack("=8s7IQ6d", b"NRPYBP01", 9, 92, 124,
+    ...                       0, 0, 1, 1, 1, 1.2, 0.8, 0.25, 0.75, 0.625, 0.875)
+    ...     _ = path.write_bytes(raw + bytes(124))
+    ...     header = read_blueprint_header(str(path), expected_tile=(0, 0))
+    ...     assert (header.a_min, header.a_max, header.b_min, header.b_max) == (0.25, 0.75, 0.625, 0.875)
+    ...     assert header.header_size == 92 and header.record_count == 1
     """
     with open(filename, "rb") as blueprint_file:
         raw_header = blueprint_file.read(cfg.BLUEPRINT_HEADER_SIZE)
@@ -58,7 +74,8 @@ def read_blueprint_header(
         raise ValueError(f"Blueprint '{filename}' has an invalid magic value")
     if header.schema_version != cfg.BLUEPRINT_SCHEMA_VERSION:
         raise ValueError(
-            f"Blueprint '{filename}' has an unsupported binary-layout version"
+            f"Blueprint '{filename}' uses version {header.schema_version}; "
+            f"expected {cfg.BLUEPRINT_SCHEMA_VERSION}. Regenerate it with the current photon generator."
         )
     if header.header_size != cfg.BLUEPRINT_HEADER_SIZE:
         raise ValueError(f"Blueprint '{filename}' has an invalid header size")
@@ -143,3 +160,15 @@ def iter_blueprint_chunks(
                 records,
             )
             record_start += records_to_read
+
+
+if __name__ == "__main__":
+    import doctest
+    import sys
+
+    results = doctest.testmod()
+    if results.failed > 0:
+        print(f"Doctest failed: {results.failed} of {results.attempted} test(s)")
+        sys.exit(1)
+    else:
+        print(f"Doctest passed: All {results.attempted} test(s) passed")

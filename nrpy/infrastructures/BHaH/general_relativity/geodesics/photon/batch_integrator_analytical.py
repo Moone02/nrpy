@@ -175,6 +175,7 @@ static void write_plane_crossings(
                      from scan-density sampling; this integrator does not
                      calculate image placement or carry image metadata in the
                      evolving PhotonStateSoA.
+    @param scan_density_height Caller-selected rows in this tile batch.
     @param[out] results_buffer Device array storing the final physical intersections.
     @param[in] non_terminal_crossings_path Per-tile nonterminal crossing file.
     @param[in] terminal_crossings_path Per-tile terminal crossing file."""
@@ -184,7 +185,7 @@ static void write_plane_crossings(
     name = "batch_integrator_analytical"
 
     params = (
-        "const commondata_struct *restrict commondata, long int num_rays, "
+        "const commondata_struct *restrict commondata, long int num_rays, const int scan_density_height, "
         "blueprint_data_t *restrict results_buffer, "
         "const char *restrict non_terminal_crossings_path, "
         "const char *restrict terminal_crossings_path"
@@ -229,14 +230,14 @@ static void write_plane_crossings(
     if parallelization == "cuda":
         results_memcpy = "cudaMemcpy(results_buffer, d_results_buffer, sizeof(blueprint_data_t) * num_rays, cudaMemcpyDeviceToHost);"
         calc_blueprint = "calculate_and_fill_blueprint_data_universal(&all_photons_host, num_rays, results_buffer, NULL, NULL, NULL, NULL, NULL, 0);"
-        set_initial_conditions_call = " set_initial_conditions_kernel(commondata, num_rays, &all_photons_host, observer_metric, observer_tetrad, 0);"
+        set_initial_conditions_call = " set_initial_conditions_kernel(commondata, num_rays, scan_density_height, &all_photons_host, observer_metric, observer_tetrad, 0);"
         stream_destroy = "cudaStreamDestroy(streams[s]); // Purges the hardware stream execution context."
         free_device = "BHAH_FREE_DEVICE"
         free_pinned = "BHAH_FREE_PINNED"
     else:
         results_memcpy = "memcpy(results_buffer, d_results_buffer, sizeof(blueprint_data_t) * num_rays);"
         calc_blueprint = "calculate_and_fill_blueprint_data_universal(&all_photons_host, num_rays, results_buffer, NULL, NULL, NULL, NULL, NULL, 0);"
-        set_initial_conditions_call = " set_initial_conditions_kernel(commondata, num_rays, &all_photons_host, observer_metric, observer_tetrad);"
+        set_initial_conditions_call = " set_initial_conditions_kernel(commondata, num_rays, scan_density_height, &all_photons_host, observer_metric, observer_tetrad);"
         stream_destroy = (
             "// Stream destruction natively omitted for synchronous CPU execution."
         )

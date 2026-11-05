@@ -234,30 +234,46 @@ def pixel_indices_from_record(
     image_height_fraction: float,
     output_pixel_width: int,
     output_pixel_height: int,
+    image_plane_bounds: Tuple[float, float, float, float],
 ) -> Tuple[int, int]:
     """
-    Map a normalized ray-sample coordinate to an output pixel.
+    Map a global ray-sample coordinate into the header-defined image rectangle.
 
     The normalized width coordinate increases left-to-right. The normalized
     height coordinate increases in the image plane's upward direction because
     initialization uses increasing ``b`` for increasing observer-up offset.
     NumPy/PIL image rows increase downward, so only the vertical coordinate is
-    flipped here. Horizontal orientation is unchanged. Clamping handles the
-    mathematically valid boundary value ``fraction == 1``.
+    flipped here. The header bounds are mapped to the output edges. Existing
+    pixel clamping includes samples exactly on the upper or right boundary.
 
     :param image_width_fraction: Normalized width coordinate in ``[0, 1]``.
     :param image_height_fraction: Normalized height coordinate in ``[0, 1]``.
     :param output_pixel_width: Width of the output image.
     :param output_pixel_height: Height of the output image.
+    :param image_plane_bounds: Exact global ``(a_min, a_max, b_min, b_max)`` from the header.
     :return: ``(pixel_x, pixel_y)`` in output-image coordinates.
+
+    Doctests:
+    >>> bounds = (0.25, 0.75, 0.625, 0.875)
+    >>> pixel_indices_from_record(0.5, 0.75, 8, 4, bounds)
+    (4, 1)
+    >>> pixel_indices_from_record(0.25, 0.625, 8, 4, bounds)
+    (0, 3)
+    >>> pixel_indices_from_record(0.75, 0.875, 8, 4, bounds)
+    (7, 0)
+    >>> pixel_indices_from_record(0.5, 0.5, 8, 4, (0.0, 1.0, 0.0, 1.0))
+    (4, 1)
     """
+    a_min, a_max, b_min, b_max = image_plane_bounds
+    width_fraction = (image_width_fraction - a_min) / (a_max - a_min)
+    height_fraction = (image_height_fraction - b_min) / (b_max - b_min)
     pixel_x = min(
         output_pixel_width - 1,
-        max(0, int(np.floor(image_width_fraction * output_pixel_width))),
+        max(0, int(np.floor(width_fraction * output_pixel_width))),
     )
     pixel_y_from_bottom = min(
         output_pixel_height - 1,
-        max(0, int(np.floor(image_height_fraction * output_pixel_height))),
+        max(0, int(np.floor(height_fraction * output_pixel_height))),
     )
     pixel_y = output_pixel_height - 1 - pixel_y_from_bottom
     return pixel_x, pixel_y
@@ -274,6 +290,7 @@ def _accumulate_ray_hits_jit(
     rays_theta: npt.NDArray[np.float64],
     output_pixel_width: int,
     output_pixel_height: int,
+    image_plane_bounds: Tuple[float, float, float, float],
     source_image_width: float,
     source_tex: npt.NDArray[np.float64],
     sphere_tex: npt.NDArray[np.float64],
@@ -302,6 +319,7 @@ def _accumulate_ray_hits_jit(
             rays_image_height_fraction[i],
             output_pixel_width,
             output_pixel_height,
+            image_plane_bounds,
         )
 
         # --- CASE 1: Terminal Plane Hits (Accretion Disk) ---
@@ -394,7 +412,7 @@ def _process_blueprint_tile(
     else:
         local_debug_term_types = np.empty((0, 0), dtype=np.int8)
 
-    for _header, _, chunk_data in blueprint_io.iter_blueprint_chunks(
+    for header, _, chunk_data in blueprint_io.iter_blueprint_chunks(
         blueprint_filename, chunk_records
     ):
         _accumulate_ray_hits_jit(
@@ -407,6 +425,7 @@ def _process_blueprint_tile(
             chunk_data["final_theta"],
             output_pixel_width,
             output_pixel_height,
+            (header.a_min, header.a_max, header.b_min, header.b_max),
             source_image_width,
             _WORKER_SOURCE_TEX,
             _WORKER_SPHERE_TEX,
@@ -567,9 +586,13 @@ def generate_static_lensed_image(
         or header.tiles_height != tiles_height
         or not np.isclose(header.alpha_w, headers[0].alpha_w, rtol=0.0, atol=1.0e-14)
         or not np.isclose(header.alpha_h, headers[0].alpha_h, rtol=0.0, atol=1.0e-14)
+        or (header.a_min, header.a_max, header.b_min, header.b_max)
+        != (headers[0].a_min, headers[0].a_max, headers[0].b_min, headers[0].b_max)
         for header in headers
     ):
-        raise ValueError("Blueprint headers disagree about tile grid or fields of view")
+        raise ValueError(
+            "Blueprint headers disagree about tile grid, fields of view, or image-plane bounds"
+        )
 
     chunk_records = chunk_size
 

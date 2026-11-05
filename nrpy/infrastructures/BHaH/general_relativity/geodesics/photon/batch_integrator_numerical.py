@@ -21,6 +21,11 @@ state using the same trial-locked spatial stencil centers used by every RK
 stage. Both EOM modes then pass the common ``ln|alpha p^0|`` scalar to event
 detection; normalized mode reads it directly from ``u``.
 
+The terminal display counts retryable rejections in the latest processed
+photon chunk and separates RKF45 error control from spatial and temporal
+interpolation failures. All rejection percentages use that chunk's attempt
+count. Terminal failures and accepted-step time caps do not enter these counts.
+
 The script keeps the broad photon orchestration, RKF45 stepping, and
 ``TimeSlotManager`` structure used by the analytic photon batch integrator, but
 all geometry evaluations go through the numerical ``.bin`` data path. When the
@@ -90,6 +95,7 @@ def batch_integrator_numerical(
     True
     >>> "d_log_energy_bundle[current]" in generated
     True
+    >>> generated_modes = [generated]
     >>> with tempfile.TemporaryDirectory() as cache_dir, patch.dict(os.environ, {"XDG_CACHE_HOME": cache_dir}):
     ...     cfc.CFunction_dict.clear()
     ...     batch_integrator_numerical(
@@ -115,6 +121,41 @@ def batch_integrator_numerical(
     False
     >>> "d_f_bundle[current][4 * BUNDLE_CAPACITY + log_energy_i]" in generated
     True
+    >>> generated_modes.append(generated)
+    >>> expected_counting = '''
+    ... for (int sum_i = 0; sum_i < active_chunks[current]; ++sum_i) {
+    ...     if (status_bridge[current][sum_i] == REJECTED) {
+    ...         batch_rejections++;
+    ...         if (trial_status[current][sum_i] == FAILURE_SPATIAL_INTERPOLATION) {
+    ...             spatial_rejections++;
+    ...         } else if (trial_status[current][sum_i] == FAILURE_TEMPORAL_INTERPOLATION) {
+    ...             temporal_rejections++;
+    ...         } else {
+    ...             rkf45_rejections++;
+    ...         }
+    ...     }
+    ... }
+    ... '''
+    >>> for generated in generated_modes:
+    ...     source = "".join(line.split("//", 1)[0].strip() for line in generated.splitlines())
+    ...     source = "".join(source.split())
+    ...     for buffer in ("current", "next"):
+    ...         snapshot = f"memcpy(trial_status[{buffer}],d_status[{buffer}],sizeof(termination_type_t)*active_chunks[{buffer}]);"
+    ...         finalize = f"rkf45_finalize_and_control(commondata,d_f_bundle[{buffer}]"
+    ...         assert source.count(snapshot) == 1
+    ...         snapshot_index = source.index(snapshot)
+    ...         finalize_index = source.index(finalize)
+    ...         assert source.rfind("rkf45_stage_update(", 0, finalize_index) < snapshot_index < finalize_index
+    ...     loop_start = source.index("for(intsum_i=0;sum_i<active_chunks[current];++sum_i)")
+    ...     loop_end = source.index("constdoublereject_percent", loop_start)
+    ...     assert source[loop_start:loop_end] == "".join(expected_counting.split())
+    ...     for count in ("batch", "rkf45", "spatial", "temporal"):
+    ...         percentage = f"(active_chunks[current]>0)?(100.0*(double){count}_rejections/(double)active_chunks[current]):0.0;"
+    ...         assert percentage in source
+    ...     assert source.index("BHAH_MALLOC(trial_status[s],sizeof(termination_type_t)*BUNDLE_CAPACITY);") < loop_start
+    ...     assert source.index("BHAH_FREE(trial_status[s]);") > loop_end
+    ...     assert source.count(r'printf("\n\n\n\n\n\n\n\n");') == 1
+    ...     assert source.count(r'printf("\033[8A");') == 1
     """
     if "time_slot_manager" not in par.glb_extras_dict.get("BHaH_defines", {}):
         time_slot_manager_helpers()
@@ -243,9 +284,10 @@ def batch_integrator_numerical(
                               time-window manager fills its authoritative first
                               stored slice time during initialization.
     @param num_rays Number of rays in this tile batch. The caller derives this
-                     from the width-side scan density and the internally
-                     derived height-side scan density; this integrator does
+                     from the width-side scan density and the selected
+                     height-side scan density; this integrator does
                      not calculate image placement or tile metadata.
+    @param scan_density_height Caller-selected rows in this tile batch.
     @param[out] results_buffer Host array storing the final physical
                                intersections.
     @param[in] norm_abs_bin_path Optional output filename for the raw float64
@@ -269,7 +311,7 @@ def batch_integrator_numerical(
     )
     params = (
         "commondata_struct *restrict commondata, "
-        "long int num_rays, "
+        "long int num_rays, const int scan_density_height, "
         "blueprint_data_t *restrict results_buffer, "
         "const char *restrict norm_abs_bin_path, "
         "const char *restrict norm_abs_non_terminal_bin_path, "
@@ -364,7 +406,7 @@ static void write_plane_crossings(
     )
     set_initial_conditions_call = (
         " set_initial_conditions_kernel"
-        "(commondata, num_rays, &all_photons_host, observer_metric, observer_tetrad);"
+        "(commondata, num_rays, scan_density_height, &all_photons_host, observer_metric, observer_tetrad);"
     )
 
     normalized_momentum_conversion = (
@@ -616,11 +658,16 @@ static void write_plane_crossings(
         if axisymmetric_about_z
         else ""
     )
-    finalize_current = """
+    finalize_current = r"""
+            // Preserve interpolation failure reasons before retryable trials
+            // receive the common REJECTED status during finalization.
+            memcpy(trial_status[current], d_status[current], sizeof(termination_type_t) * active_chunks[current]);
             // Finalize step: apply RKF45 error control and update the
             // integration-parameter baseline and step size $h$.
             rkf45_finalize_and_control(commondata, d_f_bundle[current], d_f_start_bundle[current], d_k_bundle[current], d_h[current], d_status[current], d_integration_param_bundle[current], d_retries[current], active_chunks[current], current);"""
-    finalize_next = """
+    finalize_next = r"""
+                // Keep this chunk's reasons separate from the current buffer.
+                memcpy(trial_status[next], d_status[next], sizeof(termination_type_t) * active_chunks[next]);
                 // Finalize step: apply RKF45 error control and update the
                 // integration-parameter baseline and step size $h$.
                 rkf45_finalize_and_control(commondata, d_f_bundle[next], d_f_start_bundle[next], d_k_bundle[next], d_h[next], d_status[next], d_integration_param_bundle[next], d_retries[next], active_chunks[next], next);"""
@@ -1420,6 +1467,8 @@ static void write_plane_crossings(
     double *h_bridge[2];
     // Bridge array staging the current trajectory termination status for memory transfers.
     termination_type_t *status_bridge[2];
+    // Incoming status for each trial, saved before retry classification.
+    termination_type_t *trial_status[2];
     // Bridge array staging the number of step-size rejections for memory transfers.
     int *retries_bridge[2];
     // Bridge array staging the previous nonterminal plane boundary side flag for memory transfers.
@@ -1472,6 +1521,11 @@ static void write_plane_crossings(
         {malloc_pinned}(integration_param_bridge[s], sizeof(double) * BUNDLE_CAPACITY); // Pin integration-parameter bridges.
         {malloc_pinned}(h_bridge[s], sizeof(double) * BUNDLE_CAPACITY); // Pin $h$ bridges.
         {malloc_pinned}(status_bridge[s], sizeof(termination_type_t) * BUNDLE_CAPACITY); // Pin status bridges.
+        {malloc_pinned}(trial_status[s], sizeof(termination_type_t) * BUNDLE_CAPACITY);
+        if (trial_status[s] == NULL) {{
+            fprintf(stderr, "ERROR: could not allocate photon trial statuses.\n");
+            exit(EXIT_FAILURE);
+        }} // END IF: trial status allocation failed
         {malloc_pinned}(retries_bridge[s], sizeof(int) * BUNDLE_CAPACITY); // Pin retries bridges.
         {malloc_pinned}(on_pos_non_terminal_plane_prev_bridge[s], sizeof(bool) * BUNDLE_CAPACITY); // Pin nonterminal-plane flag bridges.
         {malloc_pinned}(on_pos_terminal_plane_prev_bridge[s], sizeof(bool) * BUNDLE_CAPACITY); // Pin source flag bridges.
@@ -1858,7 +1912,7 @@ static void write_plane_crossings(
     clock_gettime(CLOCK_MONOTONIC, &batch_start_time);
 
     // Allocates vertical terminal space for the dynamic multi-line progress dashboard.
-    printf("\n\n\n\n\n\n\n");
+    printf("\n\n\n\n\n\n\n\n");
 
     //==========================================
     // 3. TEMPORAL LOOP (The Engine)
@@ -2205,31 +2259,44 @@ static void write_plane_crossings(
             }} // END LOOP: for bar_i over bar_width
             bar[bar_width] = '\0'; // Terminates the loading bar character array to prevent buffer overruns.
 
-            // Accumulator tracking how many rays in the just-processed chunk finished this RKF45 attempt in the recoverable REJECTED state.
-            // This deliberately counts finalized per-attempt outcomes instead of summing rejection_retries, because rejection_retries stores
-            // each ray's current consecutive retry depth rather than a binary "this attempt was rejected" flag.
+            // Count retryable rejections in this chunk, not consecutive retry
+            // depths. Terminal failures and accepted-step caps are excluded.
             long int batch_rejections = 0;
+            long int rkf45_rejections = 0;
+            long int spatial_rejections = 0;
+            long int temporal_rejections = 0;
 
-            // Loop iterator $sum_i$ scans finalized status after RKF45 control.
-            // A status of REJECTED means the current attempt failed error control and the ray will be re-queued into the same slot with its
-            // adapted step size, so this produces the intended per-chunk rejection count for the dashboard percentage readout.
+            // Saved incoming statuses distinguish interpolation failures from
+            // RKF45 error-control rejections after finalization.
             for (int sum_i = 0; sum_i < active_chunks[current]; ++sum_i) {{
                 if (status_bridge[current][sum_i] == REJECTED) {{
-                    batch_rejections++; // Counts one rejected integration attempt for this chunk entry.
+                    batch_rejections++;
+                    if (trial_status[current][sum_i] == FAILURE_SPATIAL_INTERPOLATION) {{
+                        spatial_rejections++;
+                    }} else if (trial_status[current][sum_i] == FAILURE_TEMPORAL_INTERPOLATION) {{
+                        temporal_rejections++;
+                    }} else {{
+                        rkf45_rejections++;
+                    }} // END ELSE: RKF45 error control rejected
                 }} // END IF: rejected finalized status
-            }} // END LOOP: for sum_i over active_chunks[current]
+            }} // END LOOP: count chunk rejection reasons
 
-            // Evaluates the fraction of attempted rays in this processed chunk whose current RKF45 attempt was rejected and re-queued.
-            double reject_percent = (active_chunks[current] > 0) ? (100.0 * (double)batch_rejections / (double)active_chunks[current]) : 0.0;
+            // Every percentage uses all attempts in this chunk. Independent
+            // rounding can make the displayed percentages differ by 0.1%.
+            const double reject_percent = (active_chunks[current] > 0) ? (100.0 * (double)batch_rejections / (double)active_chunks[current]) : 0.0;
+            const double rkf45_reject_percent = (active_chunks[current] > 0) ? (100.0 * (double)rkf45_rejections / (double)active_chunks[current]) : 0.0;
+            const double spatial_reject_percent = (active_chunks[current] > 0) ? (100.0 * (double)spatial_rejections / (double)active_chunks[current]) : 0.0;
+            const double temporal_reject_percent = (active_chunks[current] > 0) ? (100.0 * (double)temporal_rejections / (double)active_chunks[current]) : 0.0;
 
             // Restores the terminal cursor position vertically to overwrite the previous dashboard iteration.
-            printf("\033[7A");
+            printf("\033[8A");
             printf("--------------------------------------------------\n"); // Prints the upper border of the diagnostic dashboard.
             printf(" Progress:   [%s] %5.1f%% \033[K\n", bar, percent_done); // Prints the global completion loading bar and percentage.
             printf(" Active:     %ld / %ld \033[K\n", total_active_photons, num_rays); // Prints the remaining active photon trajectories $x^\mu$.
             printf(" Slot Time:  Slot %d (t = %.1f) \033[K\n", slot_idx, current_t); // Prints the current physical temporal bin coordinate $t$.
             printf(" Speed:      %.2e RKF45 attempts/s, %.0fs avg \033[K\n", rkf45_attempts_per_sec_avg, rkf45_speed_avg_window_sec); // Prints the smoothed pipeline execution throughput.
-            printf(" Rejects:    %ld (%.1f%%) \033[K\n", batch_rejections, reject_percent); // Prints the adaptive step size $h$ rejection frequency.
+            printf(" Rejects:    %ld (%.1f%%) \033[K\n", batch_rejections, reject_percent); // Prints the retryable rejection frequency.
+            printf("             RKF45 %.1f%% | Spatial %.1f%% | Temporal %.1f%% \033[K\n", rkf45_reject_percent, spatial_reject_percent, temporal_reject_percent);
             printf("--------------------------------------------------\n"); // Prints the lower border of the diagnostic dashboard.
             fflush(stdout); // Flushes the standard output buffer to ensure instantaneous terminal rendering.
 
@@ -2333,6 +2400,7 @@ static void write_plane_crossings(
             {free_pinned}(integration_param_bridge[s]); // Purges the integration-parameter bridge.
             {free_pinned}(h_bridge[s]); // Purges the integration step size $h$ bridge.
             {free_pinned}(status_bridge[s]); // Purges the trajectory status bridge.
+            {free_pinned}(trial_status[s]); // Release the saved trial statuses.
             {free_pinned}(retries_bridge[s]); // Purges the error rejection scalar bridge.
             {free_pinned}(on_pos_non_terminal_plane_prev_bridge[s]); // Purges the nonterminal plane boundary flag bridge.
             {free_pinned}(on_pos_terminal_plane_prev_bridge[s]); // Purges the terminal-plane boundary flag bridge.
