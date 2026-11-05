@@ -32,11 +32,13 @@ Load relevant routes and skills only. Requested paired review uses
 `.agents/skills/dialectic/SKILL.md`; trialectic/three-seat review, including "engage
 tri", uses `.agents/skills/trialectic/SKILL.md`; a requested Borda panel (N
 independent agents that rank each other's reports), including "use borda", uses
-`.agents/skills/borda/SKILL.md`, which asks the user for a missing task, N, or output
-name instead of inferring it. Applicable policy may require them; merely mentioning,
-auditing, or editing them does not. Read the selected skill and, for dialectic and
-trialectic, `.agents/review-protocol.md`. Delegate when actual tools offer a concrete
-benefit; never simulate independent agents or duplicate trivial work.
+`.agents/skills/borda/SKILL.md`, which requires a task, N, and an output filename.
+Ask for a missing task or N; infer the filename when omitted. Borda imposes no naming
+restrictions. Applicable policy may require these review skills;
+merely mentioning, auditing, or editing them does not. Read the selected skill and,
+for dialectic and trialectic, `.agents/review-protocol.md`. Delegate when actual
+tools offer a concrete benefit; never simulate independent agents or duplicate
+trivial work.
 
 Review subsequent deltas, unresolved findings, and affected code/docs dependencies,
 retaining valid decisions/checks. Mechanical cleanup needs focused verification;
