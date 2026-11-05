@@ -43,11 +43,7 @@ The configured `static-analysis` job excludes every `*/tests/*` path and
 directly executes selected non-example source modules; this describes job
 configuration, not execution outcomes.
 
-Claim evidence:
-- Claim: The configured `static-analysis` job excludes every `*/tests/*` path and directly executes selected non-example source modules; this describes job configuration, not execution outcomes.
-- Role: CI behavior
-- Deciding authority: [main.yml](../../.github/workflows/main.yml), `static-analysis`
-- Corroboration: [single_file_static_analysis.sh](../../.github/single_file_static_analysis.sh), `run_test_step`, corroborates direct per-file execution but not CI exclusions
+Evidence (CI behavior): [main.yml](../../.github/workflows/main.yml), `static-analysis`; corroboration: [single_file_static_analysis.sh](../../.github/single_file_static_analysis.sh), `run_test_step`, corroborates direct per-file execution but not CI exclusions
 
 New core code must not add pytest or unittest dependencies, configuration,
 collectors, fixtures, test classes, executable sibling test modules, standalone
@@ -125,11 +121,7 @@ compile or build coverage, which stays in scoped CI. A substantive change to an
 existing compile doctest must follow the migration or tightly bounded fallback
 in [Test Oracles And Safe Updates](test-oracles-and-safe-updates.md#known-gaps-and-non-precedents).
 
-Claim evidence:
-- Claim: new core standalone harnesses and compile doctests are prohibited, with one carve-out: a harness that measures an external host's behavior is tracked under `tests_infra/` beside the infrastructure that depends on that host, is built and run by hand, and records only durable setup, scope, assertions, and reproduction instructions. The carve-out does not license ordinary compile or build coverage outside scoped CI or volatile KB metadata.
-- Role: normative rule
-- Deciding authority: [coding_style.md](../../coding_style.md), `### External-Host Test Harnesses`
-- Corroboration: [README.md](../../nrpy/infrastructures/Dendro/tests_infra/README.md), its durable scope and build/run instructions
+Evidence (normative rule): [coding_style.md](../../coding_style.md), `### External-Host Test Harnesses`; corroboration: [README.md](../../nrpy/infrastructures/Dendro/tests_infra/README.md), its durable scope and build/run instructions
 
 ### Status-Only Build Or Crash Gate
 
@@ -172,79 +164,12 @@ omitted backends, general convergence, or broad scientific correctness.
 
 ### Narrow Examples Product Exception
 
-Outside this exception, examples are not ordinary policy evidence. A new
-command-line helper under `nrpy/examples/**` is allowed only when all twelve
-conditions hold:
-
-1. The target is an NRPy-generated standalone product. Invoking an example
-   generator may be setup only; generator argument behavior belongs in an owner
-   API/doctest unless inseparable from the product-process contract.
-2. An external compiler, build/runtime toolchain, or launcher is used only when
-   the generated-product contract requires it.
-3. The contract is observable only at the product process boundary: product
-   arguments, parameter file, runtime state, or parsed output.
-4. No cheaper owner API, symbolic, source-oracle, or semantic check proves the
-   same regression.
-5. The same change wires an explicit CI invocation and target build/run.
-6. Python helper subprocesses use `shell=False` argument vectors. Any
-   unavoidable fixed shell orchestration stays in audited CI YAML and never
-   interpolates helper or user data.
-7. Every helper subprocess has an explicit timeout, small fixed resource or job
-   limits, checked failure, and bounded or capped captured output. The CI job
-   has `timeout-minutes` or equivalent.
-8. Cwd and environment restoration and output cleanup are unconditional.
-9. Inputs and randomness are deterministic; generated output is CI-owned or
-   temporary.
-10. Network, installation, and external access are explicitly authorized.
-    Controllable dependencies use an exact pin, tag, or commit; otherwise
-    record resolved version and reason and label evidence non-reproducible
-    beyond the named run.
-11. The helper asserts concrete output, state, semantic property, or numerical
-    criterion beyond status, file existence, file count, or import success. A
-    status-only product build/crash assertion must also satisfy all six status
-    gates and keep the narrow compatibility/crash claim.
-12. The assertion names the exact validation layer proved.
-
-If any condition fails, the helper is prohibited. This exception never
-authorizes general pytest or unittest adoption in examples.
-
-The checked-in SEOB helpers are finite-input numerical-and-argument precedents:
-they use deterministic samples, argument-vector subprocesses with checked
-failure, parsed stdout, and a numerical failure criterion, and the workflow
-invokes them explicitly. They lack explicit subprocess timeouts, bounded or
-capped output capture, unconditional cwd restoration and cleanup, and parts of
-the current resource-limit policy; their CI jobs also lack `timeout-minutes`.
-None of those gaps may be copied.
-
-Claim evidence:
-- Claim: The checked-in SEOB helpers use deterministic samples, argument-vector
-  subprocesses with checked failure, parsed stdout, and a numerical failure
-  criterion, and the workflow invokes them explicitly; they lack explicit
-  subprocess timeouts, bounded or capped output capture, unconditional cwd
-  restoration and cleanup, and parts of the current resource-limit policy, and
-  their CI jobs lack `timeout-minutes`.
-- Role: descriptive behavior
-- Deciding authority: [sebob_consistency_check.py](../../nrpy/examples/tests/sebob_consistency_check.py),
-  `run_sebob`, `process_input_set`;
-  [sebobv2_consistency_check.py](../../nrpy/examples/tests/sebobv2_consistency_check.py),
-  `run_sebobv2`, `process_input_set`; [main.yml](../../.github/workflows/main.yml),
-  `sebob-consistency-test` and `sebobv2-consistency-test`
-- Corroboration: none available; helper and workflow configuration jointly decide the distributed claim
-
-The Dendro application helper passes argument vectors with `shell=False`,
-gives every generation, configure, build, run, and rejection subprocess an
-explicit timeout, sets build jobs and MPI ranks through options with defaults of
-4, writes subprocess output to log files and prints only a bounded tail on
-failure, never changes its own cwd, passes the generator a copied environment
-with an owned cache, removes its work directory in `finally`, records the
-resolved tool and package versions, and prints each assertion with its
-validation layer and numerical bound. Its workflow job sets `timeout-minutes`.
-
-Claim evidence:
-- Claim: `dendro_application_check.py` uses `shell=False` argument vectors, explicit per-subprocess timeouts, build-job and rank counts set by options with defaults of 4, bounded failure-log tails, no helper cwd change, a copied generator environment with an owned cache, unconditional work-directory removal, recorded tool versions, and layer-named numerical assertions; its `dendro-validation` job sets `timeout-minutes`.
-- Role: descriptive behavior
-- Deciding authority: [dendro_application_check.py](../../nrpy/examples/tests/dendro_application_check.py), `run_logged`, `run_checked`, `tail`, `Report.check`, `Leg.record_versions`, `Leg.generate_and_build`, `Leg.run`, `main`; [main.yml](../../.github/workflows/main.yml), `dendro-validation`
-- Corroboration: none available; helper and workflow configuration jointly decide the distributed claim
+A new command-line helper under `nrpy/examples/**` that tests an NRPy-generated
+standalone product is allowed only when all twelve conditions in [Narrow
+Examples Product Exception](examples-product-exception.md) hold; otherwise it
+is prohibited. Outside that exception, examples are not ordinary policy
+evidence, and the exception never authorizes general pytest or unittest
+adoption in examples.
 
 ### Static Summary
 
@@ -264,9 +189,9 @@ is not.
 4. Large generated kernel: validate expressions or semantics upstream; do not
    use a full-text golden or incidental substrings.
 5. Required build/toolchain: use scoped CI; add no compile doctest.
-6. Runtime or numerical standalone generated example product: use the examples
-   exception only when all twelve gates apply; status-only cases also need all
-   six status conditions.
+6. Runtime or numerical standalone generated example product: use the
+   [examples exception](examples-product-exception.md) only when all twelve
+   gates apply; status-only cases also need all six status conditions.
 7. No meaningful contract: add no behavioral test.
 8. Handwritten Python changed: follow [Static Analysis](static-analysis.md).
 
@@ -277,11 +202,7 @@ project generator emits a downstream pytest import/`__version__` scaffold that
 configured generated-project CI does not execute; it is low-signal and its
 removal or replacement needs a separate JAX decision.
 
-Claim evidence:
-- Claim: The NRPyLaTeX BSSN file directly executes a sampled cross-representation comparison, and the JAX project generator emits a downstream pytest import/`__version__` scaffold that configured generated-project CI does not execute.
-- Role: descriptive behavior
-- Deciding authority: [test_parse_BSSN.py](../../nrpy/equations/general_relativity/nrpylatex/test_parse_BSSN.py), `test_example_BSSN`; [jax_project_generator.py](../../nrpy/infrastructures/JAX/jax_project_generator.py), `_generate_project_metadata` and `output_PyFunction_files_and_construct_project`
-- Corroboration: [main.yml](../../.github/workflows/main.yml), `codegen-ubuntu` and `codegen-mac`, corroborates that JAX output is generated without executing its scaffold; no independent corroboration for the other outlier
+Evidence (descriptive behavior): [test_parse_BSSN.py](../../nrpy/equations/general_relativity/nrpylatex/test_parse_BSSN.py), `test_example_BSSN`; [jax_project_generator.py](../../nrpy/infrastructures/JAX/jax_project_generator.py), `_generate_project_metadata` and `output_PyFunction_files_and_construct_project`; corroboration: [main.yml](../../.github/workflows/main.yml), `codegen-ubuntu` and `codegen-mac`, corroborates that JAX output is generated without executing its scaffold; no independent corroboration for the other outlier
 
 Do not expand any of those shapes. Whether an unrelated touch must remove a
 legacy empty runner remains maintainer judgment. Meaningful doctest-only
@@ -314,20 +235,18 @@ for test count.
 
 - [coding_style.md](../../coding_style.md) - `### if __name__ == "__main__": Block`, `### Doctest Conventions`, `#### Doctest placeholders`, `### External-Host Test Harnesses`, `## Static Analysis Configuration`
 - [README.md](../../nrpy/infrastructures/Dendro/tests_infra/README.md) - durable scope and build/run instructions
-- [main.yml](../../.github/workflows/main.yml) - `static-analysis`, `codegen-ubuntu`, `codegen-mac`, `sebob-consistency-test`, `sebobv2-consistency-test`, `dendro-validation`
+- [main.yml](../../.github/workflows/main.yml) - `static-analysis`, `codegen-ubuntu`, `codegen-mac`
 - [single_file_static_analysis.sh](../../.github/single_file_static_analysis.sh) - `run_test_step`
 - [.pylintrc](../../.pylintrc) - `[MASTER]`; [.pylintrc_python36](../../.pylintrc_python36) - `[MASTER]`
 - [generic.py](../../nrpy/helpers/generic.py) - `validate_strings`
 - [test_parse_BSSN.py](../../nrpy/equations/general_relativity/nrpylatex/test_parse_BSSN.py) - `test_example_BSSN`
 - [jax_project_generator.py](../../nrpy/infrastructures/JAX/jax_project_generator.py) - `_generate_project_metadata`, `output_PyFunction_files_and_construct_project`
-- [sebob_consistency_check.py](../../nrpy/examples/tests/sebob_consistency_check.py) - `run_sebob`, `process_input_set`
-- [sebobv2_consistency_check.py](../../nrpy/examples/tests/sebobv2_consistency_check.py) - `run_sebobv2`, `process_input_set`
-- [dendro_application_check.py](../../nrpy/examples/tests/dendro_application_check.py) - `run_logged`, `run_checked`, `Report.check`, `Leg.run`
 
 ## See Also
 
 - Parent: [Validation](index.md)
 - Depends on: [Test Oracles And Safe Updates](test-oracles-and-safe-updates.md)
+- See also: [Narrow Examples Product Exception](examples-product-exception.md)
 - Validated by: [Static Analysis](static-analysis.md)
 - See also: [Expression Validation Helpers](expression-validation-helpers.md)
 - See also: [Generated Project CI](generated-project-ci.md)

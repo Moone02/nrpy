@@ -13,28 +13,36 @@ Every passage added or revised during that work follows [Language For
 Computational Physicists](computational-physics-language.md) and names the
 equation, quantity, numerical method, file, result, or required behavior
 directly.
-NRPy code changes keep their normal project workflow: direct example runs need
-`PYTHONPATH=.` when there is no editable install. Modified handwritten Python
-follows [Static Analysis](validation/static-analysis.md); the generated
-trusted-data exemption applies only to data, not its handwritten owner.
 
 ## Search Order
 
 Use this order for agent navigation:
 
 1. Read [AGENTS.md](../AGENTS.md) for root routes and governance pointers.
-2. Read [catalog.md](catalog.md) for ambiguous or cross-branch queries.
-3. Follow branch `index.md` routers from root to owner.
-4. Read the owning leaves and their typed `See Also` neighbors.
+2. Follow branch `index.md` routers from root to the leaf that holds the answer.
+3. For ambiguous or cross-branch queries, search [catalog.md](catalog.md) with
+   `rg -n -i '<term>' wiki/catalog.md` and read only the matching rows.
+4. Read that leaf. In a long leaf, list its headings with
+   `rg -n '^#{2,3} ' <page>` and read only the needed subsection. Open a
+   `See Also` neighbor only when the leaf does not answer the question and the
+   neighbor's label names the missing fact.
 5. Use `rg` over `wiki/` only when catalog and router paths fail.
 6. Use `rg` over source code only to verify or update sourced facts.
+
+Look up rows in [catalog.md](catalog.md), [glossary.md](glossary.md),
+[source-map.md](source-map.md), [contradictions.md](contradictions.md), and
+[raw/SOURCES.md](../raw/SOURCES.md) with
+`rg -n -i -F '<term, path, or CONTR ID>' <file>`; read or edit only the matching
+rows and sections.
 
 ## Ingest
 
 1. Register the source in [raw/SOURCES.md](../raw/SOURCES.md) with provenance,
-   `frozen` or `living` status, and ingest state. Exact cited-file rows may
-   abbreviate to source and status per [SCHEMA.md](SCHEMA.md); external-source
-   rows may also carry notes.
+   `frozen` or `living` status, and ingest state. Add an exact cited-file row
+   only for a path that no aggregate row covers; `tools/kb_lint.py`
+   `_source_registered` lists the aggregate path rules. Exact cited-file rows
+   may abbreviate to source and status per [SCHEMA.md](SCHEMA.md);
+   external-source rows may also carry notes.
    Do not record checksums, hashes, digests, mtimes, maintenance dates, timestamps,
    inventory counts, environment tuples, or recorded run and audit results.
 2. Decide which branch owns the compiled facts.
@@ -78,10 +86,12 @@ plain markdown; do not require Obsidian metadata or frontmatter.
 
 Review the change dependency-aware: inspect the changed paths, confirm the
 source's [raw/SOURCES.md](../raw/SOURCES.md) row (provenance, status, ingest
-state) still describes it, follow [source-map.md](source-map.md) ownership rows
-and maintainer signals to the affected compiled pages, then re-ingest affected
-leaves and update one-hop neighbors that share changed glossary entities. Mark
-a page `stale` only when it cannot be reconciled immediately. Record durable
+state) still describes it, find the citing pages with
+`rg -l -F '<path>' wiki/` and the [source-map.md](source-map.md) rows with
+`rg -n -F '<path>' wiki/source-map.md`, follow those rows and maintainer
+signals to the affected compiled pages, then re-ingest affected leaves and
+update one-hop neighbors that share changed glossary entities. Mark a page
+`stale` only when it cannot be reconciled immediately. Record durable
 source drift and reconciliation decisions in the affected pages,
 [source-map.md](source-map.md), [contradictions.md](contradictions.md), commit
 messages, or PR descriptions as appropriate.
@@ -119,32 +129,12 @@ row, and record the blocked reconciliation reason there. When a claim is
 reconciled, update affected pages and close or revise the row in
 [contradictions.md](contradictions.md).
 
-Before closure, review source-map reverse dependents, all pages citing either
-source, catalog aliases/key symbols, current affected pages, typed neighbors,
-and targeted exact/key-phrase wiki hits. Remove active markers only after every
-affected page is reconciled and the resolution test passes.
+Before closing or removing a row, follow the closure checks in
+[SCHEMA.md](SCHEMA.md#contradiction-contract).
 
 ## Claim Adjudication
 
-The [Claim And Evidence Contract](SCHEMA.md#claim-and-evidence-contract) is
-prospective after its adoption change. High-risk claims predating it and claims
-changed in that same adoption change remain baseline-uncovered unless
-an exact block is present; that adoption change asserts no completed block
-coverage. When a baseline claim or its deciding source is next materially
-changed after adoption, add the exact block immediately after the claim in its
-owning `Detail` section. For an active contradiction, add it to the matching
-`### CONTR-*` subsection, never the fixed register row. For behavioral claims,
-name durable validation routes, fixtures, invariants, or oracles when available.
-Use code for descriptive behavior; owning
-governance/configuration for normative rules; stable specification plus targeted
-tests for intended public/scientific contracts; workflow/configuration for CI
-job shape; and frozen generated evidence only for the context encoded by that
-evidence. Synthesis
-agreement is never authority. Navigation, structure, provenance,
-status, symbolic definition, and normative rules do not receive behavioral
-validation lines. Keep observed results, execution environments, tool versions,
-and run dates in command output, CI, or active review evidence rather than the
-KB.
+Follow the [Claim And Evidence Contract](SCHEMA.md#claim-and-evidence-contract).
 
 ## Safe Reproduction
 
@@ -152,26 +142,15 @@ In the shared repository working tree, run only demonstrably side-effect-free
 scoped checks. Run generators, builds, oracle creation or update, and blanket
 formatters only in an isolated user-owned intended-change worktree or copy with
 no unrelated changes.
-Inspect side effects first, use owned disposable cache and output, and impose
-time/resource limits. Retain no incidental output and never clear or overwrite
-ambient or shared cache. No coordination exception permits mutation in the
-shared working tree. Keep commands, working directories, observed assertions,
-results, limits, and cleanup in active review or CI evidence, not as KB
-snapshots. Network, installs, remote CI, and external toolchains need
-user authority. Never reset or clean shared `project/` output.
-
-### Protected CI Workflow
-
-`.github/workflows/main.yml` may be modified only when the user explicitly
-authorizes changes to that exact file in the current request. A general request
-to add tests, improve validation, or implement a plan does not authorize this
-file.
-
-Claim evidence:
-- Claim: `.github/workflows/main.yml` may be modified only with explicit user authorization for that exact file in the current request; general implementation or validation requests do not supply that authorization.
-- Role: normative rule
-- Deciding authority: [AGENTS.md](../AGENTS.md), `## Protected Workflow File`
-- Corroboration: none available; root repository governance is the sole authority for this write restriction.
+Inspect each command for hardcoded output, deletion, network, installation,
+and external-tool effects first, apply only scoped changes, choose an owned
+output root, use owned disposable cache and output, and impose time/resource
+limits. Retain no incidental output and never clear or overwrite ambient or
+shared cache. No coordination exception permits mutation in the shared working
+tree. Keep commands, working directories, observed assertions, results, limits,
+and cleanup in active review or CI evidence, not as KB snapshots. Network,
+installs, remote CI, and external toolchains need user authority. Never reset
+or clean shared `project/` output.
 
 ## Deterministic Checks
 
@@ -182,9 +161,8 @@ python tools/kb_lint.py
 git diff --check
 ```
 
-Expected success is exit 0; the linter prints `KB lint passed.` `--all` is an
-identical compatibility alias, not stronger coverage. Inventory commands are
-diagnostics, never semantic completeness proof.
+Expected success is exit 0; the linter prints `KB lint passed.` Inventory
+commands are diagnostics, never semantic completeness proof.
 
 ## Page Move Or Delete
 
@@ -218,7 +196,6 @@ registered as frozen evidence.
 
 ## Sources
 
-- [AGENTS.md](../AGENTS.md) - `## Protected Workflow File`
 - [kb-instructions.md](../raw/source-docs/kb-instructions.md) - section 7.6 for `wiki/workflows.md`
 - [coding_style.md](../coding_style.md) - `## Python Coding Style`, `### Formatting`
 - [original-agents.md](../raw/source-docs/original-agents.md) - historical `## Required Checks`; current `coding_style.md` decides conflicts

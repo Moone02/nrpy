@@ -90,8 +90,9 @@ a save, commit, or rejected draft is not accepted coverage.
 Record changed hunks/sections, additions/deletions/renames/metadata, changed evidence,
 open findings, invalidated criteria/checks, and dependencies. Trace callers, imports,
 shared state, generators/products, tests/oracles, docs/links, and KB claims/source-map
-dependents until unchanged contracts bound transitive effects. A one-line sign,
-tolerance, claim, prompt rule, or authority change is semantic.
+dependents (`rg -l -F '<path>' wiki/`, `rg -n -F '<path>' wiki/source-map.md`)
+until unchanged contracts bound transitive effects. A one-line sign, tolerance,
+claim, prompt rule, or authority change is semantic.
 
 | Change | Follow-up |
 | --- | --- |
@@ -181,8 +182,8 @@ maintenance dates, source/file counts, source hashes, tracking timestamps, or
 separate KB logs.
 Complete applicable source registration, claim evidence, source-map/catalog,
 neighbor, and link updates; review affected claims/dependencies only. Run
-`python tools/kb_lint.py` within its governed scope; `--all` is the identical alias,
-not another pass. Use `git diff --check` and semantic consistency review.
+`python tools/kb_lint.py` within its governed scope. Use `git diff --check` and
+semantic consistency review.
 Coordination artifacts are not KB content; respect commissioned scope and placement.
 
 ## Delivery
