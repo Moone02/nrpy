@@ -11,6 +11,7 @@ pages where a first-pass owner exists.
 
 | Term | Meaning |
 | --- | --- |
+| fixed-time geometry sampling | Numerical photon batch option `--fast-light`: evaluate geometry at `t_start` while retaining dynamical temporal derivatives and advancing photon integration parameters; see [Geodesics And Raytracing Runtime](infrastructures/bhah/geodesics-and-raytracing-runtime.md#fixed-time-geometry-sampling). |
 | NRPy | Python/SymPy-based symbolic code generation toolkit for numerical relativity and relativistic astrophysics; see [Architecture Overview](architecture/overview.md). |
 | SymPy | Python symbolic algebra package used to build expressions before C generation; see [Symbolic Codegen Lifecycle](architecture/symbolic-codegen-lifecycle.md). |
 | generated C | C emitted by NRPy generators and infrastructure rather than handwritten source; see [Generated Output Boundaries](architecture/generated-output-boundaries.md). |

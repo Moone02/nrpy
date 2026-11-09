@@ -11,6 +11,10 @@ numerical interpolation helpers fed by the combined numerical-spacetime
 dataset. The numerical spacetime is frozen to its final stored slice after
 `t_numerical_end`.
 
+With ``--fast-light``, geometry is instead sampled at ``t_start`` throughout
+propagation, retaining the numerical spacetime's dynamical time derivatives.
+Photon integration parameters and coordinate-time trackers still advance.
+
 This example currently generates a CPU/OpenMP project.
 
 Author: Dalton J. Moone
@@ -173,6 +177,15 @@ if __name__ == "__main__":
         choices=SUPPORTED_INTERPOLATION_METHODS,
         required=True,
         help="""Numerical spacetime payload and interpolation method.""",
+    )
+    parser.add_argument(
+        "--fast-light",
+        action="store_true",
+        help=(
+            "Generate geometry evaluations at t-start throughout propagation, "
+            "retaining dynamical metric time derivatives. Internal photon "
+            "times and integration parameters still advance."
+        ),
     )
     parser.add_argument(
         "--axisymmetric-about-z",
@@ -632,6 +645,7 @@ if __name__ == "__main__":
         normalized_eom=normalized_eom,
         skip_non_active_status=True,
         track_synthetic_slice_usage=True,
+        fast_light=args.fast_light,
     )
 
     # Step 5.d: Register RKF45 evolution kernels.
@@ -663,6 +677,7 @@ if __name__ == "__main__":
     )
     find_plane_crossings_brent.find_plane_crossings_brent(
         normalized_eom=normalized_eom,
+        fast_light=args.fast_light,
     )
     calculate_and_fill_blueprint_data_universal.calculate_and_fill_blueprint_data_universal(
         normalized_eom=normalized_eom
@@ -678,6 +693,7 @@ if __name__ == "__main__":
         interpolation_method=interpolation_method,
         normalized_eom=normalized_eom,
         axisymmetric_about_z=axisymmetric_about_z,
+        fast_light=args.fast_light,
     )
     main_batch.main(
         SPACETIME,
@@ -937,6 +953,7 @@ if __name__ == "__main__":
     print(f" -> Numerical coordinate system: {coord_system_numerical}")
     print(f" -> Interpolation method: {interpolation_method}")
     print(f" -> Photon equations of motion: {args.eom}")
+    print(f" -> Fixed geometry sampling at t_start: {args.fast_light}")
     print(f" -> Numerical domain: {domain}")
     print(f" -> Numerical SINHWRHO: {sinhw_numerical_rho}")
     print(f" -> Numerical SINHWZ: {sinhw_numerical_z}")

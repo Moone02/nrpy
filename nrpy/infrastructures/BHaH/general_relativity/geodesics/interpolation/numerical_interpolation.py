@@ -18,7 +18,8 @@ full stencil to recover the final tensors at the photon coordinate time.
 
 The function does not open or unmap numerical data files. A
 NumericalTimeWindowManager must already have an active mapped time window for
-the slot being processed.
+the requested geometry sampling time. Fast-light generation samples geometry
+at ``t_start`` while retaining the existing dynamical derivative calculations.
 
 Author: Dalton J. Moone
         daltonmoone **at** gmail **dot** com
@@ -54,6 +55,7 @@ def register_CFunction_numerical_interpolation(
     normalized_eom: bool = False,
     skip_non_active_status: bool = False,
     track_synthetic_slice_usage: bool = False,
+    fast_light: bool = False,
 ) -> Union[None, pcg.NRPyEnv_type]:
     """
     Register the CPU numerical-spacetime interpolation wrapper.
@@ -78,6 +80,11 @@ def register_CFunction_numerical_interpolation(
     nodes by reusing the final selected numerical slice, and then perform
     ordinary temporal interpolation on the reconstructed full stencil.
 
+    With ``fast_light``, every geometry request uses ``commondata->t_start``;
+    the caller must map the numerical window for that time. The original
+    temporal derivatives and endpoint rules remain in effect. This option
+    changes sampling time only, not photon states or integration parameters.
+
     Ray-local failures are classified at their owning stage. Spatial helper or
     spatial-output failures receive ``FAILURE_SPATIAL_INTERPOLATION``;
     temporal-stencil or temporal-output failures receive
@@ -98,6 +105,8 @@ def register_CFunction_numerical_interpolation(
         records for synthetic temporal-stencil nodes outside the numerical
         spacetime time range. Batch evolution enables this; diagnostic calls
         pass null record pointers.
+    :param fast_light: Whether to sample geometry at ``t_start`` in both
+        equation modes, retaining dynamical metric time derivatives.
     :return: None if in registration phase, else the updated NRPy environment.
     :raises ValueError: If `CoordSystem` or `interpolation_method` is not
         supported.
@@ -234,6 +243,9 @@ def register_CFunction_numerical_interpolation(
         integration_parameter_params = ""
         integration_parameter_desc = ""
         coordinate_time_c_code = "const REAL t = (REAL)f_local[0];"
+
+    if fast_light:
+        coordinate_time_c_code = "const REAL t = (REAL)commondata->t_start;"
 
     fixed_spatial_center_argument = "fixed_spatial_center,"
     synthetic_slice_usage_params = (
@@ -802,6 +814,13 @@ independently ray-by-ray.
         .replace("{integration_parameter_desc}", integration_parameter_desc)
         .replace("{synthetic_slice_usage_desc}", synthetic_slice_usage_desc)
     )
+    if fast_light:
+        desc += (
+            "\nGeometry is sampled at commondata->t_start, retaining dynamical "
+            "metric time derivatives and the existing endpoint rules. The caller "
+            "must map the numerical window for t_start. Photon states and "
+            "integration parameters are unchanged by this interpolation.\n"
+        )
 
     cfc.register_CFunction(
         subdirectory="interpolation",

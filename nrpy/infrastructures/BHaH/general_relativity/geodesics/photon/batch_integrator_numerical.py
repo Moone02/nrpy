@@ -12,6 +12,10 @@ initial event; the numerical initializer constructs one validated observer
 tetrad per tile-batch call and passes that same tetrad to every ray in the
 batch.
 
+Fast-light generation keeps the numerical window at ``t_start`` while photon
+coordinate times and integration parameters advance through scheduling slots.
+The numerical interpolation registration must use the same sampling option.
+
 The numerical time-window logic assumes the generator also registers
 ``rkf45_finalize_and_control_kernel(enable_numerical_time_window_step_cap=True)``
 so accepted RKF45 steps remain inside the mapped numerical window.
@@ -59,6 +63,7 @@ def batch_integrator_numerical(
     interpolation_method: str = "g4DD",
     normalized_eom: bool = False,
     axisymmetric_about_z: bool = False,
+    fast_light: bool = False,
 ) -> None:
     r"""
     Construct the CPU numerical-spacetime photon batch integrator.
@@ -69,6 +74,8 @@ def batch_integrator_numerical(
     :param normalized_eom: Whether to evolve normalized coordinate-time photon equations.
     :param axisymmetric_about_z: Whether the numerical spacetime has a rotational
         Killing vector about the Cartesian ``z`` axis, permitting ``L_z`` checks.
+    :param fast_light: Whether to map geometry at ``t_start`` for integration
+        and diagnostics; requires matching numerical interpolation registration.
     :raises ValueError: If the parallelization mode, interpolation method, or
         dataset coordinate system is unsupported.
 
@@ -156,6 +163,32 @@ def batch_integrator_numerical(
     ...     assert source.index("BHAH_FREE(trial_status[s]);") > loop_end
     ...     assert source.count(r'printf("\n\n\n\n\n\n\n\n");') == 1
     ...     assert source.count(r'printf("\033[8A");') == 1
+    >>> import re
+    >>> mapping_pattern = r"time_window_manager_numerical_mmap_for_slot\(\s*&numerical_window,\s*&(\w+),\s*(\w+)\s*\)"
+    >>> expected_managers = ["tsm", "tsm", "non_terminal_norm_tsm", "diagnostic_tsm"]
+    >>> for generated in generated_modes:
+    ...     mappings = re.findall(mapping_pattern, generated)
+    ...     assert sorted(mappings) == sorted(zip(expected_managers, [
+    ...         "initial_slot_idx", "slot_idx", "norm_slot_idx", "diagnostic_slot_idx"
+    ...     ]))
+    >>> for method in ("g4DD", "g4DD_d0", "GammaUDD"):
+    ...     for normalized in (False, True):
+    ...         with tempfile.TemporaryDirectory() as cache_dir, patch.dict(os.environ, {"XDG_CACHE_HOME": cache_dir}):
+    ...             cfc.CFunction_dict.clear()
+    ...             batch_integrator_numerical(
+    ...                 "Numerical", "SinhCylindricalv2n2", interpolation_method=method,
+    ...                 normalized_eom=normalized, fast_light=True
+    ...             )
+    ...             generated = cfc.CFunction_dict["batch_integrator_numerical"].full_function
+    ...         assert sorted(re.findall(mapping_pattern, generated)) == sorted([
+    ...             (manager, "initial_slot_idx") for manager in expected_managers
+    ...         ])
+    ...         source = "".join(generated.split())
+    ...         coordinate_time = (
+    ...             "all_photons_host.integration_param[m_idx]" if normalized
+    ...             else "all_photons_host.f[0*num_rays+m_idx]"
+    ...         )
+    ...         assert f"slot_get_index(&tsm,{coordinate_time})" in source
     """
     if "time_slot_manager" not in par.glb_extras_dict.get("BHaH_defines", {}):
         time_slot_manager_helpers()
@@ -189,6 +222,13 @@ def batch_integrator_numerical(
             f"found '{dataset_coord_system}'."
         )
     phi_dim = 1
+    geometry_slot_idx = "initial_slot_idx" if fast_light else "slot_idx"
+    non_terminal_geometry_slot_idx = (
+        "initial_slot_idx" if fast_light else "norm_slot_idx"
+    )
+    terminal_geometry_slot_idx = (
+        "initial_slot_idx" if fast_light else "diagnostic_slot_idx"
+    )
 
     # Supplied-name mapping: the checklist aliases numerical_time_window_manager_set_inert,
     # numerical_time_window_manager_init, numerical_time_window_manager_mmap_for_slot,
@@ -851,7 +891,7 @@ static void write_plane_crossings(
                 if (time_window_manager_numerical_mmap_for_slot(
                         &numerical_window,
                         &non_terminal_norm_tsm,
-                        norm_slot_idx) != TIME_WINDOW_MANAGER_NUMERICAL_SUCCESS) {
+                        {NON_TERMINAL_GEOMETRY_SLOT}) != TIME_WINDOW_MANAGER_NUMERICAL_SUCCESS) {
                     non_terminal_skipped_count +=
                         non_terminal_norm_tsm.slot_counts[norm_slot_idx];
                     continue;
@@ -948,6 +988,9 @@ static void write_plane_crossings(
 """
     non_terminal_normalization_block = (
         non_terminal_normalization_block.replace(
+            "{NON_TERMINAL_GEOMETRY_SLOT}", non_terminal_geometry_slot_idx
+        )
+        .replace(
             "{NON_TERMINAL_INTEGRATION_PARAM_SETUP}",
             non_terminal_norm_integration_param_setup,
         )
@@ -1093,7 +1136,7 @@ static void write_plane_crossings(
                 if (time_window_manager_numerical_mmap_for_slot(
                         &numerical_window,
                         &diagnostic_tsm,
-                        diagnostic_slot_idx) !=
+                        {TERMINAL_GEOMETRY_SLOT}) !=
                     TIME_WINDOW_MANAGER_NUMERICAL_SUCCESS) {
                     const long int diagnostic_count =
                         diagnostic_tsm.slot_counts[diagnostic_slot_idx];
@@ -1235,6 +1278,9 @@ static void write_plane_crossings(
 """
     terminal_diagnostics_block = (
         terminal_diagnostics_block.replace(
+            "{TERMINAL_GEOMETRY_SLOT}", terminal_geometry_slot_idx
+        )
+        .replace(
             "{TERMINAL_DIAGNOSTIC_CONDITION}", terminal_diagnostic_condition
         )
         .replace(
@@ -1929,13 +1975,13 @@ static void write_plane_crossings(
 
         if (tsm.slot_counts[slot_idx] > 0) {{
             if (time_window_manager_numerical_mmap_for_slot(
-                    &numerical_window, &tsm, slot_idx) !=
+                    &numerical_window, &tsm, {geometry_slot_idx}) !=
                 TIME_WINDOW_MANAGER_NUMERICAL_SUCCESS) {{
                 fprintf(stderr,
                         "ERROR: failed to map numerical time window for slot %d [%e, %e).\n",
-                        slot_idx,
-                        (double)slot_lower_time(&tsm, slot_idx),
-                        (double)slot_upper_time(&tsm, slot_idx));
+                        {geometry_slot_idx},
+                        (double)slot_lower_time(&tsm, {geometry_slot_idx}),
+                        (double)slot_upper_time(&tsm, {geometry_slot_idx}));
                 time_window_manager_numerical_free(&numerical_window);
                 slot_manager_free(&tsm);
                 exit(1);

@@ -571,11 +571,16 @@ static bool plane_crossing_rk5_trial(
     )
 
 
-def find_plane_crossings_brent(normalized_eom: bool = False) -> None:
+def find_plane_crossings_brent(
+    normalized_eom: bool = False, fast_light: bool = False
+) -> None:
     """
     Register slot-ordered refinement and selection of numerical plane crossings.
 
     :param normalized_eom: Whether coordinate time is the integration parameter.
+    :param fast_light: Whether to map numerical data at ``t_start`` while
+        refining crossings in the advancing integration parameter. Requires
+        matching numerical interpolation registration.
     :raises ValueError: If the single-candidate Brent function is not registered.
     """
     if "plane_crossing_brent_refine_candidate" not in cfc.CFunction_dict:
@@ -589,6 +594,11 @@ def find_plane_crossings_brent(normalized_eom: bool = False) -> None:
         "non_terminal->integration_param >= selected->integration_param"
         if normalized_eom
         else "non_terminal->integration_param <= selected->integration_param"
+    )
+    geometry_slot = (
+        "slot_get_index(&crossing_slots, commondata->t_start)"
+        if fast_light
+        else "slot"
     )
     body = r"""
     if (num_rays <= 0) return;
@@ -656,7 +666,7 @@ def find_plane_crossings_brent(normalized_eom: bool = False) -> None:
         if (crossing_slots.slot_counts[slot] == 0) continue;
         const bool window_available =
             time_window_manager_numerical_mmap_for_slot(
-                numerical_window, &crossing_slots, slot) ==
+                numerical_window, &crossing_slots, @GEOMETRY_SLOT@) ==
             TIME_WINDOW_MANAGER_NUMERICAL_SUCCESS;
         while (crossing_slots.slot_counts[slot] > 0) {
             const long int chunk_size = NRPYMIN(
@@ -746,8 +756,11 @@ def find_plane_crossings_brent(normalized_eom: bool = False) -> None:
     slot_manager_free(&crossing_slots);
     free(chunk_indices);
     free(terminal_candidates);
-""".replace("@ANCHOR_TIME@", anchor_time).replace(
-        "@NON_TERMINAL_PRECEDES_TERMINAL@", non_terminal_precedes_terminal
+"""
+    body = (
+        body.replace("@ANCHOR_TIME@", anchor_time)
+        .replace("@NON_TERMINAL_PRECEDES_TERMINAL@", non_terminal_precedes_terminal)
+        .replace("@GEOMETRY_SLOT@", geometry_slot)
     )
     cfc.register_CFunction(
         includes=[

@@ -195,7 +195,7 @@ Numerical-spacetime interpolation is separate from analytic metric evaluation.
 mapped `NumericalTimeWindowManager`; for every ray in a chunk it asks the time
 window for the temporal stencil, performs `SinhCylindricalv2n2` azimuthal-
 symmetry spatial Lagrange interpolation on every mapped slice, then calls
-temporal Lagrange interpolation at the photon's coordinate time. The time-window
+temporal Lagrange interpolation at the photon's coordinate time by default. The time-window
 manager owns the read-only mmap window over a combined numerical-spacetime
 container and widens each slot by temporal interpolation halo plus backward
 RKF45 lookahead. The exporter and combiner preserve the full logical grid,
@@ -210,7 +210,40 @@ Callers may supply trial-locked native spatial-stencil centers; when provided,
 the wrapper reuses those center indices for every temporal-stencil payload and
 endpoint refresh. Normalized-EOM calls also provide the integration parameter,
 trial step, and RK stage so interpolated geometry uses the RK stage coordinate
-time; direct-EOM calls continue to read coordinate time from the state.
+time by default; direct-EOM calls read coordinate time from the state.
+
+### Fixed-Time Geometry Sampling
+
+The numerical batch generator's optional `--fast-light` switch selects
+`fast_light=True` when registering numerical interpolation, batch integration,
+and numerical plane-crossing refinement. It is disabled by default and applies
+to both `geodesic` and `normalized` equations with `g4DD`, `g4DD_d0`, or
+`GammaUDD` data. Every geometry evaluation uses `commondata->t_start`, including
+RKF45 stages, accepted-state metric evaluations, plane refinement, and
+normalization or angular-momentum diagnostics. For interior sampling times,
+the original dynamical metric time derivatives or stored Christoffels remain
+in the RHS. Existing endpoint and synthetic-node rules still apply; the option
+does not add a temporal-derivative-zeroing operation.
+
+Photon states and integration parameters still advance. In direct evolution,
+coordinate time is state component zero; in normalized evolution, coordinate
+time is the independent integration parameter and component zero is affine
+parameter. Scheduling slots, crossing intervals, output times, and existing
+propagation limits retain those advancing values. The mapping calls use the
+slot containing `t_start`, independently of the photons' scheduling slots.
+The batch diagnostic slot grids have the same time bounds and spacing as the
+main grid, so they reuse its initial slot index. Numerical plane refinement
+selects that time's slot in its own grid. The shared time-slot and numerical
+time-window helper definitions are unchanged.
+
+This option fixes the time used to evaluate the dynamical RHS. It does not
+construct a stationary metric by discarding its temporal derivatives. The
+existing RKF45 error controller, numerical time-window step cap, and photon
+termination conditions remain active.
+
+Evidence (descriptive behavior): `nrpy/infrastructures/BHaH/general_relativity/geodesics/interpolation/numerical_interpolation.py` — `register_CFunction_numerical_interpolation`, `fast_light`; corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/batch_integrator_numerical.py` — `batch_integrator_numerical`, integration and diagnostic mapping calls; `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/find_plane_crossings_brent.py` — `find_plane_crossings_brent`; `nrpy/examples/photon_batch_geodesic_integrator_numerical.py` — `--fast-light` registration arguments
+
+### Numerical Interpolation Diagnostics And Boundaries
 
 The numerical batch integrator can enable `perform_synthetic_slice_check` to
 record synthetic temporal-stencil nodes whose times lie strictly below `0` or
@@ -328,6 +361,7 @@ Evidence (generated evidence): `nrpy/infrastructures/BHaH/diagnostics/diagnostic
 
 - [main_batch.py](../../../nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/main_batch.py) - `main`
 - [batch_integrator_numerical.py](../../../nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/batch_integrator_numerical.py) - `batch_integrator_numerical`
+- [photon_batch_geodesic_integrator_numerical.py](../../../nrpy/examples/photon_batch_geodesic_integrator_numerical.py) - `--fast-light`, numerical interpolation and plane-refinement registration
 - [batch_integrator_analytical.py](../../../nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/batch_integrator_analytical.py) - `batch_integrator_analytical`
 - [single_integrator_analytical.py](../../../nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/single_integrator_analytical.py) - `single_integrator_analytical`
 - [single_integrator_numerical.py](../../../nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/single_integrator_numerical.py) - `single_integrator_numerical`

@@ -334,13 +334,36 @@ prints early records, and displays heatmaps for nonterminal-plane, terminal-plan
 and celestial-sphere coordinates. When every matching
 `light_blueprint_norm_abs_XX_YY.bin` sidecar is present and correctly sized, it
 also plots normalization-magnitude histograms grouped by termination status.
-Its warning text directs maintainers to update the field-definition file when raw enum
-values do not match current Python constants.
+It also assigns every photon to a domain of equal termination status using
+eight-neighbor connectivity, including diagonals and neighbors across tile
+edges. Domain IDs follow increasing seed `a`, then `b`. The complete status and
+domain-ID grids remain in memory; only the physical diagnostic plots are
+subsampled. The iterative flood fill takes time and storage proportional to the
+photon count and adds no Python dependencies.
+
+The script writes `blueprint_domains.txt` next to the blueprint tiles. Its
+tab-separated rows report each domain's ID, integer and named termination
+status, photon count and percentage, seed coordinates, bounds of the sample
+centers, boundary-sample count, and scan edges touched. A boundary sample has a
+different-status neighbor in one of the eight directions or touches a scan edge.
+The enclosing bounds are not an outline of an irregular domain or a domain
+with holes. Any `ACTIVE` domain contains unfinished rays.
+
+The domain figure places sample cells in the original dimensionless `(a,b)`
+coordinates, with `b` increasing upward and no interpolation between domain
+colors. Click a domain or enter its ID to display its status and zoom to its
+extent; the Matplotlib toolbar provides pan, zoom, and Home. Colors repeat after
+twenty domains; the selected domain is highlighted in black and its ID is
+displayed. An interactive
+Matplotlib backend is required for mouse and keyboard controls. Run
+`python3 blueprint_analysis.py --no-plots` to write the report without opening
+figures. Zooming reveals stored samples; it does not resolve structure between
+photon directions or establish a distinct lensed-image order.
 
 Claim evidence:
-- Claim: `blueprint_analysis.py` streams blueprint binary files, reports termination diagnostics against the configured enum names, provides plane/celestial heatmaps, and consumes complete matching normalization sidecars when available.
+- Claim: `blueprint_analysis.py` reports termination diagnostics, labels equal-status eight-neighbor domains using every photon across all tiles, writes their summaries to `blueprint_domains.txt`, provides an interactive domain figure and plane/celestial heatmaps, and consumes complete matching normalization sidecars when available.
 - Role: descriptive behavior
-- Deciding authority: `nrpy/examples/geodesic_visualizations/blueprint_analysis.py` — `diagnose_blueprint`, `plot_heatmaps`
+- Deciding authority: `nrpy/examples/geodesic_visualizations/blueprint_analysis.py` — `diagnose_blueprint`, `label_domains`, `plot_domains`, `plot_heatmaps`
 - Corroboration: `nrpy/examples/geodesic_visualizations/blueprint_config_and_schema.py` — termination constants and record fields
 
 This standalone batch raytracer is related to, but distinct from, the
@@ -441,6 +464,28 @@ Claim evidence:
 - Deciding authority: `nrpy/examples/photon_single_geodesic_integrator_numerical.py` and `nrpy/examples/photon_batch_geodesic_integrator_numerical.py` — CLI and parameter wiring
 - Corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/batch_integrator_numerical.py` and `numerical_interpolation.py` — generated integration and interpolation behavior
 
+### Fixed-Time Geometry Comparison
+
+The numerical batch example accepts optional `--fast-light`, disabled by
+default. Add this switch to the numerical batch command to generate geometry
+evaluations at `t_start` throughout photon propagation. Both `--eom geodesic`
+and `--eom normalized` support it with `g4DD`, `g4DD_d0`, and `GammaUDD`.
+For interior sampling times, the RHS retains the numerical spacetime's
+dynamical temporal derivatives or stored Christoffels. Existing endpoint
+rules still apply. Photon integration parameters and coordinate-time trackers
+continue advancing, so crossing intervals and propagation limits remain
+available. See [Fixed-Time Geometry Sampling](../infrastructures/bhah/geodesics-and-raytracing-runtime.md#fixed-time-geometry-sampling)
+for the separation of scheduling slots from numerical-data mapping.
+
+This is a generator option, not a generated executable or parameter-file
+switch. Generate separate comparison projects using, for example,
+`--outdir project/time_dependent` without the flag and
+`--outdir project/fixed_time --fast-light` with it. The project basename is
+the same in both cases. Keep the dataset, `t_start`, camera, sampling density,
+and numerical tolerances the same when comparing the resulting images.
+
+Evidence (descriptive behavior): `nrpy/examples/photon_batch_geodesic_integrator_numerical.py` — `--fast-light`, `project_dir`, numerical registration arguments; corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/interpolation/numerical_interpolation.py` — `register_CFunction_numerical_interpolation`, fixed sampling time
+
 ## Sources
 
 - [massive_single_geodesic_integrator_analytical.py](../../nrpy/examples/massive_single_geodesic_integrator_analytical.py) - `project_name`, `main_single`, `single_integrator_analytical`, `gsl-config`; official GSL [Using the Library](https://www.gnu.org/software/gsl/doc/html/usage.html) - `Compiling and Linking`
@@ -451,6 +496,9 @@ Claim evidence:
 - [single_integrator_numerical.py](../../nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/single_integrator_numerical.py) - single-photon accepted-step event checks and `plane_crossings.txt` output
 - [event_detection_manager_kernel.py](../../nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/event_detection_manager_kernel.py) - plane crossing reconstruction and termination decisions
 - [photon_batch_geodesic_integrator_numerical.py](../../nrpy/examples/photon_batch_geodesic_integrator_numerical.py) - numerical dataset CLI, `combine_raytracing_time_slices.py`, batch visualization workflow
+- [batch_integrator_numerical.py](../../nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/batch_integrator_numerical.py) - `batch_integrator_numerical`, fixed geometry window with advancing photon scheduling times
+- [numerical_interpolation.py](../../nrpy/infrastructures/BHaH/general_relativity/geodesics/interpolation/numerical_interpolation.py) - `register_CFunction_numerical_interpolation`, `fast_light`
+- [find_plane_crossings_brent.py](../../nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/find_plane_crossings_brent.py) - `find_plane_crossings_brent`, numerical-data mapping during fixed-time refinement
 - [normal_observer_log_energy.py](../../nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/normal_observer_log_energy.py) - direct-EOM `ln|alpha p^0|` helper
 - [combine_raytracing_time_slices.py](../../nrpy/infrastructures/BHaH/diagnostics/combine_raytracing_time_slices.py) - `InputSliceInfo`, `parse_args`, `--run-metadata`
 - [visualize_trajectory.py](../../nrpy/examples/geodesic_visualizations/visualize_trajectory.py) - `visualize_trajectory`, `plot_trajectory`
