@@ -1,4 +1,4 @@
-# nrpy/examples/geodesic_visualizations/render_lensed_image.py
+# examples/geodesic_visualizations/render_lensed_image.py
 """
 Defines the static image rendering engine.
 
@@ -9,6 +9,37 @@ coordinates stored in each blueprint record onto the requested output raster.
 
 Author: Dalton J. Moone
         daltonmoone **at** gmail **dot** com
+
+Doctests:
+>>> terms = np.array([2, 2, 2, 2, 0, 1, 9], dtype=np.int32)
+>>> fractions = (np.arange(7, dtype=np.float64) + 0.5) / 7
+>>> zeros = np.zeros(7, dtype=np.float64)
+>>> colors = np.zeros((1, 7, 3), dtype=np.float64)
+>>> counts = np.zeros((1, 7), dtype=np.int32)
+>>> debug = np.full((1, 7), _DEBUG_STATUS_UNSET, dtype=np.int8)
+>>> arguments = (terms, fractions, np.full(7, 0.5), zeros, zeros, zeros, zeros,
+...              7, 1, (0.0, 1.0, 0.0, 1.0), 2.0,
+...              np.full((1, 1, 3), 0.25), np.full((1, 1, 3), 0.5),
+...              colors, counts, debug, 1, 0, 2, 6, 9, 10, True)
+>>> labels = np.array([0, 1, 2, 3, 3, 3, 3], dtype=np.uint8)
+>>> _accumulate_ray_hits_jit(*arguments, labels, PUNCTURE_COLORS, True)
+>>> assert np.allclose(colors[0, :4], PUNCTURE_COLORS)
+>>> assert np.allclose(colors[0, 4:6], [[0.5] * 3, [0.25] * 3])
+>>> assert counts.tolist() == [[1, 1, 1, 1, 1, 1, 0]]
+>>> assert debug.tolist() == [[127, 127, 127, 127, 127, 127, 9]]
+>>> colors.fill(0); counts.fill(0); debug.fill(_DEBUG_STATUS_UNSET)
+>>> _accumulate_ray_hits_jit(*arguments, np.empty(0, dtype=np.uint8), PUNCTURE_COLORS, False)
+>>> assert np.all(colors[0, :4] == 0) and counts.tolist() == [[0, 0, 0, 0, 1, 1, 0]]
+>>> assert debug.tolist() == [[2, 2, 2, 2, 127, 127, 9]]
+>>> mixed_colors = np.zeros((1, 1, 3), dtype=np.float64)
+>>> mixed_counts = np.zeros((1, 1), dtype=np.int32)
+>>> _accumulate_ray_hits_jit(terms[:2], fractions[:2], np.full(2, 0.5),
+...     zeros[:2], zeros[:2], zeros[:2], zeros[:2], 1, 1, (0.0, 1.0, 0.0, 1.0),
+...     2.0, np.full((1, 1, 3), 0.25), np.full((1, 1, 3), 0.5), mixed_colors,
+...     mixed_counts, np.empty((0, 0), dtype=np.int8), 1, 0, 2, 6, 9, 10, False,
+...     np.array([1, 2], dtype=np.uint8), PUNCTURE_COLORS, True)
+>>> assert mixed_counts[0, 0] == 2
+>>> assert np.allclose(mixed_colors[0, 0] / 2, PUNCTURE_COLORS[1:3].mean(axis=0))
 """
 
 import os
@@ -77,6 +108,15 @@ DEBUG_FAILURE_INFO: Tuple[Tuple[int, str, Tuple[int, int, int]], ...] = (
     ),
 )
 DEBUG_FAILURE_TYPES = tuple(failure_info[0] for failure_info in DEBUG_FAILURE_INFO)
+PUNCTURE_COLOR_INFO: Tuple[Tuple[int, str, Tuple[int, int, int]], ...] = (
+    (cfg.PUNCTURE_UNCLASSIFIED, "unclassified", (160, 160, 160)),
+    (cfg.PUNCTURE_1, "puncture_1", (255, 64, 64)),
+    (cfg.PUNCTURE_2, "puncture_2", (64, 160, 255)),
+    (cfg.MERGED_PUNCTURE, "merged_puncture", (255, 208, 64)),
+)
+PUNCTURE_COLORS = (
+    np.array([info[2] for info in PUNCTURE_COLOR_INFO], dtype=np.float64) / 255.0
+)
 
 
 def _init_worker(
@@ -304,6 +344,9 @@ def _accumulate_ray_hits_jit(
     term_fail_spatial_interpolation: int,
     term_fail_temporal_interpolation: int,
     enable_debug: bool,
+    rays_puncture_labels: npt.NDArray[np.uint8],
+    puncture_colors: npt.NDArray[np.float64],
+    color_by_puncture: bool,
 ) -> None:
     # JIT-compiled core math loop for mapping rays to pixels.
     # Bypasses the GIL and executes in optimized machine code.
@@ -359,9 +402,17 @@ def _accumulate_ray_hits_jit(
             local_pixel_acc[py, px, 2] += sphere_tex[py_sph, px_sph, 2]
             local_count_acc[py, px] += 1
 
+        elif color_by_puncture and term == term_evolution_measure:
+            label = rays_puncture_labels[i]
+            local_pixel_acc[py, px, 0] += puncture_colors[label, 0]
+            local_pixel_acc[py, px, 1] += puncture_colors[label, 1]
+            local_pixel_acc[py, px, 2] += puncture_colors[label, 2]
+            local_count_acc[py, px] += 1
+
         # Preserve requested integration failures for the opt-in debug overlay.
         if (
             enable_debug
+            and not (color_by_puncture and term == term_evolution_measure)
             and (
                 term_evolution_measure <= term <= term_fail_generic
                 or term == term_fail_spatial_interpolation
@@ -379,6 +430,7 @@ def _process_blueprint_tile(
     output_pixel_height: int,
     source_image_width: float,
     enable_debug: bool,
+    color_by_puncture: bool = False,
 ) -> Tuple[
     npt.NDArray[np.int64],
     npt.NDArray[np.int64],
@@ -412,7 +464,12 @@ def _process_blueprint_tile(
     else:
         local_debug_term_types = np.empty((0, 0), dtype=np.int8)
 
-    for header, _, chunk_data in blueprint_io.iter_blueprint_chunks(
+    puncture_labels = (
+        blueprint_io.read_puncture_labels(blueprint_filename)
+        if color_by_puncture
+        else np.empty(0, dtype=cfg.PUNCTURE_DTYPE)
+    )
+    for header, record_start, chunk_data in blueprint_io.iter_blueprint_chunks(
         blueprint_filename, chunk_records
     ):
         _accumulate_ray_hits_jit(
@@ -439,6 +496,9 @@ def _process_blueprint_tile(
             cfg.FAILURE_SPATIAL_INTERPOLATION,
             cfg.FAILURE_TEMPORAL_INTERPOLATION,
             enable_debug,
+            puncture_labels[record_start : record_start + len(chunk_data)],
+            PUNCTURE_COLORS,
+            color_by_puncture,
         )
 
     # --- SPARSE MAP-REDUCE COMPRESSION ---
@@ -510,6 +570,7 @@ def generate_static_lensed_image(
     custom_source_image: bool = False,
     enable_debug: bool = False,
     include_debug_key: bool = False,
+    color_by_puncture: bool = False,
 ) -> None:
     """
     Generate a static lensed image from geodesic blueprint data.
@@ -517,6 +578,7 @@ def generate_static_lensed_image(
     Reads native blueprint records in chunks, identifies where each ray terminated,
     and maps each record's normalized image-sample coordinate to the final image.
     Uses a process pool executor to process individual blueprint tiles in parallel.
+    Missing requested puncture files propagate FileNotFoundError from the reader.
 
     :param output_filename: Path where the final rendered image will be saved.
     :param output_pixel_width: Desired width of the output image in pixels.
@@ -530,8 +592,9 @@ def generate_static_lensed_image(
     :param custom_sphere_image: Whether the sphere texture came from a custom CLI override.
     :param custom_source_image: Whether the source texture came from a custom CLI override.
     :param enable_debug: Whether to overlay requested integration failures with fixed colors.
-    :param include_debug_key: Whether to add the debug failure-color key to the image.
-    :raises ValueError: If the blueprint set is incomplete or has inconsistent metadata.
+    :param include_debug_key: Whether to add the enabled failure and puncture color key.
+    :param color_by_puncture: Color evolution-measure stops using saved puncture labels.
+    :raises ValueError: If blueprint metadata or requested puncture labels are invalid.
     """
     # pylint: disable=import-outside-toplevel, import-error
     from PIL import Image
@@ -594,6 +657,10 @@ def generate_static_lensed_image(
             "Blueprint headers disagree about tile grid, fields of view, or image-plane bounds"
         )
 
+    if color_by_puncture:
+        for filename, header in zip(blueprint_filenames, headers):
+            blueprint_io.read_puncture_labels(filename, header)
+
     chunk_records = chunk_size
 
     # I/O Throttling
@@ -620,6 +687,7 @@ def generate_static_lensed_image(
                     output_pixel_height,
                     source_image_width,
                     enable_debug,
+                    color_by_puncture,
                 )
             )
 
@@ -661,7 +729,7 @@ def generate_static_lensed_image(
     img = Image.fromarray(
         (np.clip(final_image_float, 0, 1) * 255).astype(np.uint8), "RGB"
     )
-    if enable_debug and include_debug_key:
+    if include_debug_key and (enable_debug or color_by_puncture):
         from PIL import ImageDraw, ImageFont
 
         draw = ImageDraw.Draw(img)
@@ -669,16 +737,27 @@ def generate_static_lensed_image(
         padding = 4
         swatch_size = 8
         line_height = 11
-        labels = [failure_info[1] for failure_info in DEBUG_FAILURE_INFO]
+        color_key_info = tuple(
+            info
+            for info in DEBUG_FAILURE_INFO
+            if enable_debug
+            and not (
+                color_by_puncture
+                and info[0] == cfg.STOP_CONDITION_EVOLUTION_MEASURE_EXCEEDED
+            )
+        )
+        if color_by_puncture:
+            color_key_info += PUNCTURE_COLOR_INFO
+        labels = [info[1] for info in color_key_info]
         text_width = max(int(draw.textlength(label, font=font)) for label in labels)
         legend_width = 3 * padding + swatch_size + text_width
-        legend_height = 2 * padding + line_height * len(DEBUG_FAILURE_INFO)
+        legend_height = 2 * padding + line_height * len(color_key_info)
         left = max(0, img.width - legend_width - padding)
         top = max(0, img.height - legend_height - padding)
 
         # Draw last so the key is visually distinct from ray-traced pixels.
         draw.rectangle((left, top, img.width - 1, img.height - 1), fill=(0, 0, 0))
-        for index, (_, label, color) in enumerate(DEBUG_FAILURE_INFO):
+        for index, (_, label, color) in enumerate(color_key_info):
             y_coord = top + padding + index * line_height
             draw.rectangle(
                 (

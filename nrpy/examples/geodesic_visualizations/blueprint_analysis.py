@@ -3,7 +3,8 @@ Validate and visualize native geodesic blueprint binary files.
 
 This utility checks the native tile headers and streams records for integrity,
 termination-status, coordinate, and optional normalization diagnostics before
-plotting sampled data.
+plotting sampled data. Eight-neighbor domains use every photon, including across
+tile edges, and are numbered by increasing seed column, then seed row.
 
 Author: Dalton J. Moone
         daltonmoone **at** gmail **dot** com
@@ -11,10 +12,15 @@ Author: Dalton J. Moone
 
 import os
 from contextlib import ExitStack
-from typing import BinaryIO, Dict, List, Optional, Tuple, cast
+from typing import BinaryIO, Dict, List, NamedTuple, Optional, Tuple, cast
 
+import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
+from matplotlib.backend_bases import MouseEvent
+from matplotlib.colors import ListedColormap
+from matplotlib.figure import Figure
+from matplotlib.widgets import TextBox
 
 try:
     import blueprint_config_and_schema as cfg  # type: ignore
@@ -70,6 +76,128 @@ TERMINATION_TYPE_INFO: Dict[int, Tuple[str, str]] = {
 }
 
 
+class BlueprintDomain(NamedTuple):
+    """One status-connected domain; seeds and inclusive bounds use column/row indices."""
+
+    domain_id: int
+    status: int
+    photon_count: int
+    seed: Tuple[int, int]
+    bounds: Tuple[int, int, int, int]
+    boundary_count: int
+    edges: Tuple[str, ...]
+
+
+def label_domains(
+    statuses: npt.NDArray[np.int32],
+) -> Tuple[npt.NDArray[np.intp], List[BlueprintDomain]]:
+    """
+    Label equal-status samples joined horizontally, vertically, or diagonally.
+
+    Rows increase with b and columns with a. Seeds are visited column first,
+    then row, so IDs follow the smallest remaining (a,b). An iterative flood
+    fill visits every sample once, using O(N) time and storage. A boundary
+    sample has an eight-neighbor sample of another status or touches a scan
+    edge. Bounds are inclusive (first column, last column, first row, last row).
+
+    :param statuses: Complete status grid, including all tiles.
+    :return: Per-sample positive domain IDs and summaries in ID order.
+    :raises ValueError: If the status grid is empty or not two-dimensional.
+
+    Doctests:
+    >>> diagonal = np.array([[0, 1], [1, 0]], dtype=np.int32)
+    >>> labels, domains = label_domains(diagonal)
+    >>> labels.tolist()
+    [[1, 2], [2, 1]]
+    >>> [(d.status, d.photon_count, d.seed) for d in domains]
+    [(0, 2, (0, 0)), (1, 2, (0, 1))]
+    >>> separated = np.array([[0, 1, 0], [0, 1, 0]], dtype=np.int32)
+    >>> labels, domains = label_domains(separated)
+    >>> labels.tolist()
+    [[1, 2, 3], [1, 2, 3]]
+    >>> sum(d.photon_count for d in domains) == separated.size
+    True
+    >>> label_domains(np.array([[0, 0, 2], [1, 1, 2]], dtype=np.int32))[0].tolist()
+    [[1, 1, 3], [2, 2, 3]]
+    >>> ring = np.zeros((5, 5), dtype=np.int32)
+    >>> ring[1:4, 1:4] = 1
+    >>> ring[2, 2] = 0
+    >>> labels, domains = label_domains(ring)
+    >>> labels.tolist()
+    [[1, 1, 1, 1, 1], [1, 2, 2, 2, 1], [1, 2, 3, 2, 1], [1, 2, 2, 2, 1], [1, 1, 1, 1, 1]]
+    >>> [(d.photon_count, d.boundary_count, d.edges) for d in domains]
+    [(16, 16, ('left', 'right', 'bottom', 'top')), (8, 8, ()), (1, 1, ())]
+    >>> domains[1].bounds, domains[2].seed
+    ((1, 3, 1, 3), (2, 2))
+    >>> label_domains(np.array([[4, 4, 9]], dtype=np.int32))[0].tolist()
+    [[1, 1, 2]]
+    >>> label_domains(np.array([[6]], dtype=np.int32))[1][0].boundary_count
+    1
+    >>> label_domains(np.zeros((5, 5), dtype=np.int32))[1][0].boundary_count
+    16
+    >>> label_domains(np.zeros((0, 2), dtype=np.int32))
+    Traceback (most recent call last):
+    ...
+    ValueError: Domain labeling requires a nonempty two-dimensional status grid
+    """
+    if statuses.ndim != 2 or statuses.size == 0:
+        raise ValueError(
+            "Domain labeling requires a nonempty two-dimensional status grid"
+        )
+    height, width = statuses.shape
+    labels = np.zeros(statuses.shape, dtype=np.intp)
+    domains: List[BlueprintDomain] = []
+    # Step 1: Start each flood fill at the first remaining sample in (a,b) order.
+    for seed_col in range(width):
+        for seed_row in range(height):
+            if labels[seed_row, seed_col]:
+                continue
+            domain_id = len(domains) + 1
+            status = int(statuses[seed_row, seed_col])
+            labels[seed_row, seed_col] = domain_id
+            pending = [(seed_row, seed_col)]
+            first_col = last_col = seed_col
+            first_row = last_row = seed_row
+            count = boundary_count = 0
+            # Step 2: Assign before queuing so each sample is processed once.
+            while pending:
+                row, col = pending.pop()
+                count += 1
+                first_col, last_col = min(first_col, col), max(last_col, col)
+                first_row, last_row = min(first_row, row), max(last_row, row)
+                boundary = row in (0, height - 1) or col in (0, width - 1)
+                for near_row in range(max(0, row - 1), min(height, row + 2)):
+                    for near_col in range(max(0, col - 1), min(width, col + 2)):
+                        if statuses[near_row, near_col] != status:
+                            boundary = True
+                        elif labels[near_row, near_col] == 0:
+                            labels[near_row, near_col] = domain_id
+                            pending.append((near_row, near_col))
+                boundary_count += int(boundary)
+            edges = tuple(
+                name
+                for name, touched in (
+                    ("left", first_col == 0),
+                    ("right", last_col == width - 1),
+                    ("bottom", first_row == 0),
+                    ("top", last_row == height - 1),
+                )
+                if touched
+            )
+            domains.append(
+                BlueprintDomain(
+                    domain_id,
+                    status,
+                    count,
+                    (seed_col, seed_row),
+                    (first_col, last_col, first_row, last_row),
+                    boundary_count,
+                    edges,
+                )
+            )
+    return labels, domains
+
+
 def _termination_type_info(enum_value: int) -> Tuple[str, str]:
     """
     Return the name and description for a termination enum.
@@ -94,6 +222,151 @@ def _calculate_subsample_rate(total_expected_records: int, max_viz_points: int) 
     return max(1, (total_expected_records + max_viz_points - 1) // max_viz_points)
 
 
+def plot_domains(
+    labels: npt.NDArray[np.intp],
+    domains: List[BlueprintDomain],
+    a_values: npt.NDArray[np.float64],
+    b_values: npt.NDArray[np.float64],
+    scan_bounds: Tuple[float, float, float, float],
+) -> Figure:
+    """
+    Display domains at native sample resolution with click and ID selection.
+
+    The standard Matplotlib toolbar provides pan, zoom, and Home. Clicking a
+    sample or entering its domain ID zooms to that domain's enclosing rectangle.
+    Colors cycle after twenty domains; selection highlights the chosen domain
+    in black and reports its exact ID.
+    Nearest-neighbor drawing preserves cells and holes when zooming.
+
+    :param labels: Per-sample domain IDs with rows increasing with b.
+    :param domains: Domain summaries in ID order.
+    :param a_values: Column sample centers in the original camera coordinates.
+    :param b_values: Row sample centers in the original camera coordinates.
+    :param scan_bounds: Exact (a_min, a_max, b_min, b_max) from the header.
+    :return: Domain figure, with callbacks retained for interactive use.
+
+    Doctests:
+    A simulated click on the upper-right sample selects the correct domain
+    and zooms in the original cropped camera coordinates, without a GUI.
+    >>> from matplotlib.backends.backend_agg import FigureCanvasAgg
+    >>> from unittest.mock import patch
+    >>> labels, domains = label_domains(np.array([[0, 0], [0, 1]], dtype=np.int32))
+    >>> figure = Figure()
+    >>> canvas = FigureCanvasAgg(figure)
+    >>> axes = figure.subplots()
+    >>> with patch.object(plt, "subplots", return_value=(figure, axes)), patch.object(plt, "show"):
+    ...     figure = plot_domains(labels, domains, np.array([0.375, 0.625]),
+    ...         np.array([0.6875, 0.8125]), (0.25, 0.75, 0.625, 0.875))
+    >>> canvas.draw()
+    >>> x, y = axes.transData.transform((0.625, 0.8125))
+    >>> canvas.callbacks.process("button_press_event", MouseEvent("button_press_event", canvas, x, y, button=1))
+    >>> figure.texts[0].get_text().splitlines()[0]
+    'Domain 2: STOP_CONDITION_TERMINAL_PLANE (1)'
+    >>> np.allclose(axes.get_xlim(), (0.375, 0.875)) and np.allclose(axes.get_ylim(), (0.6875, 0.9375))
+    True
+    >>> axes.images[0].origin, axes.images[0].get_interpolation()
+    ('lower', 'nearest')
+    >>> np.allclose(axes.images[0].cmap(axes.images[0].norm(2)), (0, 0, 0, 1))
+    True
+    >>> _ = axes.set_xlim(0.25, 0.75)
+    >>> _ = axes.set_ylim(0.625, 0.875)
+    >>> canvas.draw()
+    >>> x, y = axes.transData.transform((0.625, 0.8125))
+    >>> canvas.callbacks.process("button_press_event", MouseEvent("button_press_event", canvas, x, y, button=1))
+    >>> np.allclose(axes.get_xlim(), (0.375, 0.875))
+    True
+    """
+    fig, ax = plt.subplots(figsize=(10, 8))
+    fig.subplots_adjust(bottom=0.17, top=0.82)
+    colors = plt.get_cmap("tab20")(np.arange(len(domains)) % 20)
+    image = ax.imshow(
+        labels,
+        origin="lower",
+        extent=scan_bounds,
+        interpolation="nearest",
+        cmap=ListedColormap(colors),
+        vmin=0.5,
+        vmax=len(domains) + 0.5,
+        aspect="equal",
+    )
+    ax.set_xlabel("a (dimensionless)")
+    ax.set_ylabel("b (dimensionless)")
+    ax.set_title(f"{len(domains)} domains; eight-neighbor connectivity")
+    information = fig.text(
+        0.05,
+        0.96,
+        "Click a domain or enter its ID to zoom. Toolbar: pan, zoom, Home.\n"
+        "Colors cycle after 20 domains; the selected domain is black.",
+        va="top",
+    )
+    (marker,) = ax.plot([], [], "wx", markersize=10)
+    domain_box = TextBox(fig.add_axes((0.25, 0.05, 0.25, 0.05)), "Domain ID: ")
+    da = (scan_bounds[1] - scan_bounds[0]) / labels.shape[1]
+    db = (scan_bounds[3] - scan_bounds[2]) / labels.shape[0]
+
+    def select_domain(text: str) -> None:
+        """
+        Show the requested domain's status and zoom to its sample cells.
+
+        :param text: Domain ID entered in the text box.
+        """
+        try:
+            domain_id = int(text)
+        except ValueError:
+            information.set_text(
+                f"Enter an integer domain ID from 1 to {len(domains)}."
+            )
+            fig.canvas.draw_idle()
+            return
+        if not 1 <= domain_id <= len(domains):
+            information.set_text(f"Enter a domain ID from 1 to {len(domains)}.")
+            fig.canvas.draw_idle()
+            return
+        domain = domains[domain_id - 1]
+        selected_colors = colors.copy()
+        selected_colors[domain_id - 1] = (0, 0, 0, 1)
+        image.set_cmap(ListedColormap(selected_colors))
+        status_name, _ = _termination_type_info(domain.status)
+        information.set_text(
+            f"Domain {domain_id}: {status_name} ({domain.status})\n"
+            f"{domain.photon_count:,} photons ({100 * domain.photon_count / labels.size:.6g}%); "
+            f"{domain.boundary_count:,} boundary samples; "
+            f"scan edges: {', '.join(domain.edges) or 'none'}"
+        )
+        col, row = domain.seed
+        marker.set_data([a_values[col]], [b_values[row]])
+        first_col, last_col, first_row, last_row = domain.bounds
+        toolbar = fig.canvas.toolbar
+        if toolbar is not None:
+            toolbar.push_current()
+        ax.set_xlim(a_values[first_col] - da, a_values[last_col] + da)
+        ax.set_ylim(b_values[first_row] - db, b_values[last_row] + db)
+        if toolbar is not None:
+            toolbar.push_current()
+        fig.canvas.draw_idle()
+
+    def on_click(event: MouseEvent) -> None:
+        """
+        Select an image sample while leaving toolbar gestures available.
+
+        :param event: Matplotlib mouse-button event.
+        """
+        if event.inaxes is ax and event.button == 1 and ax.get_navigate_mode() is None:
+            domain_id = image.get_cursor_data(event)
+            if domain_id is not None:
+                text = str(int(domain_id))
+                if domain_box.text == text:
+                    select_domain(text)
+                else:
+                    domain_box.set_val(text)
+
+    domain_box.on_submit(select_domain)
+    # The canvas retains on_click, whose closure keeps the TextBox alive.
+    fig.canvas.mpl_connect("button_press_event", on_click)
+    plt.show()
+    return fig
+
+
 def plot_heatmaps(
     data: npt.NDArray[np.void],
     nonterminal_crossing_mask: Optional[npt.NDArray[np.bool_]] = None,
@@ -113,9 +386,6 @@ def plot_heatmaps(
     :raises ValueError: If the crossing mask and blueprint records have
         different shapes.
     """
-    # pylint: disable=import-outside-toplevel, import-error
-    import matplotlib.pyplot as plt
-
     fig, axes = plt.subplots(1, 3, figsize=(18, 5))
     # A nonzero finite lambda marks a recorded nonterminal crossing. Its
     # presence does not depend on the ray's final termination status.
@@ -196,9 +466,6 @@ def plot_norm_abs_log_histogram(
     :param termination_types: Termination enum for each ray.
     :param norm_abs_values: Absolute normalization values for each ray.
     """
-    # pylint: disable=import-outside-toplevel, import-error
-    import matplotlib.pyplot as plt
-
     plt.figure(figsize=(10, 6))
     termination_colors = plt.get_cmap("tab10")
     for enum_value in np.unique(termination_types):
@@ -224,12 +491,57 @@ def plot_norm_abs_log_histogram(
     plt.show()
 
 
-def diagnose_blueprint() -> None:
+def diagnose_blueprint(show_plots: bool = True) -> None:
     """
     Read every metadata-described tile and print integrity/physics diagnostics.
 
+    Write blueprint_domains.txt next to the input tiles. Native records are
+    ordered by column within each row, and every tile has the same dimensions.
+    Domain labeling retains a status grid and a label grid for every photon;
+    only the existing physical diagnostic plots are subsampled.
+
+    :param show_plots: Display domain, plane, sphere, and normalization figures.
     :raises FileNotFoundError: If an expected tile is missing.
     :raises ValueError: If a blueprint binary file or normalization sidecar is malformed.
+
+    Doctests:
+    A diagonal pair across both tile seams stays one domain even when chunks
+    split sample rows. The report accounts for every photon.
+    >>> import contextlib
+    >>> import csv
+    >>> import io
+    >>> import struct
+    >>> import tempfile
+    >>> from pathlib import Path
+    >>> from unittest.mock import patch
+    >>> grid = np.zeros((4, 4), dtype=np.int32)
+    >>> grid[1, 1] = grid[2, 2] = cfg.STOP_CONDITION_TERMINAL_PLANE
+    >>> with tempfile.TemporaryDirectory() as directory:
+    ...     for tx in range(2):
+    ...         for ty in range(2):
+    ...             records = np.zeros(4, dtype=cfg.BLUEPRINT_DTYPE)
+    ...             records["termination_type"] = grid[2*ty:2*ty+2, 2*tx:2*tx+2].ravel()
+    ...             records["image_width_fraction"] = np.tile((2*tx + np.arange(2) + 0.5) / 4, 2)
+    ...             records["image_height_fraction"] = np.repeat((2*ty + np.arange(2) + 0.5) / 4, 2)
+    ...             header = struct.pack(cfg.BLUEPRINT_HEADER_FORMAT,
+    ...                 cfg.BLUEPRINT_MAGIC, cfg.BLUEPRINT_SCHEMA_VERSION,
+    ...                 cfg.BLUEPRINT_HEADER_SIZE, cfg.BLUEPRINT_RECORD_SIZE,
+    ...                 tx, ty, 2, 2, 4, 1.0, 1.0, 0.0, 1.0, 0.0, 1.0)
+    ...             path = Path(directory) / f"light_blueprint_{tx:02d}_{ty:02d}.bin"
+    ...             _ = path.write_bytes(header + records.tobytes())
+    ...     with patch.dict(diagnose_blueprint.__globals__, script_dir=directory):
+    ...         with patch.object(cfg, "CHUNK_SIZE", 3), contextlib.redirect_stdout(io.StringIO()):
+    ...             diagnose_blueprint(show_plots=False)
+    ...     lines = (Path(directory) / "blueprint_domains.txt").read_text().splitlines()
+    ...     rows = list(csv.DictReader((line for line in lines if not line.startswith("#")), delimiter=chr(9)))
+    >>> [(int(r["domain_id"]), int(r["status"]), int(r["photon_count"])) for r in rows]
+    [(1, 0, 14), (2, 1, 2)]
+    >>> [float(r["percentage"]) for r in rows]
+    [87.5, 12.5]
+    >>> [float(rows[1][key]) for key in ("seed_a", "seed_b", "a_min_sample", "a_max_sample", "b_min_sample", "b_max_sample")]
+    [0.375, 0.375, 0.375, 0.625, 0.375, 0.625]
+    >>> rows[1]["status_name"], rows[1]["scan_edges"], int(rows[1]["boundary_count"])
+    ('STOP_CONDITION_TERMINAL_PLANE', 'none', 2)
     """
     first_tile = os.path.join(script_dir, "light_blueprint_00_00.bin")
     if not os.path.exists(first_tile):
@@ -250,6 +562,36 @@ def diagnose_blueprint() -> None:
     crossing_indices_by_file: Dict[str, npt.NDArray[np.uint64]] = {}
     missing_sidecars: List[str] = []
     total_expected_records = 0
+    # Step 1: Recover native tile dimensions from the repeated first-row b value.
+    _, _, first_chunk = next(
+        blueprint_io.iter_blueprint_chunks(
+            first_tile,
+            1,
+            allow_active_termination=True,
+        )
+    )
+    grid_records = np.memmap(
+        first_tile,
+        dtype=cfg.BLUEPRINT_DTYPE,
+        mode="r",
+        offset=first_header.header_size,
+        shape=(first_header.record_count,),
+    )
+    tile_width = int(
+        np.count_nonzero(
+            grid_records["image_height_fraction"]
+            == first_chunk["image_height_fraction"][0]
+        )
+    )
+    tile_height, remainder = divmod(first_header.record_count, tile_width)
+    if remainder:
+        raise ValueError("Blueprint record count does not form complete sample rows")
+    del grid_records
+    statuses = np.empty(
+        (tile_height * tiles_height, tile_width * tiles_width), dtype=np.int32
+    )
+    a_values = np.empty(tile_width * tiles_width, dtype=np.float64)
+    b_values = np.empty(tile_height * tiles_height, dtype=np.float64)
     for tile_x in range(tiles_width):
         for tile_y in range(tiles_height):
             filename = f"light_blueprint_{tile_x:02d}_{tile_y:02d}.bin"
@@ -261,6 +603,24 @@ def diagnose_blueprint() -> None:
             )
             if header.tiles_width != tiles_width or header.tiles_height != tiles_height:
                 raise ValueError(f"Blueprint '{filename}' has an unexpected tile grid")
+            if header.record_count != first_header.record_count:
+                raise ValueError(
+                    f"Blueprint '{filename}' has an unexpected tile record count"
+                )
+            grid_records = np.memmap(
+                filepath,
+                dtype=cfg.BLUEPRINT_DTYPE,
+                mode="r",
+                offset=header.header_size,
+                shape=(tile_height, tile_width),
+            )
+            a_values[tile_x * tile_width : (tile_x + 1) * tile_width] = grid_records[
+                "image_width_fraction"
+            ][0, :]
+            b_values[tile_y * tile_height : (tile_y + 1) * tile_height] = grid_records[
+                "image_height_fraction"
+            ][:, 0]
+            del grid_records
             blueprint_files.append(filepath)
             headers.append(header)
             total_expected_records += header.record_count
@@ -317,6 +677,10 @@ def diagnose_blueprint() -> None:
     sampled_norm_abs: List[npt.NDArray[np.float64]] = []
     sampled_nonterminal_crossings: List[npt.NDArray[np.bool_]] = []
     for filepath, header in zip(blueprint_files, headers):
+        tile_statuses = statuses[
+            header.tile_y * tile_height : (header.tile_y + 1) * tile_height,
+            header.tile_x * tile_width : (header.tile_x + 1) * tile_width,
+        ]
         sidecar_path = os.path.join(
             script_dir,
             cfg.BLUEPRINT_NORM_ABS_FILENAME_TEMPLATE.format(
@@ -333,6 +697,9 @@ def diagnose_blueprint() -> None:
                 cfg.CHUNK_SIZE,
                 allow_active_termination=True,
             ):
+                tile_statuses.flat[record_start : record_start + len(chunk_data)] = (
+                    chunk_data["termination_type"]
+                )
                 norm_abs_chunk = None
                 if sidecar_file is not None:
                     expected_bytes = (
@@ -419,7 +786,51 @@ def diagnose_blueprint() -> None:
             f"{record['z_nt']:>17.5f}"
         )
 
-    if sampled_records:
+    # Step 2: Label all samples before making any subsampled diagnostic plots.
+    print("\nLabeling eight-neighbor domains using every photon...")
+    labels, domains = label_domains(statuses)
+    scan_bounds = (
+        first_header.a_min,
+        first_header.a_max,
+        first_header.b_min,
+        first_header.b_max,
+    )
+    report_path = os.path.join(script_dir, "blueprint_domains.txt")
+    with open(report_path, "w", encoding="utf-8") as report:
+        report.write(
+            "# Photon domains: equal termination status, eight-neighbor connectivity\n"
+            f"# Scan bounds (a_min a_max b_min b_max): {' '.join(repr(v) for v in scan_bounds)}\n"
+            f"# Grid: {len(a_values)} columns x {len(b_values)} rows; {labels.size} photons; {len(domains)} domains\n"
+            "# IDs follow increasing seed a, then b. Each photon belongs to one domain.\n"
+            "# Bounds below enclose sample centers; they are not domain outlines.\n"
+            "# Boundary samples have a different-status eight-neighbor or touch a scan edge.\n"
+            "# ACTIVE domains, if present, contain unfinished rays.\n"
+            "domain_id\tstatus\tstatus_name\tphoton_count\tpercentage\tseed_a\tseed_b\t"
+            "a_min_sample\ta_max_sample\tb_min_sample\tb_max_sample\tboundary_count\tscan_edges\n"
+        )
+        for domain in domains:
+            col, row = domain.seed
+            first_col, last_col, first_row, last_row = domain.bounds
+            status_name, _ = _termination_type_info(domain.status)
+            coordinates = (
+                a_values[col],
+                b_values[row],
+                a_values[first_col],
+                a_values[last_col],
+                b_values[first_row],
+                b_values[last_row],
+            )
+            report.write(
+                f"{domain.domain_id}\t{domain.status}\t{status_name}\t{domain.photon_count}\t"
+                f"{100 * domain.photon_count / labels.size:.9g}\t"
+                + "\t".join(repr(float(value)) for value in coordinates)
+                + f"\t{domain.boundary_count}\t{','.join(domain.edges) or 'none'}\n"
+            )
+    print(f"{len(domains):,} domains; report written to {report_path}")
+
+    if show_plots:
+        plot_domains(labels, domains, a_values, b_values, scan_bounds)
+    if show_plots and sampled_records:
         viz_data = np.concatenate(sampled_records)
         plot_heatmaps(viz_data, np.concatenate(sampled_nonterminal_crossings))
         if have_sidecars:
@@ -430,6 +841,13 @@ def diagnose_blueprint() -> None:
 
 if __name__ == "__main__":
     import argparse
+    import doctest
+    import sys
+
+    results = doctest.testmod()
+    if results.failed:
+        sys.exit(1)
+    print(f"Doctest passed: All {results.attempted} test(s) passed")
 
     parser = argparse.ArgumentParser(
         description=(
@@ -437,7 +855,12 @@ if __name__ == "__main__":
             "stored in their headers."
         )
     )
-    parser.parse_args()
+    parser.add_argument(
+        "--no-plots",
+        action="store_true",
+        help="Write the domain report without opening figures.",
+    )
+    args = parser.parse_args()
 
     first_blueprint_tile = os.path.join(script_dir, "light_blueprint_00_00.bin")
     if not os.path.exists(first_blueprint_tile):
@@ -445,4 +868,4 @@ if __name__ == "__main__":
             f"No native blueprint binary files found in {script_dir}; nothing to diagnose."
         )
     else:
-        diagnose_blueprint()
+        diagnose_blueprint(show_plots=not args.no_plots)

@@ -1,4 +1,4 @@
-# nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/batch_integrator_numerical.py
+# infrastructures/BHaH/general_relativity/geodesics/photon/batch_integrator_numerical.py
 r"""
 Emit the CPU/OpenMP numerical-spacetime photon batch integrator.
 
@@ -37,6 +37,12 @@ generator declares axial symmetry about the Cartesian ``z`` axis, optional
 initial, nonterminal plane, and terminal ``L_z`` evaluations measure
 angular-momentum conservation.
 
+An optional ``puncture_diagnostics_dir`` parameter selects BHaHAHA centroid
+tables and saved apparent-horizon surfaces. After final termination selection,
+two ID/status bytes and an eight-byte double record the associated horizon,
+containment result, and signed radial gap for each evolution-measure stop.
+These diagnostics do not change photon evolution.
+
 Author: Dalton J. Moone
         daltonmoone **at** gmail **dot** com
 """
@@ -51,6 +57,9 @@ from nrpy.infrastructures.BHaH.general_relativity.geodesics.photon.handle_non_te
 )
 from nrpy.infrastructures.BHaH.general_relativity.geodesics.photon.handle_terminal_plane_intersection import (
     register_terminal_plane_crossing_result,
+)
+from nrpy.infrastructures.BHaH.general_relativity.geodesics.photon.puncture_diagnostics import (
+    puncture_diagnostics,
 )
 from nrpy.infrastructures.BHaH.general_relativity.geodesics.photon.time_slot_manager_helpers import (
     time_slot_manager_helpers,
@@ -163,12 +172,13 @@ def batch_integrator_numerical(
     ...     assert source.index("BHAH_FREE(trial_status[s]);") > loop_end
     ...     assert source.count(r'printf("\n\n\n\n\n\n\n\n");') == 1
     ...     assert source.count(r'printf("\033[8A");') == 1
-    >>> import re
-    >>> mapping_pattern = r"time_window_manager_numerical_mmap_for_slot\(\s*&numerical_window,\s*&(\w+),\s*(\w+)\s*\)"
+    >>> mapping_call = "time_window_manager_numerical_mmap_for_slot("
     >>> expected_managers = ["tsm", "tsm", "non_terminal_norm_tsm", "diagnostic_tsm"]
     >>> for generated in generated_modes:
-    ...     mappings = re.findall(mapping_pattern, generated)
-    ...     assert sorted(mappings) == sorted(zip(expected_managers, [
+    ...     source = "".join(generated.split())
+    ...     mappings = [tuple(call.split(")", 1)[0].split(",")[1:])
+    ...                 for call in source.split(mapping_call)[1:]]
+    ...     assert sorted(mappings) == sorted(zip(["&" + manager for manager in expected_managers], [
     ...         "initial_slot_idx", "slot_idx", "norm_slot_idx", "diagnostic_slot_idx"
     ...     ]))
     >>> for method in ("g4DD", "g4DD_d0", "GammaUDD"):
@@ -180,10 +190,12 @@ def batch_integrator_numerical(
     ...                 normalized_eom=normalized, fast_light=True
     ...             )
     ...             generated = cfc.CFunction_dict["batch_integrator_numerical"].full_function
-    ...         assert sorted(re.findall(mapping_pattern, generated)) == sorted([
-    ...             (manager, "initial_slot_idx") for manager in expected_managers
-    ...         ])
     ...         source = "".join(generated.split())
+    ...         mappings = [tuple(call.split(")", 1)[0].split(",")[1:])
+    ...                     for call in source.split(mapping_call)[1:]]
+    ...         assert sorted(mappings) == sorted([
+    ...             ("&" + manager, "initial_slot_idx") for manager in expected_managers
+    ...         ])
     ...         coordinate_time = (
     ...             "all_photons_host.integration_param[m_idx]" if normalized
     ...             else "all_photons_host.f[0*num_rays+m_idx]"
@@ -295,6 +307,8 @@ def batch_integrator_numerical(
         "BHaH_defines.h",
         "BHaH_function_prototypes.h",
         "<math.h>",
+        "<ctype.h>",
+        "<limits.h>",
         "<stdio.h>",
         "<stdint.h>",
         "<stdlib.h>",
@@ -341,6 +355,7 @@ def batch_integrator_numerical(
                                                stencil usage sidecar.
     @param[in] non_terminal_crossings_path Per-tile nonterminal crossing file.
     @param[in] terminal_crossings_path Per-tile terminal crossing file.{angular_momentum_desc}"""
+    desc += "\n    @param[in] puncture_bin_path Optional per-tile puncture-ID, horizon-status, and radial-gap file."
 
     cfunc_type = "void"
 
@@ -358,6 +373,7 @@ def batch_integrator_numerical(
         "const char *restrict synthetic_slice_usage_bin_path, "
         "const char *restrict non_terminal_crossings_path, "
         "const char *restrict terminal_crossings_path"
+        ", const char *restrict puncture_bin_path"
         f"{angular_momentum_param}"
     )
 
@@ -1280,9 +1296,7 @@ static void write_plane_crossings(
         terminal_diagnostics_block.replace(
             "{TERMINAL_GEOMETRY_SLOT}", terminal_geometry_slot_idx
         )
-        .replace(
-            "{TERMINAL_DIAGNOSTIC_CONDITION}", terminal_diagnostic_condition
-        )
+        .replace("{TERMINAL_DIAGNOSTIC_CONDITION}", terminal_diagnostic_condition)
         .replace(
             "{TERMINAL_DIAGNOSTIC_DECLARATIONS}",
             terminal_diagnostic_declarations,
@@ -1429,7 +1443,12 @@ static void write_plane_crossings(
     event_manager_current = event_manager_call("current")
     event_manager_next = event_manager_call("next")
 
+    puncture_helpers = puncture_diagnostics()
     body = rf"""
+    // Read requested horizon positions before evolving any photons in this tile.
+    puncture_diagnostics_t puncture_data =
+        puncture_load_diagnostics(commondata->puncture_diagnostics_dir);
+
     // Initialize caller-owned output records before any event handler writes fields.
     for (long int i = 0; i < num_rays; ++i) {{
         results_buffer[i] = (blueprint_data_t){{0}};
@@ -2427,6 +2446,11 @@ static void write_plane_crossings(
 {angular_momentum_output}
 {synthetic_slice_usage_output}
 
+        write_puncture_diagnostics(&puncture_data, commondata, &all_photons_host,
+                                  results_buffer, num_rays, puncture_bin_path,
+                                  {'true' if fast_light else 'false'});
+        puncture_free_diagnostics(&puncture_data);
+
         if (commondata->perform_normalization_check) {{
             {free_device}(d_norm_bundle); // Purges the terminal normalization diagnostic scratchpad.
             {free_pinned}(normalization_abs_by_ray); // Purges the per-photon normalization sidecar buffer.
@@ -2491,7 +2515,7 @@ static void write_plane_crossings(
 
     cfc.register_CFunction(
         includes=includes,
-        prefunc=plane_crossing_writer,
+        prefunc=plane_crossing_writer + puncture_helpers,
         desc=desc,
         cfunc_type=cfunc_type,
         name=name,

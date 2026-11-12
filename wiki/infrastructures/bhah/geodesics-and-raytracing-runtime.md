@@ -214,8 +214,8 @@ time by default; direct-EOM calls read coordinate time from the state.
 
 ### Fixed-Time Geometry Sampling
 
-The numerical batch generator's optional `--fast-light` switch selects
-`fast_light=True` when registering numerical interpolation, batch integration,
+The numerical single-photon and batch generators' optional `--fast-light` switch
+selects `fast_light=True` when registering numerical interpolation, integration,
 and numerical plane-crossing refinement. It is disabled by default and applies
 to both `geodesic` and `normalized` equations with `g4DD`, `g4DD_d0`, or
 `GammaUDD` data. Every geometry evaluation uses `commondata->t_start`, including
@@ -236,12 +236,107 @@ main grid, so they reuse its initial slot index. Numerical plane refinement
 selects that time's slot in its own grid. The shared time-slot and numerical
 time-window helper definitions are unchanged.
 
+The single-photon integrator keeps its existing checks on the advancing
+coordinate-time slot, but fast light reuses `initial_slot_index` for geometry
+mapping. Its final normalization also uses that initial slot. Plane refinement
+invalidates the recorded mapping slot, so the final diagnostic remaps the
+selected sampling-time slot before interpolating geometry. Accepted-state
+normalization and enabled trial/stage and axial angular momentum diagnostics
+use the same fixed-time interpolation as the RHS. Trajectory and crossing
+outputs retain their evolving photon times.
+
 This option fixes the time used to evaluate the dynamical RHS. It does not
 construct a stationary metric by discarding its temporal derivatives. The
 existing RKF45 error controller, numerical time-window step cap, and photon
 termination conditions remain active.
 
 Evidence (descriptive behavior): `nrpy/infrastructures/BHaH/general_relativity/geodesics/interpolation/numerical_interpolation.py` — `register_CFunction_numerical_interpolation`, `fast_light`; corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/batch_integrator_numerical.py` — `batch_integrator_numerical`, integration and diagnostic mapping calls; `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/find_plane_crossings_brent.py` — `find_plane_crossings_brent`; `nrpy/examples/photon_batch_geodesic_integrator_numerical.py` — `--fast-light` registration arguments
+
+Evidence (descriptive behavior): `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/single_integrator_numerical.py` — `single_integrator_numerical`, `fast_light`, geometry-slot selection; corroboration: `nrpy/examples/photon_single_geodesic_integrator_numerical.py` — matching interpolation, refinement, and integration registration
+
+### Puncture Association And Apparent-Horizon Output
+
+`puncture_diagnostics.py` generates local C helpers enabled by a nonempty
+`puncture_diagnostics_dir`. The directory contains
+`BHaHAHA_diagnostics.ah1.gp`, `.ah2.gp`, `.ah3.gp`, and saved
+`h.tNNNNNNN.ahH.gp` surfaces. Table columns one through five give iteration,
+coordinate time, and Cartesian centroid. Times must be finite and strictly
+increasing, with finite centroids and individual tables beginning at zero.
+The common table's first row determines first detection; a comment-only table
+indicates no common horizon. Requested invalid tables fail before evolution.
+
+After terminal-plane selection and main blueprint calculation, the integrator
+passes final states and saved termination records to
+`write_puncture_diagnostics`. Only final evolution-measure stops are classified.
+Dynamical lookup uses the final coordinate time, fast light uses `t_start`,
+and negative times use zero. Each horizon uses its nearest saved row, with the
+earlier row winning a time tie. Outside that table's recorded time interval,
+containment receives `HORIZON_NOT_CHECKED`. At or after first common detection, only the common
+horizon is tested. Before detection, centroid distances order the two individual
+checks; the second is needed only if the first does not establish inside.
+A containing surface supplies the ID. If both are outside, retain the nearest
+ID; if neither establishes inside and either check is unavailable, retain the
+nearest ID with `HORIZON_NOT_CHECKED`. An equal-distance tie uses horizon one first and
+retains unclassified unless a surface contains the point.
+
+A needed surface is read once per tile and retained with its diagnostic row.
+Its filename uses that row's iteration. The loader infers angular dimensions
+from Cartesian rings, validates repeated closing points, and recovers the
+solver origin using the known cell-centered angular directions and a
+three-variable least-squares solve. It validates a positive radial grid,
+releases the Cartesian points, and retains the origin and radial samples.
+Containment compares photon radius with quadratic Lagrange interpolation using
+three radial samples per angular direction, periodic azimuth, and polar
+reflection; exact poles use the nearest ring's mean radius. The uniform-grid
+Lagrange helper evaluates weights in angular grid-index coordinates.
+A relative allowance for saved-coordinate roundoff includes surface equality.
+Missing or malformed selected surfaces fail explicitly. This is an approximate
+nearest-time final-point check, not a trajectory's first horizon crossing.
+
+`main_batch.main` supplies `light_blueprint_puncture_XX_YY.bin` per tile.
+The helper writes bounded chunks of ten-byte records without a header or
+padding: `puncture_id` (one byte: zero unclassified, one or two individual,
+three common), `horizon_status` (one byte: zero outside, one inside, two
+unavailable (`HORIZON_NOT_CHECKED`)), and `radial_gap` (native eight-byte double).
+Non-evolution terminations and invalid endpoints receive `(0, 2, NaN)`.
+Keep these files paired
+with their main tile's ordering. The main blueprint and photon equations are
+unchanged. The helper prints association counts and percentages among
+evolution-measure stops, inside/checked percentages excluding unavailable
+checks, status totals, and the number of loaded surfaces, then releases its
+diagnostic allocations. Visualization validates IDs and statuses, rejects
+infinite gaps, and colors by ID; older one-byte and two-byte puncture files
+require regeneration with matching updated readers.
+
+Evidence (descriptive behavior): `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/puncture_diagnostics.py` — `puncture_diagnostics`, generated table/surface readers, nearest-time containment, combined writer and summary; corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/batch_integrator_numerical.py` — final-state output call; `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/main_batch.py` — numerical diagnostic filename
+
+The numerical single integrator requests shared readers and classification
+helpers with `puncture_diagnostics(include_batch_writer=False)`. It loads the
+diagnostic tables once, calls the classifier once on its last accepted state
+after integration, and releases cached surfaces during cleanup. The check uses
+the final photon coordinate time for direct or normalized dynamical equations,
+and fixed `t_start` for fast light, with negative lookup times clamped to zero.
+All final stop reasons are eligible when an accepted state exists. There is no
+per-step horizon calculation.
+
+The internal C result also carries the selected surface time and
+`radial_gap = r - r_AH(theta, phi)`. Batch serialization writes the gap after
+the ID and status bytes; the selected surface time remains single-photon text
+output only. A positive gap means outside and a negative gap
+means inside in radial coordinates about the recovered solver origin; this is
+not proper distance. An undefined direction at that origin gives a NaN gap.
+An unclassified distance tie or unavailable classification has no selected
+surface time or gap. Containment retains the existing roundoff allowance.
+
+The single integrator prints a compact final accepted-state report and writes
+one row to `horizon_diagnostics.txt`: trajectory stop status, photon time,
+clamped lookup time, puncture ID, horizon status, selected surface time, and
+radial gap. No accepted state gives `HORIZON_NOT_CHECKED`. This output precedes
+terminal-plane refinement so its position and photon time match the final
+`trajectory.txt` row. The trajectory format and integration equations remain
+unchanged; an empty diagnostic directory disables the new output.
+
+Evidence (descriptive behavior): `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/single_integrator_numerical.py` — final accepted-state classifier call, text output, and cleanup; corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/puncture_diagnostics.py` — shared result and optional batch writer; `nrpy/examples/photon_single_geodesic_integrator_numerical.py` — directory CLI and parameter default
 
 ### Numerical Interpolation Diagnostics And Boundaries
 
@@ -359,6 +454,7 @@ Evidence (generated evidence): `nrpy/infrastructures/BHaH/diagnostics/diagnostic
 
 ## Sources
 
+- [puncture_diagnostics.py](../../../nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/puncture_diagnostics.py) - `puncture_diagnostics`, diagnostic readers, nearest-time association, and apparent-horizon containment
 - [main_batch.py](../../../nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/main_batch.py) - `main`
 - [batch_integrator_numerical.py](../../../nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/batch_integrator_numerical.py) - `batch_integrator_numerical`
 - [photon_batch_geodesic_integrator_numerical.py](../../../nrpy/examples/photon_batch_geodesic_integrator_numerical.py) - `--fast-light`, numerical interpolation and plane-refinement registration

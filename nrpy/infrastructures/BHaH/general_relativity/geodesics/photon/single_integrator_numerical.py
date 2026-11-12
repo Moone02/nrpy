@@ -12,6 +12,11 @@ evolution, fixed-anchor RKF45 trials and Brent refinement write crossing times,
 local plane coordinates, and nine refined state components to
 ``plane_crossings.txt``.
 
+Optional fast-light generation samples geometry at ``t_start`` throughout
+propagation and diagnostics while photon coordinate time continues advancing.
+An optional ``puncture_diagnostics_dir`` checks the last accepted state against
+saved apparent horizons and writes one ``horizon_diagnostics.txt`` row.
+
 Author: Dalton J. Moone
         daltonmoone **at** gmail **dot** com
 """
@@ -47,6 +52,9 @@ from nrpy.infrastructures.BHaH.general_relativity.geodesics.photon import (
     rkf45_finalize_and_control_kernel,
     rkf45_stage_update,
 )
+from nrpy.infrastructures.BHaH.general_relativity.geodesics.photon.puncture_diagnostics import (
+    puncture_diagnostics,
+)
 from nrpy.infrastructures.BHaH.general_relativity.geodesics.photon.set_initial_conditions_kernel import (
     register_photon_batch_structs,
     set_initial_conditions_kernel,
@@ -61,6 +69,7 @@ def single_integrator_numerical(  # pylint: disable=invalid-name,too-many-locals
     enable_rkf45_trial_debug: bool = False,
     axisymmetric_about_z: bool = False,
     track_synthetic_slice_usage: bool = False,
+    fast_light: bool = False,
 ) -> None:
     """
     Register the standalone numerical-spacetime single-photon C integrator.
@@ -79,6 +88,9 @@ def single_integrator_numerical(  # pylint: disable=invalid-name,too-many-locals
         RKF45 request that uses synthetic temporal-stencil nodes outside the
         numerical-spacetime time range. The numerical interpolation function
         must be registered with the same option.
+    :param fast_light: Whether to map numerical geometry at ``t_start`` while
+        photon time advances. Numerical interpolation and plane refinement
+        must be registered with the same sampling option.
     :raises ValueError: If the interpolation method or dataset coordinate system
         is unsupported.
 
@@ -281,6 +293,13 @@ def single_integrator_numerical(  # pylint: disable=invalid-name,too-many-locals
       trial_spatial_center.i2 = trial_selected_center_idx[2];
     } // END ELSE: RKF45 trial spatial center resolved
 """
+
+    geometry_slot_index = "initial_slot_index" if fast_light else "slot_index"
+    terminal_geometry_slot_index = (
+        "initial_slot_index"
+        if fast_light
+        else "slot_get_index(&tsm, terminal_coordinate_time)"
+    )
 
     # Step 2: Select emitted C expressions for the two state conventions.
     if normalized_eom:
@@ -699,7 +718,10 @@ def single_integrator_numerical(  # pylint: disable=invalid-name,too-many-locals
         "BHaH_defines.h",
         "BHaH_function_prototypes.h",
         "<math.h>",
+        "<ctype.h>",
+        "<limits.h>",
         "<stdbool.h>",
+        "<stdint.h>",
         "<stdio.h>",
         "<stdlib.h>",
         "<string.h>",
@@ -708,7 +730,7 @@ def single_integrator_numerical(  # pylint: disable=invalid-name,too-many-locals
     desc = rf"""Integrate one photon through a numerical spacetime on the CPU.
 
 The executable constructs one photon from the observer tetrad and camera sample,
-maps numerical time windows by coordinate-time slot, and advances the state
+maps numerical geometry by the selected sampling-time slot, and advances the state
 with the shared six-stage RKF45 method. A trajectory
 row, including signed normalization deviation, is written only after an accepted
 step. ``initial_state.txt`` stores the initial event and direct contravariant
@@ -736,11 +758,15 @@ the RKF45 integration parameter is lambda and ``f[0]`` is coordinate time.
 
 @note The numerical dataset coordinate system is {dataset_coord_system}.
 @note The selected analytic photon equation family is {spacetime_name}.
+@note Fixed geometry sampling at t_start is {str(fast_light).lower()}.
 """
 
     cfunc_type = "int"
     name = "single_integrator_numerical"
     params = "int argc, const char *argv[]"
+    horizon_lookup_time = (
+        "commondata.t_start" if fast_light else coordinate_time_expression
+    )
 
     body = rf"""
   //==========================================
@@ -821,6 +847,8 @@ the RKF45 integration parameter is lambda and ``f[0]`` is coordinate time.
 {synthetic_slice_usage_declarations}
   bool slot_manager_initialized = false;
   bool numerical_window_initialized = false;
+  puncture_diagnostics_t puncture_data =
+      puncture_load_diagnostics(commondata.puncture_diagnostics_dir);
 
   double *f = NULL;
   double *f_start = NULL;
@@ -1164,20 +1192,20 @@ the RKF45 integration parameter is lambda and ``f[0]`` is coordinate time.
       break;
     }} // END IF: current time left data window
 
-    if (slot_index != mapped_slot_index) {{
+    if ({geometry_slot_index} != mapped_slot_index) {{
       if (time_window_manager_numerical_mmap_for_slot(
-              &numerical_window, &tsm, slot_index) !=
+              &numerical_window, &tsm, {geometry_slot_index}) !=
           TIME_WINDOW_MANAGER_NUMERICAL_SUCCESS) {{
         fprintf(
             stderr,
             "ERROR: failed to map numerical time window for slot %d at t=%e.\n",
-            slot_index,
+            {geometry_slot_index},
             coordinate_time);
         exit_status = EXIT_FAILURE;
         goto cleanup;
       }} // END IF: numerical time-window mapping failed
-      mapped_slot_index = slot_index;
-    }} // END IF: photon moved to different slot
+      mapped_slot_index = {geometry_slot_index};
+    }} // END IF: geometry mapping slot changed
 
     const double integration_param_before_step = *integration_param;
     memcpy(f_start, f, sizeof(double) * 9);
@@ -1376,6 +1404,47 @@ the RKF45 integration parameter is lambda and ``f[0]`` is coordinate time.
     printf("Integration stopped at the RKF45-attempt safety limit.\n");
   }} // END ELSE IF: integration reached the RKF45-attempt safety
 
+  if (commondata.puncture_diagnostics_dir[0] != '\0') {{
+    const double photon_time = {coordinate_time_expression};
+    const double lookup_time = fmax({horizon_lookup_time}, 0.0);
+    const double point[3] = {{f[1], f[2], f[3]}};
+    puncture_result_t horizon_result = {{PUNCTURE_UNCLASSIFIED, HORIZON_NOT_CHECKED, NAN, NAN}};
+    if (accepted_steps > 0) {{
+      horizon_result = puncture_classify_endpoint(&puncture_data, lookup_time, point);
+    }} // END IF: accepted endpoint available
+    FILE *horizon_file = fopen("horizon_diagnostics.txt", "w");
+    if (horizon_file == NULL) {{
+      fprintf(stderr, "ERROR: cannot write horizon_diagnostics.txt.\n");
+      exit_status = EXIT_FAILURE;
+      goto cleanup;
+    }} // END IF: horizon output open failed
+    fprintf(horizon_file,
+            "# trajectory_stop_status photon_time lookup_time puncture_id horizon_status horizon_time radial_gap\n");
+    fprintf(horizon_file, "%d %.17e %.17e %u %u %.17e %.17e\n",
+            (int)*status, photon_time, lookup_time,
+            (unsigned)horizon_result.puncture_id, (unsigned)horizon_result.horizon_status,
+            horizon_result.horizon_time, horizon_result.radial_gap);
+    const int horizon_write_failed = ferror(horizon_file);
+    const int horizon_close_failed = fclose(horizon_file);
+    if (horizon_write_failed || horizon_close_failed != 0) {{
+      fprintf(stderr, "ERROR: cannot finish writing horizon_diagnostics.txt.\n");
+      exit_status = EXIT_FAILURE;
+      goto cleanup;
+    }} // END IF: horizon output write failed
+    const char *horizon_names[4] = {{"unclassified", "puncture_1", "puncture_2", "merged_puncture"}};
+    const char *horizon_status_names[3] = {{"outside", "inside", "not_checked"}};
+    const char *trajectory_stop_name =
+        (unsigned)*status < sizeof(status_names)/sizeof(*status_names)
+            ? status_names[*status] : "UNKNOWN_STATUS";
+    printf("\nFinal accepted-state apparent-horizon diagnostic:\n");
+    printf("  Stop: %s (%d); photon t=%.15e; lookup t=%.15e\n",
+           trajectory_stop_name, (int)*status, photon_time, lookup_time);
+    printf("  Association: %s; horizon: %s; snapshot t=%.15e; radial gap=%.15e (coordinate distance)\n",
+           horizon_names[horizon_result.puncture_id], horizon_status_names[horizon_result.horizon_status],
+           horizon_result.horizon_time, horizon_result.radial_gap);
+    printf("  Wrote one final-state record to horizon_diagnostics.txt.\n");
+  }} // END IF: final horizon diagnostic enabled
+
   if (event_planes_enabled) {{
     printf("Refining recorded plane crossings with Brent's method...\n");
     fflush(stdout);
@@ -1466,7 +1535,7 @@ the RKF45 integration parameter is lambda and ``f[0]`` is coordinate time.
   //==========================================
   if (commondata.perform_normalization_check) {{
     const double terminal_coordinate_time = {coordinate_time_expression};
-    const int terminal_slot_index = slot_get_index(&tsm, terminal_coordinate_time);
+    const int terminal_slot_index = {terminal_geometry_slot_index};
     if (terminal_slot_index < 0) {{
       printf(
           "Terminal normalization skipped: t=%.15e is outside the numerical "
@@ -1531,6 +1600,7 @@ the RKF45 integration parameter is lambda and ``f[0]`` is coordinate time.
   }} // END IF: terminal normalization diagnostics were requested
 
   cleanup:
+  puncture_free_diagnostics(&puncture_data);
 {synthetic_slice_usage_report}
 {trial_debug_cleanup}
 {stage_debug_cleanup}
@@ -1559,6 +1629,7 @@ the RKF45 integration parameter is lambda and ``f[0]`` is coordinate time.
 
     cfc.register_CFunction(
         includes=includes,
+        prefunc=puncture_diagnostics(include_batch_writer=False),
         desc=desc,
         cfunc_type=cfunc_type,
         name=name,

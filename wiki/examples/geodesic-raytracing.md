@@ -466,9 +466,9 @@ Claim evidence:
 
 ### Fixed-Time Geometry Comparison
 
-The numerical batch example accepts optional `--fast-light`, disabled by
-default. Add this switch to the numerical batch command to generate geometry
-evaluations at `t_start` throughout photon propagation. Both `--eom geodesic`
+The numerical single-photon and batch examples accept optional `--fast-light`,
+disabled by default. Add this switch to either numerical command to evaluate
+geometry at `t_start` throughout photon propagation. Both `--eom geodesic`
 and `--eom normalized` support it with `g4DD`, `g4DD_d0`, and `GammaUDD`.
 For interior sampling times, the RHS retains the numerical spacetime's
 dynamical temporal derivatives or stored Christoffels. Existing endpoint
@@ -482,9 +482,144 @@ switch. Generate separate comparison projects using, for example,
 `--outdir project/time_dependent` without the flag and
 `--outdir project/fixed_time --fast-light` with it. The project basename is
 the same in both cases. Keep the dataset, `t_start`, camera, sampling density,
-and numerical tolerances the same when comparing the resulting images.
+and numerical tolerances the same when comparing the resulting images or
+single-photon trajectories. Single-photon `trajectory.txt` and plane-crossing
+times continue recording the evolving photon time, even though the geometry
+is evaluated at `t_start`. Normalization, enabled trial/stage diagnostics,
+axial angular momentum diagnostics, and plane refinement use the same selected
+sampling mode.
 
 Evidence (descriptive behavior): `nrpy/examples/photon_batch_geodesic_integrator_numerical.py` — `--fast-light`, `project_dir`, numerical registration arguments; corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/interpolation/numerical_interpolation.py` — `register_CFunction_numerical_interpolation`, fixed sampling time
+
+Evidence (descriptive behavior): `nrpy/examples/photon_single_geodesic_integrator_numerical.py` — `--fast-light`, interpolation/refinement/integrator registration arguments; corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/single_integrator_numerical.py` — `single_integrator_numerical`, geometry-slot selection and final normalization
+
+### Puncture Association And Apparent-Horizon Containment
+
+The numerical batch and single-photon generators accept optional
+`--puncture-diagnostics-dir PATH`. Supply `BHaHAHA_diagnostics.ah1.gp`, `.ah2.gp`, `.ah3.gp`, and their
+`h.tNNNNNNN.ahH.gp` Cartesian apparent-horizon surfaces from the same spacetime
+evolution. The generator saves the absolute directory in the generated `.par`
+parameter `puncture_diagnostics_dir`; its empty default disables both association
+and containment. No additional containment option is needed.
+
+The batch executable classifies only final evolution-measure terminations.
+Before the first common-horizon detection, the executable orders the individual horizons by
+Cartesian centroid distance. It checks the nearer surface first, then the
+second if the first does not establish containment. A containing surface
+supplies the puncture ID. If both checks demonstrate outside, retain the
+nearest-centroid ID; if either check is unavailable and neither establishes
+inside, retain that ID and record `HORIZON_NOT_CHECKED`. An exact distance tie checks
+horizon one first and remains unclassified unless containment identifies a
+hole. At or after the first common-horizon diagnostic time, assign
+`merged_puncture` and test only the common surface. The detection time comes
+from the first row of `.ah3.gp`, never a fixed merger time.
+
+Choose each horizon's nearest saved coordinate time, with the earlier row
+winning a time tie; do not interpolate in time. Dynamical runs use final photon
+time, while fast light uses `t_start`. Negative lookup times use zero. A time
+outside a horizon's recorded interval gives `HORIZON_NOT_CHECKED`. Missing or malformed
+selected surface files produce an error. Surface filenames use the diagnostic
+iteration, not coordinate time. The helper reconstructs the solver's radial
+origin from Cartesian rings, since the reported centroid can differ, then
+compares photon radius with quadratic Lagrange interpolation of the radial grid,
+using three samples per angular direction.
+Azimuth is periodic and polar neighbors reflect across the pole; exact polar
+directions use the mean nearest ring. Equality within saved-coordinate roundoff
+counts as inside. This approximates final-point containment, not a first
+horizon crossing along the trajectory, and does not alter photon evolution.
+
+Each `light_blueprint_puncture_XX_YY.bin` stores ten bytes per main blueprint
+record, without a header or padding, in the same order:
+
+| Byte | Field | Values |
+| --- | --- | --- |
+| First | `puncture_id` | `0` unclassified, `1` puncture_1, `2` puncture_2, `3` merged_puncture |
+| Second | `horizon_status` | `0` outside, `1` inside, `2` unavailable (`HORIZON_NOT_CHECKED`) |
+| Third through tenth | `radial_gap` | Native eight-byte double: photon radius minus the selected horizon radius; negative inside, positive outside, NaN when undefined or unavailable |
+
+Other termination conditions and nonfinite endpoints receive `(0, 2, NaN)`.
+The main blueprint format is unchanged. `PUNCTURE_RECORD_DTYPE` in
+`blueprint_config_and_schema.py` describes the combined records for NumPy
+readers. `blueprint_io.read_puncture_records()` maps all three fields;
+`read_puncture_labels()` continues to provide IDs for image coloring. Older
+one-byte and two-byte puncture files require photon reruns and matching updated
+readers. The gap is a coordinate radial comparison, not proper distance.
+The terminal prints a compact per-tile summary: photon counts and
+percentages of evolution-measure stops by ID, inside/checked counts and
+percentages for each ID, unavailable counts, and totals. Inside percentages
+exclude not-checked records.
+
+For the numerical single-photon generator, the same directory option enables
+one check of the last accepted state in `trajectory.txt`, for any final stop
+reason. It performs no horizon checks during the RKF45 loop. The terminal prints
+the trajectory stop reason, photon and lookup times, association, containment
+status, selected horizon time, and signed coordinate radial gap
+`radial_gap = r - r_AH(theta, phi)`. A positive gap is outside and a negative gap
+is inside; the containment flag includes the existing surface-roundoff allowance.
+This is a radial coordinate comparison about the recovered solver origin, not a
+shortest or proper distance.
+
+The executable writes one data row to `horizon_diagnostics.txt`, with columns:
+
+```text
+trajectory_stop_status photon_time lookup_time puncture_id horizon_status horizon_time radial_gap
+```
+
+The IDs and status values match the batch records. Dynamical and fast-light
+lookup times follow the rules above. No accepted state or unavailable coverage
+gives `HORIZON_NOT_CHECKED`; the shared classifier also uses this value for
+invalid endpoints. A missing selected surface still produces an error. An unclassified distance tie has no selected horizon
+time or gap; the radial gap is also undefined at the reconstructed origin.
+Undefined values appear as `nan`. The diagnostic describes the last accepted
+trajectory state before Brent refinement selects a terminal-plane crossing;
+`plane_crossings.txt` retains the separately refined state. Omitting the
+directory option disables this output, and `trajectory.txt` keeps its existing
+columns.
+
+From a generated photon project containing the main and puncture blueprints,
+render these associations with:
+
+```bash
+python3 visualize_lensed_image.py --color-by-puncture --pixel-width 2400 --output shadow_by_puncture.png
+```
+
+The renderer needs no horizon diagnostic directory; it uses the saved
+`puncture_id` field. It requires a matching combined file for every main tile
+and validates its record count and both byte fields before starting rendering
+workers. Containment status is stored but does not change the color. Label
+slices use the main record offsets, including cropped scans and multiple
+tiles. Keep label files paired with the main blueprints from the same run;
+their raw byte format cannot distinguish a different run's same-sized file.
+
+Only evolution-measure stops use the association colors:
+
+| Label | Association | Color |
+| --- | --- | --- |
+| `0` | `unclassified` | Gray, `#A0A0A0` |
+| `1` | `puncture_1` | Red, `#FF4040` |
+| `2` | `puncture_2` | Blue, `#40A0FF` |
+| `3` | `merged_puncture` | Gold, `#FFD040` |
+
+Escaped and terminal-plane photons retain their texture colors. Multiple
+photons falling in the same output pixel contribute to the existing color
+average, so a pixel can contain a mixture of association colors. Add the
+existing `--debug key` option to include the color key and failure diagnostics.
+Puncture colors replace the generic evolution-measure debug color; failure
+debug colors remain active. With `--color-by-puncture` omitted, rendering
+neither requires nor reads the label files.
+
+Newly generated photon projects receive the updated visualization modules.
+For an existing project, copy `blueprint_config_and_schema.py`,
+`blueprint_io.py`, `render_lensed_image.py`, and `visualize_lensed_image.py`
+from `nrpy/examples/geodesic_visualizations/` together into that project.
+Existing runs without combined records, including legacy one-byte puncture
+files, require another photon integration with `--puncture-diagnostics-dir`.
+The reader rejects the old size with a regeneration message. The main blueprint
+alone does not retain the Cartesian endpoints needed for these checks.
+
+Evidence (descriptive behavior): `nrpy/examples/photon_batch_geodesic_integrator_numerical.py` — `--puncture-diagnostics-dir`, parameter default; corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/puncture_diagnostics.py` — `puncture_diagnostics`; `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/batch_integrator_numerical.py` — final association output; `nrpy/examples/photon_single_geodesic_integrator_numerical.py` — optional diagnostic directory; `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/single_integrator_numerical.py` — final accepted-state text output
+
+Evidence (descriptive behavior): `nrpy/examples/geodesic_visualizations/visualize_lensed_image.py` — `--color-by-puncture`; corroboration: `nrpy/examples/geodesic_visualizations/blueprint_io.py` — `read_puncture_labels`; `nrpy/examples/geodesic_visualizations/render_lensed_image.py` — `generate_static_lensed_image`, `PUNCTURE_COLOR_INFO`; `nrpy/examples/geodesic_visualizations/blueprint_config_and_schema.py` — puncture byte values and filename template
 
 ## Sources
 
@@ -497,6 +632,7 @@ Evidence (descriptive behavior): `nrpy/examples/photon_batch_geodesic_integrator
 - [event_detection_manager_kernel.py](../../nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/event_detection_manager_kernel.py) - plane crossing reconstruction and termination decisions
 - [photon_batch_geodesic_integrator_numerical.py](../../nrpy/examples/photon_batch_geodesic_integrator_numerical.py) - numerical dataset CLI, `combine_raytracing_time_slices.py`, batch visualization workflow
 - [batch_integrator_numerical.py](../../nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/batch_integrator_numerical.py) - `batch_integrator_numerical`, fixed geometry window with advancing photon scheduling times
+- [puncture_diagnostics.py](../../nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/puncture_diagnostics.py) - `puncture_diagnostics`, nearest-time horizon association and final-point containment
 - [numerical_interpolation.py](../../nrpy/infrastructures/BHaH/general_relativity/geodesics/interpolation/numerical_interpolation.py) - `register_CFunction_numerical_interpolation`, `fast_light`
 - [find_plane_crossings_brent.py](../../nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/find_plane_crossings_brent.py) - `find_plane_crossings_brent`, numerical-data mapping during fixed-time refinement
 - [normal_observer_log_energy.py](../../nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/normal_observer_log_energy.py) - direct-EOM `ln|alpha p^0|` helper

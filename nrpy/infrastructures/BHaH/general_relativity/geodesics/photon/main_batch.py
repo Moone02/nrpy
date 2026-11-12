@@ -1,10 +1,9 @@
-# nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/main_batch.py
+# infrastructures/BHaH/general_relativity/geodesics/photon/main_batch.py
 """
-Defines the main() C function for the geodesic integration pipeline.
+Generate the main() C function for tiled photon geodesic integration.
 
-This module acts as the master orchestrator, handling the explicit population of
-RKF45 integrator configurations, simulation defaults, memory allocation for the
-trajectory results, and the final serialization of the light blueprint.
+Set RKF45 integration parameters and simulation defaults, allocate photon
+results, and write the light blueprint.
 
 The architecture implements pure angular-sample tiling. Observer parameters define
 one common tetrad and field of view; each tile changes only its two tile indices.
@@ -33,7 +32,7 @@ def main(
     axisymmetric_about_z: bool = False,
 ) -> None:
     """
-    Register the master orchestrator C function for the geodesic integrator.
+    Register the main C function for tiled photon geodesic integration.
 
     This version implements Spatial Domain Decomposition (Tiling).
 
@@ -74,7 +73,7 @@ def main(
             "batch_integrator_numerical(&commondata, num_rays, scan_density_height, results_buffer, "
             "norm_abs_bin_name, norm_abs_non_terminal_bin_name, "
             "synthetic_slice_usage_bin_name, "
-            "non_terminal_crossings_path, terminal_crossings_path"
+            "non_terminal_crossings_path, terminal_crossings_path, puncture_bin_name"
             f"{Lz_path_argument});"
         )
     else:
@@ -114,6 +113,12 @@ def main(
         "'light_blueprint_synthetic_slice_usage_XX_YY.bin' with 26-byte records: "
         "a uint64_t photon index, two uint8_t use flags, and two f64 request times; "
         "false flags have NaN times."
+        " A nonempty puncture_diagnostics_dir also writes "
+        "'light_blueprint_puncture_XX_YY.bin' with ten bytes per "
+        "main blueprint record: puncture_id (0 unclassified, 1 puncture_1, "
+        "2 puncture_2, 3 merged_puncture) and horizon_status "
+        "(0 outside, 1 inside, 2 not checked), each stored as uint8, "
+        "followed by an eight-byte radial_gap double."
         if integrator_mode == "Numerical"
         else ""
     )
@@ -131,6 +136,13 @@ def main(
     numerical_sidecar_path_setup = (
         """
             char norm_abs_bin_name[256];
+            char puncture_bin_name[256];
+            if (commondata.puncture_diagnostics_dir[0] != '\\0') {
+                snprintf(puncture_bin_name, sizeof(puncture_bin_name),
+                         "light_blueprint_puncture_%02d_%02d.bin", tx, ty);
+            } else {
+                puncture_bin_name[0] = '\\0';
+            } // END IF: select puncture output filename
             if (commondata.perform_normalization_check) {
                 snprintf(
                     norm_abs_bin_name,

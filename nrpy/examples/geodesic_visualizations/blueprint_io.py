@@ -1,4 +1,4 @@
-"""
+r"""
 Read and validate native geodesic blueprint binary files.
 
 The reader is shared by the renderer and diagnostics so the native record layout,
@@ -6,6 +6,46 @@ tile identity, record counts, and terminal-status rules have one owner.
 
 Author: Dalton J. Moone
         daltonmoone **at** gmail **dot** com
+
+Doctests:
+>>> import tempfile
+>>> from pathlib import Path
+>>> with tempfile.TemporaryDirectory() as directory:
+...     path = Path(directory) / "light_blueprint_01_00.bin"
+...     raw = struct.pack(cfg.BLUEPRINT_HEADER_FORMAT, cfg.BLUEPRINT_MAGIC,
+...                       cfg.BLUEPRINT_SCHEMA_VERSION, cfg.BLUEPRINT_HEADER_SIZE,
+...                       cfg.BLUEPRINT_RECORD_SIZE, 1, 0, 2, 1, 4,
+...                       1.0, 1.0, 0.0, 1.0, 0.0, 1.0)
+...     _ = path.write_bytes(raw + bytes(4 * cfg.BLUEPRINT_RECORD_SIZE))
+...     puncture_path = Path(directory) / "light_blueprint_puncture_01_00.bin"
+...     nan = float("nan")
+...     valid = b"".join(struct.pack("=BBd", *record) for record in
+...                      [(0, 2, nan), (1, 1, -0.125), (2, 0, 0.25), (3, 2, nan)])
+...     _ = puncture_path.write_bytes(valid)
+...     assert read_puncture_labels(str(path)).tolist() == [0, 1, 2, 3]
+...     records = read_puncture_records(str(path))
+...     assert records["radial_gap"][1:3].tolist() == [-0.125, 0.25]
+...     assert np.isnan(records["radial_gap"][[0, 3]]).all()
+...     assert not records.flags.writeable
+...     del records
+...     for invalid in (bytes([0, 1, 2, 3]), bytes(8), valid[:-1], valid + b"\0",
+...                     valid[:30] + struct.pack("=BBd", 4, 2, nan),
+...                     valid[:30] + struct.pack("=BBd", 3, 3, nan),
+...                     valid[:30] + struct.pack("=BBd", 3, 2, float("inf"))):
+...         _ = puncture_path.write_bytes(invalid)
+...         try:
+...             read_puncture_labels(str(path))
+...         except ValueError:
+...             pass
+...         else:
+...             raise AssertionError("Invalid puncture labels were accepted")
+...     puncture_path.unlink()
+...     try:
+...         read_puncture_labels(str(path))
+...     except FileNotFoundError:
+...         pass
+...     else:
+...         raise AssertionError("Missing puncture labels were accepted")
 """
 
 import os
@@ -102,6 +142,81 @@ def read_blueprint_header(
             f"Blueprint '{filename}' has size {actual_size}; expected {expected_size}"
         )
     return header
+
+
+def read_puncture_records(
+    filename: str, header: Optional[BlueprintHeader] = None
+) -> npt.NDArray[np.void]:
+    """
+    Validate and map puncture IDs, horizon statuses, and signed radial gaps.
+
+    :param filename: Main blueprint tile path, used to locate its label file.
+    :param header: Previously validated main header, or None to read it here.
+    :return: Read-only mapped records in main blueprint record order.
+    :raises FileNotFoundError: If the matching puncture label file is missing.
+    :raises ValueError: If the record count, ID, status, or radial gap is invalid.
+    """
+    if header is None:
+        header = read_blueprint_header(filename)
+    puncture_path = os.path.join(
+        os.path.dirname(filename),
+        cfg.PUNCTURE_FILENAME_TEMPLATE.format(
+            tile_x=header.tile_x, tile_y=header.tile_y
+        ),
+    )
+    expected_size = header.record_count * cfg.PUNCTURE_RECORD_DTYPE.itemsize
+    try:
+        actual_size = os.path.getsize(puncture_path)
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(
+            f"Missing puncture blueprint '{puncture_path}'. Generate photon labels "
+            "using --puncture-diagnostics-dir before requesting puncture coloring."
+        ) from exc
+    if actual_size != expected_size:
+        raise ValueError(
+            f"Puncture blueprint '{puncture_path}' has size {actual_size}; "
+            f"expected {expected_size} bytes, ten bytes per main blueprint record. "
+            "Regenerate older puncture blueprints using --puncture-diagnostics-dir."
+        )
+    records: npt.NDArray[np.void] = np.memmap(
+        puncture_path, dtype=cfg.PUNCTURE_RECORD_DTYPE, mode="r"
+    )
+    labels: npt.NDArray[np.uint8] = records["puncture_id"]
+    for start in range(0, header.record_count, cfg.CHUNK_SIZE):
+        if np.any(labels[start : start + cfg.CHUNK_SIZE] > cfg.MERGED_PUNCTURE):
+            raise ValueError(
+                f"Puncture blueprint '{puncture_path}' has an invalid label"
+            )
+        if np.any(
+            records["horizon_status"][start : start + cfg.CHUNK_SIZE]
+            > cfg.HORIZON_NOT_CHECKED
+        ):
+            raise ValueError(
+                f"Puncture blueprint '{puncture_path}' has an invalid horizon status"
+            )
+        if np.any(np.isinf(records["radial_gap"][start : start + cfg.CHUNK_SIZE])):
+            raise ValueError(
+                f"Puncture blueprint '{puncture_path}' has an infinite radial gap"
+            )
+    return records
+
+
+def read_puncture_labels(
+    filename: str, header: Optional[BlueprintHeader] = None
+) -> npt.NDArray[np.uint8]:
+    """
+    Read validated puncture IDs for the existing image-coloring functions.
+
+    Missing files and invalid records raise the errors from read_puncture_records.
+
+    :param filename: Main blueprint tile path, used to locate its puncture file.
+    :param header: Previously validated main header, or None to read it here.
+    :return: Read-only mapped labels in main blueprint record order.
+    """
+    labels: npt.NDArray[np.uint8] = read_puncture_records(filename, header)[
+        "puncture_id"
+    ]
+    return labels
 
 
 def iter_blueprint_chunks(

@@ -1,4 +1,4 @@
-# nrpy/examples/geodesic_visualizations/visualize_lensed_image.py
+# examples/geodesic_visualizations/visualize_lensed_image.py
 """
 Defines the visualization script for the Photon Geodesic Integrator.
 
@@ -82,6 +82,15 @@ def main() -> None:
         type=str,
         default=None,
         help="Optional path to a custom terminal-plane texture image.",
+    )
+    parser.add_argument(
+        "--color-by-puncture",
+        action="store_true",
+        help=(
+            "Color evolution-measure stops using matching puncture blueprint files. "
+            "Labels approximate association with individual horizon centroids or "
+            "the common-horizon epoch."
+        ),
     )
     parser.add_argument(
         "--debug",
@@ -204,8 +213,18 @@ def main() -> None:
     if args.debug is not None:
         print("Debug failure-color key:")
         for term_type, label, color in rli.DEBUG_FAILURE_INFO:
+            if (
+                args.color_by_puncture
+                and term_type == cfg.STOP_CONDITION_EVOLUTION_MEASURE_EXCEEDED
+            ):
+                continue
             color_hex = f"#{color[0]:02X}{color[1]:02X}{color[2]:02X}"
             print(f"  {term_type}: {label} = {color_hex}")
+    if args.color_by_puncture:
+        print("Approximate puncture association color key:")
+        for puncture, label, color in rli.PUNCTURE_COLOR_INFO:
+            color_hex = f"#{color[0]:02X}{color[1]:02X}{color[2]:02X}"
+            print(f"  {puncture}: {label} = {color_hex}")
 
     # Static image generator merges geodesic blueprint with texture maps for final image.
     rli.generate_static_lensed_image(
@@ -220,6 +239,7 @@ def main() -> None:
         custom_source_image=args.terminal_plane_image is not None,
         enable_debug=args.debug is not None,
         include_debug_key=args.debug == "key",
+        color_by_puncture=args.color_by_puncture,
     )
 
     print("Visualization complete!")

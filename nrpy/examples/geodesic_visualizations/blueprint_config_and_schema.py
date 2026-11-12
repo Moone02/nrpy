@@ -1,4 +1,4 @@
-# nrpy/examples/geodesic_visualizations/blueprint_config_and_schema.py
+# examples/geodesic_visualizations/blueprint_config_and_schema.py
 """
 Field definitions and configuration for geodesic-visualization post-processing.
 
@@ -97,6 +97,20 @@ BLUEPRINT_NORM_ABS_DTYPE = np.dtype("=f8")
 BLUEPRINT_NORM_ABS_FILENAME_TEMPLATE = (
     "light_blueprint_norm_abs_{tile_x:02d}_{tile_y:02d}.bin"
 )
+# These fields match the numerical generator's puncture_diagnostics.py helpers.
+PUNCTURE_DTYPE = np.dtype("u1")
+PUNCTURE_RECORD_DTYPE = np.dtype(
+    [("puncture_id", "u1"), ("horizon_status", "u1"), ("radial_gap", "=f8")],
+    align=False,
+)
+PUNCTURE_FILENAME_TEMPLATE = "light_blueprint_puncture_{tile_x:02d}_{tile_y:02d}.bin"
+PUNCTURE_UNCLASSIFIED = 0
+PUNCTURE_1 = 1
+PUNCTURE_2 = 2
+MERGED_PUNCTURE = 3
+HORIZON_OUTSIDE = 0
+HORIZON_INSIDE = 1
+HORIZON_NOT_CHECKED = 2
 PLANE_CROSSING_RECORD_SIZE = 108
 PLANE_CROSSING_DTYPE = np.dtype(
     [

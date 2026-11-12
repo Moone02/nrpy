@@ -128,6 +128,15 @@ if __name__ == "__main__":
         ),
     )
     parser.add_argument(
+        "--puncture-diagnostics-dir",
+        default="",
+        help=(
+            "Directory containing BHaHAHA_diagnostics.ah1.gp, .ah2.gp, and .ah3.gp. "
+            "Also requires their h.tNNNNNNN.ahH.gp apparent-horizon surfaces. "
+            "Enables one combined puncture-ID and horizon-containment blueprint per tile."
+        ),
+    )
+    parser.add_argument(
         "--outdir",
         type=str,
         default="project",
@@ -394,6 +403,20 @@ if __name__ == "__main__":
         parser.print_help()
         sys.exit(0)
     args = parser.parse_args()
+
+    puncture_diagnostics_dir = ""
+    if args.puncture_diagnostics_dir:
+        puncture_diagnostics_dir = os.path.abspath(args.puncture_diagnostics_dir)
+        for horizon in (1, 2, 3):
+            diagnostic_path = os.path.join(
+                puncture_diagnostics_dir, f"BHaHAHA_diagnostics.ah{horizon}.gp"
+            )
+            if not os.path.isfile(diagnostic_path) or not os.access(
+                diagnostic_path, os.R_OK
+            ):
+                parser.error(
+                    f"Cannot read puncture diagnostic file '{diagnostic_path}'."
+                )
 
     image_plane_crop_enabled = args.a_range is not None or args.b_range is not None
     a_range = args.a_range if args.a_range is not None else [0.0, 1.0]
@@ -748,6 +771,7 @@ if __name__ == "__main__":
 
     # Step 6.d: Set initial-condition defaults.
     par.adjust_CodeParam_default("t_start", args.t_start)
+    par.adjust_CodeParam_default("puncture_diagnostics_dir", puncture_diagnostics_dir)
     par.adjust_CodeParam_default("scan_density", args.scan_density)
 
     # Step 6.e: Set batch-integrator and numerical-limit defaults.
@@ -954,6 +978,13 @@ if __name__ == "__main__":
     print(f" -> Interpolation method: {interpolation_method}")
     print(f" -> Photon equations of motion: {args.eom}")
     print(f" -> Fixed geometry sampling at t_start: {args.fast_light}")
+    if puncture_diagnostics_dir:
+        print(f" -> Puncture diagnostics directory: {puncture_diagnostics_dir}")
+        print(
+            " -> Additional output: light_blueprint_puncture_XX_YY.bin "
+            "(ten bytes per ray: uint8 puncture_id, uint8 horizon_status, "
+            "and an eight-byte radial_gap double)."
+        )
     print(f" -> Numerical domain: {domain}")
     print(f" -> Numerical SINHWRHO: {sinhw_numerical_rho}")
     print(f" -> Numerical SINHWZ: {sinhw_numerical_z}")

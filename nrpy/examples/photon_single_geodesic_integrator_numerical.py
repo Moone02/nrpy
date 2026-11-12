@@ -16,6 +16,11 @@ the lower/upper flags and request times after integration. Optional terminal
 and nonterminal planes record Brent-refined crossing states and local plane
 coordinates in ``plane_crossings.txt``.
 
+With ``--fast-light``, geometry is sampled at ``t_start`` throughout propagation,
+retaining dynamical temporal derivatives while photon times continue advancing.
+With ``--puncture-diagnostics-dir``, the final accepted state is compared
+with saved apparent horizons and reported in ``horizon_diagnostics.txt``.
+
 Author: Dalton J. Moone
         daltonmoone **at** gmail **dot** com
 """
@@ -119,6 +124,15 @@ if __name__ == "__main__":
         type=str,
         default="project",
         help="Parent directory for the generated C project.",
+    )
+    arg_parser.add_argument(
+        "--puncture-diagnostics-dir",
+        default="",
+        help=(
+            "Directory containing BHaHAHA_diagnostics.ah1.gp, .ah2.gp, .ah3.gp "
+            "and their h.tNNNNNNN.ahH.gp surfaces. Enables an apparent-horizon "
+            "check and radial-gap diagnostic for the final accepted state."
+        ),
     )
     arg_parser.add_argument(
         "--coord-system-numerical",
@@ -279,6 +293,15 @@ if __name__ == "__main__":
         help="""Numerical spacetime payload and interpolation method.""",
     )
     arg_parser.add_argument(
+        "--fast-light",
+        action="store_true",
+        help=(
+            "Generate geometry evaluations at t-start throughout propagation, "
+            "retaining dynamical metric time derivatives. Internal photon "
+            "times and integration parameters still advance."
+        ),
+    )
+    arg_parser.add_argument(
         "--axisymmetric-about-z",
         action="store_true",
         help=(
@@ -371,6 +394,20 @@ if __name__ == "__main__":
         arg_parser.print_help()
         sys.exit(0)
     args = arg_parser.parse_args()
+
+    puncture_diagnostics_dir = ""
+    if args.puncture_diagnostics_dir:
+        puncture_diagnostics_dir = os.path.abspath(args.puncture_diagnostics_dir)
+        for horizon in (1, 2, 3):
+            diagnostic_path = os.path.join(
+                puncture_diagnostics_dir, f"BHaHAHA_diagnostics.ah{horizon}.gp"
+            )
+            if not os.path.isfile(diagnostic_path) or not os.access(
+                diagnostic_path, os.R_OK
+            ):
+                arg_parser.error(
+                    f"Cannot read puncture diagnostic file '{diagnostic_path}'."
+                )
 
     image_plane_crop_enabled = args.a_range is not None or args.b_range is not None
     a_range = args.a_range if args.a_range is not None else [0.0, 1.0]
@@ -605,6 +642,7 @@ if __name__ == "__main__":
         normalized_eom=normalized_eom,
         skip_non_active_status=True,
         track_synthetic_slice_usage=True,
+        fast_light=args.fast_light,
     )
 
     # Step 5.e: Register RKF45 evolution kernels.
@@ -635,7 +673,10 @@ if __name__ == "__main__":
     event_detection_manager_kernel.event_detection_manager_kernel(
         normalized_eom=normalized_eom,
     )
-    find_plane_crossings_brent.find_plane_crossings_brent(normalized_eom=normalized_eom)
+    find_plane_crossings_brent.find_plane_crossings_brent(
+        normalized_eom=normalized_eom,
+        fast_light=args.fast_light,
+    )
 
     # Step 5.g: Register the single-photon integration function and C entry point.
     # The numerical interpolation and RKF45 registrations above pull in the
@@ -648,6 +689,7 @@ if __name__ == "__main__":
         enable_rkf45_trial_debug=args.enable_rkf45_trial_debug,
         axisymmetric_about_z=axisymmetric_about_z,
         track_synthetic_slice_usage=True,
+        fast_light=args.fast_light,
     )
     main_single.main_single("single_integrator_numerical")
 
@@ -697,6 +739,7 @@ if __name__ == "__main__":
 
     # Step 6.d: Set observer-tetrad initial-condition defaults.
     par.adjust_CodeParam_default("t_start", args.t_start)
+    par.adjust_CodeParam_default("puncture_diagnostics_dir", puncture_diagnostics_dir)
     for name, value in zip(
         ["observer_x", "observer_y", "observer_z"], args.observer_position
     ):
@@ -895,6 +938,7 @@ if __name__ == "__main__":
     print(f" -> Numerical coordinate system: {coord_system_numerical}")
     print(f" -> Interpolation method: {interpolation_method}")
     print(f" -> Photon equations of motion: {args.eom}")
+    print(f" -> Fixed geometry sampling at t_start: {args.fast_light}")
     print(
         " -> RKF45 trial/stage debugging: "
         f"{'enabled' if args.enable_rkf45_trial_debug else 'disabled'}"
@@ -1020,6 +1064,11 @@ if __name__ == "__main__":
     print("    make")
     print(f"    ./{exec_name} {project_name}.par\n")
     print("    Accepted trajectory samples are written to trajectory.txt.")
+    if puncture_diagnostics_dir:
+        print(
+            "    The final accepted-state horizon check is written to "
+            "horizon_diagnostics.txt (positive radial gap outside, negative inside)."
+        )
     print("    To generate the trajectory plot, install the required Python packages:")
     print("    pip install matplotlib numpy\n")
     print("    To visualize the trajectory, run:")
