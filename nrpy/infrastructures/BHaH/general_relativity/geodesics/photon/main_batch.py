@@ -304,6 +304,12 @@ def main(
     commondata_struct_set_to_default(&commondata);
     cmdline_input_and_parfile_parser(&commondata, argc, argv);
 
+    if (commondata.rkf45_max_consecutive_min_steps < 0) {{
+        fprintf(stderr, "ERROR: rkf45_max_consecutive_min_steps must be nonnegative.\\n");
+        return 1;
+    }} // END IF: invalid minimum-step limit
+
+
 {numerical_startup_validation}
 
     // Validate each enabled plane after reading the parameter file.
@@ -436,6 +442,8 @@ def main(
 {eom_telemetry}
     printf("Adaptive Step Damping: 0.90\\n");
     printf("Max Retries: %d\\n", commondata.rkf45_max_retries);
+    printf("Consecutive Minimum-Step Limit: %d (0 disables)\\n",
+           commondata.rkf45_max_consecutive_min_steps);
     printf("{diagnostic_flag_label}: %d\\n", commondata.{diagnostic_flag_name});
 {synthetic_slice_usage_telemetry}
 {angular_momentum_telemetry}

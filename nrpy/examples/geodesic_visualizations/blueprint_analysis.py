@@ -48,6 +48,10 @@ TERMINATION_TYPE_INFO: Dict[int, Tuple[str, str]] = {
         "FAILURE_RKF45_REJECTION_LIMIT",
         "RKF45 rejected too many consecutive steps",
     ),
+    cfg.FAILURE_RKF45_MIN_STEP_LIMIT: (
+        "FAILURE_RKF45_MIN_STEP_LIMIT",
+        "RKF45 reached the consecutive minimum-step limit",
+    ),
     cfg.STOP_CONDITION_T_MAX_EXCEEDED: (
         "STOP_CONDITION_T_MAX_EXCEEDED",
         "Ray exceeded the maximum allowed coordinate time",

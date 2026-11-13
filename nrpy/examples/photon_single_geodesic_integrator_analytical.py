@@ -231,6 +231,15 @@ def _build_parser() -> argparse.ArgumentParser:
         help="RKF45 minimum and maximum step magnitudes.",
     )
     parser.add_argument(
+        "--rkf45-max-consecutive-min-steps",
+        type=int,
+        metavar="N",
+        help=(
+            "Maximum consecutive RKF45 attempts at the minimum step magnitude, "
+            "including accepted and rejected attempts; default: 100; 0 disables."
+        ),
+    )
+    parser.add_argument(
         "--rkf45-max-retries",
         type=int,
         metavar="N",
@@ -273,6 +282,12 @@ if __name__ == "__main__":
         sys.exit(0)
     arg_parser = _build_parser()
     args = arg_parser.parse_args()
+    if args.rkf45_max_consecutive_min_steps is not None and not (
+        0 <= args.rkf45_max_consecutive_min_steps <= 2147483647
+    ):
+        arg_parser.error(
+            "--rkf45-max-consecutive-min-steps must be between 0 and 2147483647."
+        )
 
     image_plane_crop_enabled = args.a_range is not None or args.b_range is not None
     a_range = args.a_range if args.a_range is not None else [0.0, 1.0]
@@ -550,6 +565,10 @@ if __name__ == "__main__":
         if args.rkf45_max_retries < 0:
             raise ValueError("--rkf45-max-retries must be nonnegative.")
         par.adjust_CodeParam_default("rkf45_max_retries", args.rkf45_max_retries)
+    if args.rkf45_max_consecutive_min_steps is not None:
+        par.adjust_CodeParam_default(
+            "rkf45_max_consecutive_min_steps", args.rkf45_max_consecutive_min_steps
+        )
     if args.evolution_measure_max is not None:
         if args.evolution_measure_max <= 0.0:
             raise ValueError("--evolution-measure-max must be positive.")

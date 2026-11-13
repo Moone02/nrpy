@@ -32,6 +32,7 @@
  * @param[in,out] d_status Per-ray integration status bundle.
  * @param[in] d_spatial_stencil_center_i0 Trial-locked native dimension-0 centers, or NULL.
  * @param[in] d_spatial_stencil_center_i2 Trial-locked native dimension-2 centers, or NULL.
+ * @param[in] d_temporal_stencil_center Trial-locked retained time-slice centers, or NULL.
  * @param[in] d_integration_param_bundle Coordinate-time integration-parameter bundle.
  * @param[in] d_h RKF45 step-size bundle.
  * @param[in] stage Current RKF45 stage index.
@@ -46,9 +47,10 @@ void numerical_interpolation(const commondata_struct *restrict commondata, const
                              const azimuthal_symmetry_spatial_lagrange_context_struct *restrict spatial_context,
                              const NumericalTimeWindowManager *restrict numerical_window, const double *restrict d_f_bundle,
                              termination_type_t *restrict d_status, const int *restrict d_spatial_stencil_center_i0,
-                             const int *restrict d_spatial_stencil_center_i2, const double *restrict d_integration_param_bundle,
-                             const double *restrict d_h, const int stage, double *restrict d_metric_bundle, double *restrict d_rhs_geometry_bundle,
-                             const long int chunk_size, const int stream_idx) {
+                             const int *restrict d_spatial_stencil_center_i2, const uint64_t *restrict d_temporal_stencil_center,
+                             const double *restrict d_integration_param_bundle, const double *restrict d_h, const int stage,
+                             double *restrict d_metric_bundle, double *restrict d_rhs_geometry_bundle, const long int chunk_size,
+                             const int stream_idx) {
   (void)stream_idx;
 
 #define IDX_F(c, ray_id) ((c) * BUNDLE_CAPACITY + (ray_id))
@@ -199,10 +201,13 @@ void numerical_interpolation(const commondata_struct *restrict commondata, const
         } // END ELSE: final endpoint spatial output
       } // END ELSE: final endpoint payload available
     } else {
-      // Step 2: Recover one adaptive numerical stencil from the slot-level
-      // time window shared by the whole chunk.
-      const int window_status = time_window_manager_numerical_stencil_for_time(
-          numerical_window, (double)t, temporal_half_width, available_slice_indices, available_slice_times, available_slice_payloads,
+      // Step 2: Use the trial's retained temporal center, or select one for
+      // a standalone request, within the mapped numerical time window.
+      const uint64_t temporal_center = d_temporal_stencil_center != NULL
+                                           ? d_temporal_stencil_center[i]
+                                           : time_window_manager_numerical_nearest_selected_slice_for_time(numerical_window, (double)t);
+      const int window_status = time_window_manager_numerical_stencil_for_center(
+          numerical_window, temporal_center, temporal_half_width, available_slice_indices, available_slice_times, available_slice_payloads,
           &num_available_slices, missing_slice_times, &num_missing_slices);
       if (window_status != TIME_WINDOW_MANAGER_NUMERICAL_SUCCESS || num_available_slices <= 0 ||
           num_available_slices + num_missing_slices != temporal_num_points) {

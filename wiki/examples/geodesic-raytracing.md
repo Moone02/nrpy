@@ -25,9 +25,9 @@ affine normalization differs from the hypersurface-normal measure
 upper-only log-energy termination measure: direct states evaluate
 `ln|alpha p^0|`, while normalized states use `u`.
 
-All generation, build, executable, trajectory, and rendering commands on this
-page are manual/source-supported. Neither GitHub workflow nor the local full-CI
-helper invokes these five generators, so these routes remain manual/source-supported.
+The commands on this page describe manual generation, compilation, trajectory
+integration, and rendering. Neither GitHub workflow nor the local full-CI
+helper invokes the geodesic generators described here.
 
 ## Detail
 
@@ -122,25 +122,17 @@ evolution, it records that momentum before converting to `u` and `Pi_i`.
 For numerical spacetime, an in-range terminal crossing sets final status after
 trajectory integration. A nonterminal crossing does not stop integration.
 
-Claim evidence:
-- Claim: Both single-photon generators refine accepted crossing steps with fixed-anchor RKF45 Brent trials and write the refined states to `plane_crossings.txt`.
-- Role: descriptive behavior
-- Deciding authority: `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/single_integrator_analytical.py` and `single_integrator_numerical.py` — `plane_crossings.txt` output and EOM state columns
-- Corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/event_detection_manager_kernel.py` — accepted-step crossing capture; `find_plane_crossings_brent.py` — analytical and numerical refinement; both single-photon generators — Brent-tolerance CLI
+Evidence (descriptive behavior): `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/single_integrator_analytical.py` and `single_integrator_numerical.py` — `plane_crossings.txt` output and EOM state columns; corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/event_detection_manager_kernel.py` — accepted-step crossing capture; `find_plane_crossings_brent.py` — analytical and numerical refinement; both single-photon generators — Brent-tolerance CLI
 
 Both single-photon generators enable RKF45 trial and stage diagnostics by
 default. Their generated executables write adaptive-step controller values to
-`rkf45_trials.txt` and all six metric, connection, and right-hand-side stage
-evaluations for each trial to `rkf45_stages.txt`; the numerical version records
-the interpolated geometry used at each stage. Pass
+`rkf45_trials.txt` and stage evaluations to `rkf45_stages.txt`. Analytical runs
+record all six metric, connection, and right-hand-side evaluations per trial;
+numerical runs record only successfully interpolated stages. Pass
 `--disable-rkf45-trial-debug` during project generation to omit this diagnostic
 code; use `--enable-rkf45-trial-debug` to select it explicitly.
 
-Claim evidence:
-- Claim: The analytical and numerical single-photon generators construct unit camera-tetrad-energy initial momentum, run the split RKF45 calculation, apply the upper-only log-energy cutoff, write `trajectory.txt`, enable trial/stage diagnostics by default, and support optional terminal and nonterminal plane crossings recorded in `plane_crossings.txt`.
-- Role: descriptive behavior
-- Deciding authority: `nrpy/examples/photon_single_geodesic_integrator_analytical.py` and `photon_single_geodesic_integrator_numerical.py` — plane options and debug defaults; `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/single_integrator_analytical.py` and `single_integrator_numerical.py` — generated C behavior
-- Corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/event_detection_manager_kernel.py` — crossing and termination checks
+Evidence (descriptive behavior): `nrpy/examples/photon_single_geodesic_integrator_analytical.py` and `photon_single_geodesic_integrator_numerical.py` — plane options and debug defaults; `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/single_integrator_analytical.py` and `single_integrator_numerical.py` — generated C behavior; corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/event_detection_manager_kernel.py` — crossing and termination checks
 
 `trajectory.txt` is the input file for the single-ray visualization. The
 massive file header is `# proper_time t x y z u^t u^x u^y u^z`. Direct photon
@@ -152,11 +144,7 @@ and non-empty, prints initial and final spatial positions plus the accumulated
 affine or proper parameter, then saves `trajectory_plot.png` and displays a
 Matplotlib 3D path with a schematic `r=2M` reference sphere.
 
-Claim evidence:
-- Claim: `trajectory.txt` is the single-ray visualization handoff with the documented state headers, and `visualize_trajectory.py` validates the input before plotting it.
-- Role: generated evidence
-- Deciding authority: `nrpy/examples/geodesic_visualizations/visualize_trajectory.py` — `visualize_trajectory`; `nrpy/examples/photon_single_geodesic_integrator_analytical.py` — trajectory header
-- Corroboration: `nrpy/examples/photon_single_geodesic_integrator_numerical.py` — numerical trajectory header
+Evidence (descriptive behavior): `nrpy/examples/geodesic_visualizations/visualize_trajectory.py` — `visualize_trajectory`; `nrpy/examples/photon_single_geodesic_integrator_analytical.py` — trajectory header; corroboration: `nrpy/examples/photon_single_geodesic_integrator_numerical.py` — numerical trajectory header
 
 For a batch lensed-image run with default OpenMP output under `project/`:
 
@@ -214,11 +202,7 @@ official [NVCC guide](https://docs.nvidia.com/cuda/cuda-programming-guide/02-bas
 heading `NVCC: The NVIDIA CUDA Compiler` establishes that `nvcc` belongs to the
 CUDA Toolkit; this page does not claim any GPU model/toolkit version was tested.
 
-Claim evidence:
-- Claim: The analytical batch generator defaults to OpenMP, selects CUDA with `--cuda`, derives its project directory from `--outdir`, and exposes tile counts and scan density as angular sampling controls while final PNG pixel width remains a visualization setting.
-- Role: public/scientific contract
-- Deciding authority: `nrpy/examples/photon_batch_geodesic_integrator_analytical.py` — argument parser and project generation
-- Corroboration: `nrpy/examples/geodesic_visualizations/visualize_lensed_image.py` — header-driven tile and aspect-ratio handling
+Evidence (public/scientific contract): `nrpy/examples/photon_batch_geodesic_integrator_analytical.py` — argument parser and project generation; corroboration: `nrpy/examples/geodesic_visualizations/visualize_lensed_image.py` — header-driven tile and aspect-ratio handling
 
 The analytical and numerical photon examples, for both batches and single
 photons, accept optional `--a-range A_MIN A_MAX` and `--b-range B_MIN B_MAX`.
@@ -256,11 +240,7 @@ single photon with a batch sample, match the metric parameters, observer event,
 fields of view, and sample-center coordinates; the analytical examples have
 different default Kerr spins.
 
-Claim evidence:
-- Claim: Image-plane range options select camera directions without reducing the requested column count; cropped scans require one tile, cropped row counts use floor rounding, and single-photon initialization uses one sample at the selected center.
-- Role: generated evidence
-- Deciding authority: `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/main_batch.py` — `main`; `set_initial_conditions_kernel.py` — `set_initial_conditions_kernel`
-- Corroboration: `nrpy/examples/photon_batch_geodesic_integrator_analytical.py`, `photon_batch_geodesic_integrator_numerical.py`, `photon_single_geodesic_integrator_analytical.py`, and `photon_single_geodesic_integrator_numerical.py` — range options and parameter defaults; `single_integrator_analytical.py` and `single_integrator_numerical.py` — one-row initialization
+Evidence (descriptive behavior): `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/main_batch.py` — `main`; `set_initial_conditions_kernel.py` — `set_initial_conditions_kernel`; corroboration: `nrpy/examples/photon_batch_geodesic_integrator_analytical.py`, `photon_batch_geodesic_integrator_numerical.py`, `photon_single_geodesic_integrator_analytical.py`, and `photon_single_geodesic_integrator_numerical.py` — range options and parameter defaults; `single_integrator_analytical.py` and `single_integrator_numerical.py` — one-row initialization
 
 The analytical batch integrator applies the same upper-only log-energy cutoff
 after each accepted state. Its direct-EOM path refreshes the accepted-state
@@ -299,11 +279,7 @@ agree. Photon record coordinates remain global `(a,b)` values; the renderer
 subtracts the stored minima and divides by the stored range widths before
 placing them in output pixels.
 
-Claim evidence:
-- Claim: Photon batch blueprint files use native same-build binary-layout version 9 with exact image-plane bounds in a 92-byte header and 124-byte photon records; Python `BLUEPRINT_DTYPE` must match the generated C `blueprint_data_t` layout and termination enums.
-- Role: generated evidence
-- Deciding authority: `nrpy/examples/geodesic_visualizations/blueprint_config_and_schema.py` — `BLUEPRINT_SCHEMA_VERSION`, `BLUEPRINT_DTYPE`
-- Corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/calculate_and_fill_blueprint_data_universal.py` — generated record layout
+Evidence (descriptive behavior): `nrpy/examples/geodesic_visualizations/blueprint_config_and_schema.py` — `BLUEPRINT_SCHEMA_VERSION`, `BLUEPRINT_DTYPE`; corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/calculate_and_fill_blueprint_data_universal.py` — generated record layout
 
 `visualize_lensed_image.py` expects those per-tile `.bin` files next to the
 script and discovers the tile grid and angular aspect ratio from headers. It
@@ -321,11 +297,7 @@ fallback if import fails, but the batch generator still prints
 `pip install matplotlib numpy numba Pillow`; that dependency statement is
 source-limited to the checked-in files.
 
-Claim evidence:
-- Claim: `visualize_lensed_image.py` consumes per-tile binary files, discovers tile geometry from headers, maps normalized image fractions to pixels, and delegates final rendering to `render_lensed_image.py`.
-- Role: generated evidence
-- Deciding authority: `nrpy/examples/geodesic_visualizations/visualize_lensed_image.py` — `main`; `render_lensed_image.py` — `generate_static_lensed_image`
-- Corroboration: `nrpy/examples/geodesic_visualizations/blueprint_io.py` — binary header and record readers
+Evidence (descriptive behavior): `nrpy/examples/geodesic_visualizations/visualize_lensed_image.py` — `main`; `render_lensed_image.py` — `generate_static_lensed_image`; corroboration: `nrpy/examples/geodesic_visualizations/blueprint_io.py` — binary header and record readers
 
 `blueprint_analysis.py` is the diagnostic script for the same binary files.
 It streams each tile, counts raw termination enums, compares them to
@@ -360,11 +332,7 @@ Matplotlib backend is required for mouse and keyboard controls. Run
 figures. Zooming reveals stored samples; it does not resolve structure between
 photon directions or establish a distinct lensed-image order.
 
-Claim evidence:
-- Claim: `blueprint_analysis.py` reports termination diagnostics, labels equal-status eight-neighbor domains using every photon across all tiles, writes their summaries to `blueprint_domains.txt`, provides an interactive domain figure and plane/celestial heatmaps, and consumes complete matching normalization sidecars when available.
-- Role: descriptive behavior
-- Deciding authority: `nrpy/examples/geodesic_visualizations/blueprint_analysis.py` — `diagnose_blueprint`, `label_domains`, `plot_domains`, `plot_heatmaps`
-- Corroboration: `nrpy/examples/geodesic_visualizations/blueprint_config_and_schema.py` — termination constants and record fields
+Evidence (descriptive behavior): `nrpy/examples/geodesic_visualizations/blueprint_analysis.py` — `diagnose_blueprint`, `label_domains`, `plot_domains`, `plot_heatmaps`; corroboration: `nrpy/examples/geodesic_visualizations/blueprint_config_and_schema.py` — termination constants and record fields
 
 This standalone batch raytracer is related to, but distinct from, the
 evolution-time raytracing export enabled by
@@ -377,11 +345,7 @@ last scheduled output; the default remains nonstatic. See
 [Geodesics And Raytracing Runtime](../infrastructures/bhah/geodesics-and-raytracing-runtime.md)
 for that context.
 
-Claim evidence:
-- Claim: Evolution-time raytracing export is distinct from the standalone batch raytracer; `--raytracing-static-christoffels` is optional, default-off, and changes only the GammaUDD payload on the last scheduled output.
-- Role: public/scientific contract
-- Deciding authority: `nrpy/infrastructures/BHaH/diagnostics/diagnostics.py` — `enable_static_christoffels` scheduling
-- Corroboration: `nrpy/infrastructures/BHaH/diagnostics/output_raytracing_data.py` — static GammaUDD selection
+Evidence (public/scientific contract): `nrpy/infrastructures/BHaH/diagnostics/diagnostics.py` — `enable_static_christoffels` scheduling; corroboration: `nrpy/infrastructures/BHaH/diagnostics/output_raytracing_data.py` — static GammaUDD selection
 
 For a numerical-spacetime dataset, first generate the evolution project and
 its slice-combining workflow:
@@ -406,11 +370,7 @@ stored slice time is read from the `.bin` and printed at runtime; it is not a
 CLI or `.par` input. Stored slice-table times remain authoritative and may be
 near, rather than exactly equal to, nominal evolution intervals.
 
-Claim evidence:
-- Claim: The numerical pipeline combines full logical-grid slice payloads into a `.bin` container; nominal `--dt-spacetime-data` describes approximate gaps and synthetic edge times, while stored slice-table times remain authoritative at runtime.
-- Role: public/scientific contract
-- Deciding authority: `nrpy/examples/photon_single_geodesic_integrator_numerical.py` and `photon_batch_geodesic_integrator_numerical.py` — CLI help and runtime parameters
-- Corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/interpolation/time_window_manager_numerical.py` — slice-table loading and time-window construction
+Evidence (public/scientific contract): `nrpy/examples/photon_single_geodesic_integrator_numerical.py` and `photon_batch_geodesic_integrator_numerical.py` — CLI help and runtime parameters; corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/interpolation/time_window_manager_numerical.py` — slice-table loading and time-window construction
 
 ```bash
 python -m nrpy.examples.photon_single_geodesic_integrator_numerical \
@@ -439,9 +399,10 @@ Both accept `--eom geodesic|normalized` and share the upper-only
 `--evolution-measure-max` cutoff (default `3`). For accepted-state normalization
 sidecars, direct EOM stores `|g_{mu nu} p^mu p^nu|`; normalized EOM stores
 `|exp(2u)(gamma^{ij} Pi_i Pi_j - 1)|`, putting the normalized residual on the
-direct-momentum scale. The numerical batch path locks the spatial interpolation
-center selected for each RK trial and reuses that same center for every RK
-substage and the accepted-state metric refresh.
+direct-momentum scale. Numerical single- and batch-photon integration retains
+the spatial center selected at the start of each attempted RKF45 step and the
+temporal center selected at its predicted midpoint. Every stage and the
+accepted-state metric refresh reuse those centers.
 
 ```bash
 python -m nrpy.examples.photon_batch_geodesic_integrator_numerical \
@@ -458,11 +419,136 @@ python -m nrpy.examples.photon_batch_geodesic_integrator_numerical \
   --eom geodesic --interpolation-method g4DD
 ```
 
-Claim evidence:
-- Claim: Numerical photon generators expose direct and normalized EOM modes with a common upper-only log-energy cutoff and direct-scale-equivalent normalized norm sidecars; numerical batch RK stages reuse one spatial interpolation center per trial.
-- Role: public/scientific contract
-- Deciding authority: `nrpy/examples/photon_single_geodesic_integrator_numerical.py` and `nrpy/examples/photon_batch_geodesic_integrator_numerical.py` — CLI and parameter wiring
-- Corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/batch_integrator_numerical.py` and `numerical_interpolation.py` — generated integration and interpolation behavior
+Evidence (public/scientific contract): `nrpy/examples/photon_single_geodesic_integrator_numerical.py` and `nrpy/examples/photon_batch_geodesic_integrator_numerical.py` — CLI and parameter wiring; corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/batch_integrator_numerical.py` and `numerical_interpolation.py` — generated integration and interpolation behavior
+
+### Fixed Temporal Stencils For Numerical Photons
+
+The numerical single- and batch-photon integrators select one temporal center
+for each attempted RKF45 step. Normalized evolution selects the retained time
+slice nearest `t_start_of_step + h/2`; direct evolution uses
+`t_start_of_step + h*p0_start/2`. All six stages interpolate at their actual
+events using that node set. Retries recompute the center after reducing the
+step. The accepted-state metric refresh retains the accepted trial's center.
+
+For positive temporal half-width `n`, the time-window manager derives a runtime
+coordinate-time limit just below `(2*n-1)*delta_safe`, rounded toward zero with
+`nextafter`. Here `delta_safe` is the minimum of the nominal retained-node
+spacing, actual retained-slice gaps, and synthetic endpoint joins. The manager
+recalculates this limit for each executable run. The configured `rkf45_h_max` retains its integration-
+parameter units and remains a separate limit. For normalized EOM, the temporal
+cap is `abs(h) <= H_t`; for direct EOM it is
+`abs(h) <= 0.9*H_t/abs(p0_start)`. Initialization and the finalizer share
+the cap calculation. A cap below `rkf45_h_min` stops that photon with
+`FAILURE_GENERIC` rather than increasing its step beyond the permitted value.
+
+The direct conversion predicts coordinate-time travel; changing `p^0`
+within a step can invalidate that estimate. No additional per-stage temporal
+containment check is performed. Existing interpolation failures and retry
+limits retain their meaning. Fast-light geometry always selects its center
+at `t_start` and skips the new travel-based temporal cap. Temporal half-width
+zero keeps one-node sampling without a finite-stencil step cap. Frozen
+endpoint dispatch and synthetic endpoint-node rules remain in effect.
+
+Single-photon trial and stage files append `temporal_center_slice`,
+`temporal_center_time`, `temporal_stencil_first_time`,
+`temporal_stencil_last_time`, `temporal_max_delta_t`,
+`h_trial_before_temporal_cap`, and `h_trial_after_temporal_cap`.
+The last two columns describe the current attempt, including the first one;
+`h_trial_after_temporal_cap` equals `h_trial`. Stage stencil endpoints identify
+the nodes actually sampled, reducing to one stored time for frozen-endpoint
+sampling. Trial stencil endpoints describe the selected center's full node set.
+The existing `h_error_controller` trial column precedes mapped-window and
+temporal caps; `h_proposed` includes both. Batch output gains no corresponding
+diagnostic columns. Numerical Brent refinement holds one temporal center for
+the full saved crossing interval without shortening Brent's requested trial
+duration.
+
+Evidence (descriptive behavior): `nrpy/infrastructures/BHaH/general_relativity/geodesics/interpolation/time_window_manager_numerical.py` — `time_window_manager_numerical_temporal_step_limit` and `time_window_manager_numerical_stencil_for_center`; corroboration: `numerical_interpolation.py` — `register_CFunction_numerical_interpolation`; `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/rkf45_finalize_and_control_kernel.py` — `rkf45_cap_numerical_step`; `single_integrator_numerical.py`, `batch_integrator_numerical.py`, and `find_plane_crossings_brent.py` — retained centers and diagnostic output
+
+### Metric-Gradient Tolerances For Numerical Photons
+
+With `--interpolation-method g4DD` or `g4DD_d0`, both numerical photon generators
+accept optional `--l-sense LENGTH` and `--tol-scale-min SCALE`. Both generated
+runtime parameters, `L_sense` and `tol_scale_min`, default to one and can also be
+set in the generated parameter file. For example, adding
+`--l-sense 1 --tol-scale-min 0.01` allows both absolute and relative RKF45
+tolerances to tighten by up to a factor of one hundred.
+
+For each attempted step, the integrator takes the maximum absolute value of
+the forty first metric derivatives across all six RK stages. Finalization uses
+`q = L_sense * maximum` and
+`tol_scale = max(tol_scale_min, 1 / (1 + q))`, and multiplies both base tolerances
+by `tol_scale`. The maximum is reset at the first stage of every new attempt.
+It measures variation in the chosen Cartesian coordinates, not physical
+curvature. `L_sense` is a length in the coordinate units; `tol_scale_min` is a
+dimensionless positive value no greater than one.
+
+The default `tol_scale_min = 1` preserves the original RKF45 tolerances and
+skips the derivative scan and the batch integrator's additional array allocation.
+The single-photon integrator uses a local scalar. `L_sense = 0` also disables
+scaling. Both parameters must be finite. The CLI options require a metric
+interpolation method; `GammaUDD` retains its existing tolerances. Analytical
+programs, the separate normalized log-energy tolerance, and
+Brent plane refinement retain their existing calculations. See
+[Geodesics And Raytracing Runtime](../infrastructures/bhah/geodesics-and-raytracing-runtime.md)
+for the division of calculations between numerical integration and finalization.
+
+Single-photon runs with trial debugging enabled append the following columns:
+
+| File | Added columns |
+| --- | --- |
+| `rkf45_stages.txt` | `stage_gradient_max`, `stage_gradient_component`, `trial_gradient_max_so_far` |
+| `rkf45_trials.txt` | `trial_gradient_max`, `gradient_max_stage`, `gradient_max_component`, `q`, `tol_scale`, `atol_effective`, `rtol_effective`, `interpolation_status` |
+
+Derivative names include both metric indices and direction, such as `g00_t`.
+The controlling stage is an RK execution-stage number, not a chronological
+ordering of stage times. The trial file's effective tolerances come directly
+from finalization. Its comment after the column header records `L_sense`,
+`tol_scale_min`, and the base tolerances. Disabled scaling records a scale of
+one, the base tolerances, and NaN for uncomputed gradient values. Interpolation
+failures retain their trial failure information and record NaN for the unused
+gradient and tolerance calculations; uncomputed stages and components are
+`-1` and `NOT_COMPUTED`. Only successfully interpolated stages have stage rows.
+`interpolation_status` records the status before finalization, so a retryable
+interpolation failure remains distinguishable from an RKF45 error rejection.
+`--disable-rkf45-trial-debug` omits the diagnostic code while leaving tolerance
+scaling available.
+
+Evidence (descriptive behavior): `nrpy/examples/photon_batch_geodesic_integrator_numerical.py` and `nrpy/examples/photon_single_geodesic_integrator_numerical.py` — CLI defaults and metric-method registration; corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/batch_integrator_numerical.py` and `single_integrator_numerical.py` — per-trial maxima, parameter validation, and single-photon diagnostic columns; `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/rkf45_finalize_and_control_kernel.py` — runtime parameters, tolerance scaling, and diagnostic values
+
+### Consecutive Minimum RKF45 Attempts
+
+All four photon generators accept the optional
+`--rkf45-max-consecutive-min-steps N` argument. The default is `100`;
+`0` disables this limit. The generated runtime parameter is
+`rkf45_max_consecutive_min_steps` in the existing `.par` file. Append
+`--rkf45-max-consecutive-min-steps 500` to permit a longer sequence, or
+`--rkf45-max-consecutive-min-steps 0` to disable it. The same setting
+applies to numerical dynamical and fast-light runs.
+
+Each complete RKF45 attempt at `abs(h_used) <= rkf45_h_min` increments a
+separate per-photon count, including accepted attempts and retryable
+interpolation failures. An attempt above that magnitude resets the count;
+acceptance alone does not. The comparison uses the attempted step before
+the controller proposes its next value, and it handles negative steps in
+normalized backward evolution. At a positive limit, the photon stops with
+`FAILURE_RKF45_MIN_STEP_LIMIT` (value `11`) if it would otherwise continue.
+Accepted threshold attempts retain their state and normal physical-event
+checks; existing terminal errors and physical stops take precedence. A
+rejected threshold attempt retains the previous accepted state.
+
+The limit is independent of `--rkf45-max-retries`, whose counter resets
+after acceptance. It bounds minimum-size attempts without establishing
+black-hole capture or stopping steps that remain above the floor. Blueprint
+analysis labels the numerical failure, and the renderer shows it through the
+existing opt-in `--debug` overlay. It receives no puncture-association color.
+
+The main blueprint record layout and version remain unchanged. Updated
+readers accept existing files of that version, while older readers reject the new status.
+Regenerate and rebuild existing photon projects to obtain the new counter
+and generated visualization files.
+
+Evidence (descriptive behavior): `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/rkf45_finalize_and_control_kernel.py` — attempted-step counting and parameter default; `batch_integrator_analytical.py`, `batch_integrator_numerical.py`, `single_integrator_analytical.py`, and `single_integrator_numerical.py` — stopping after physical checks; corroboration: the four photon example generators — `--rkf45-max-consecutive-min-steps`; `nrpy/examples/geodesic_visualizations/blueprint_config_and_schema.py`, `blueprint_analysis.py`, and `render_lensed_image.py` — final-status recognition and optional debug color
 
 ### Fixed-Time Geometry Comparison
 
@@ -634,8 +720,10 @@ Evidence (descriptive behavior): `nrpy/examples/geodesic_visualizations/visualiz
 - [batch_integrator_numerical.py](../../nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/batch_integrator_numerical.py) - `batch_integrator_numerical`, fixed geometry window with advancing photon scheduling times
 - [puncture_diagnostics.py](../../nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/puncture_diagnostics.py) - `puncture_diagnostics`, nearest-time horizon association and final-point containment
 - [numerical_interpolation.py](../../nrpy/infrastructures/BHaH/general_relativity/geodesics/interpolation/numerical_interpolation.py) - `register_CFunction_numerical_interpolation`, `fast_light`
+- [time_window_manager_numerical.py](../../nrpy/infrastructures/BHaH/general_relativity/geodesics/interpolation/time_window_manager_numerical.py) - `time_window_manager_numerical_temporal_step_limit`, `time_window_manager_numerical_temporal_node_time`, `time_window_manager_numerical_stencil_for_center`
 - [find_plane_crossings_brent.py](../../nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/find_plane_crossings_brent.py) - `find_plane_crossings_brent`, numerical-data mapping during fixed-time refinement
 - [normal_observer_log_energy.py](../../nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/normal_observer_log_energy.py) - direct-EOM `ln|alpha p^0|` helper
+- [rkf45_finalize_and_control_kernel.py](../../nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/rkf45_finalize_and_control_kernel.py) - consecutive minimum-size attempt counting and runtime limit
 - [combine_raytracing_time_slices.py](../../nrpy/infrastructures/BHaH/diagnostics/combine_raytracing_time_slices.py) - `InputSliceInfo`, `parse_args`, `--run-metadata`
 - [visualize_trajectory.py](../../nrpy/examples/geodesic_visualizations/visualize_trajectory.py) - `visualize_trajectory`, `plot_trajectory`
 - [blueprint_config_and_schema.py](../../nrpy/examples/geodesic_visualizations/blueprint_config_and_schema.py) - `BLUEPRINT_DTYPE`, `STOP_CONDITION_TERMINAL_PLANE`
@@ -649,7 +737,7 @@ Evidence (descriptive behavior): `nrpy/examples/geodesic_visualizations/visualiz
 
 ## See Also
 
-- [Examples](index.md)
-- [Black Hole Evolution](black-hole-evolution.md)
-- [Geodesics](../equations/general-relativity/geodesics.md)
-- [Geodesics And Raytracing Runtime](../infrastructures/bhah/geodesics-and-raytracing-runtime.md)
+- Parent: [Examples](index.md)
+- See also: [Black Hole Evolution](black-hole-evolution.md)
+- Depends on: [Geodesics](../equations/general-relativity/geodesics.md)
+- Depends on: [Geodesics And Raytracing Runtime](../infrastructures/bhah/geodesics-and-raytracing-runtime.md)

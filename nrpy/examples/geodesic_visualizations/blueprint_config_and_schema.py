@@ -10,7 +10,7 @@ Final blueprint records contain physical stop conditions and terminal failures,
 never the internal active or rejected RKF45 states.
 
 >>> FINAL_TERMINATION_TYPES
-(0, 1, 2, 3, 4, 5, 6, 9, 10)
+(0, 1, 2, 3, 4, 5, 6, 9, 10, 11)
 >>> ACTIVE in FINAL_TERMINATION_TYPES or REJECTED in FINAL_TERMINATION_TYPES
 False
 
@@ -148,6 +148,7 @@ ACTIVE = 7  # Ray is still being processed (should not appear in final blueprint
 REJECTED = 8  # Ray is in a rejected RKF45 stage (not a final status)
 FAILURE_SPATIAL_INTERPOLATION = 9  # Spatial interpolation failed for this ray
 FAILURE_TEMPORAL_INTERPOLATION = 10  # Temporal interpolation failed for this ray
+FAILURE_RKF45_MIN_STEP_LIMIT = 11  # Too many consecutive minimum-size RKF45 attempts
 
 # Only completed physical stops and failures may be serialized. ACTIVE and
 # REJECTED are internal RKF45 states and therefore deliberately absent.
@@ -161,6 +162,7 @@ FINAL_TERMINATION_TYPES = (
     FAILURE_GENERIC,
     FAILURE_SPATIAL_INTERPOLATION,
     FAILURE_TEMPORAL_INTERPOLATION,
+    FAILURE_RKF45_MIN_STEP_LIMIT,
 )
 
 # Step 3: Physics and scene parameters.

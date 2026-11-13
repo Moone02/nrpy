@@ -72,13 +72,14 @@ def register_plane_crossing_root() -> None:
 
 
 def plane_crossing_brent_refine_candidate(
-    normalized_eom: bool = False, spacetime_name: str = ""
+    normalized_eom: bool = False, spacetime_name: str = "", fast_light: bool = False
 ) -> None:
     """
     Register fixed-anchor fifth-order RKF45 and Brent plane refinement.
 
     :param normalized_eom: Whether coordinate time is the integration parameter.
     :param spacetime_name: Analytical metric name; empty selects numerical data.
+    :param fast_light: Whether numerical geometry samples the observer time.
     """
     register_plane_crossing_candidates()
     register_plane_crossing_root()
@@ -239,7 +240,10 @@ def plane_crossing_brent_refine_candidate(
         "    const NumericalTimeWindowManager *numerical_window,\n    "
     )
     trial_stencil_params = (
-        "" if analytical else "const int stencil_i0, const int stencil_i2,\n    "
+        ""
+        if analytical
+        else "const int stencil_i0, const int stencil_i2,\n    "
+        "const uint64_t stencil_temporal_center,\n    "
     )
     trial_stencil_setup = (
         ""
@@ -253,6 +257,7 @@ def plane_crossing_brent_refine_candidate(
         else "plane_crossing_numerical_interpolation(\n"
         "            commondata, numerical_params, spatial_context, numerical_window,\n"
         "            stage_state, &status, &selected_i0, &selected_i2,\n"
+        "            &stencil_temporal_center,\n"
         f"            {interpolation_args}{synthetic_args}metric, geometry,\n"
         "            chunk_size, stream_idx);"
     )
@@ -398,10 +403,11 @@ static bool plane_crossing_rk5_trial(
         return;
     } // END IF: anchor stencil unavailable
 
+    @TEMPORAL_CENTER_SETUP@
     double endpoint_state[9];
     if (!plane_crossing_rk5_trial(
             commondata, numerical_params, spatial_context, numerical_window,
-            candidate, selected_center[0], selected_center[2],
+            candidate, selected_center[0], selected_center[2], selected_temporal_center,
             candidate->parameter_after, endpoint_state)) {
         root->status = PLANE_CROSSING_ROOT_RKF45_FAILURE;
         return;
@@ -473,7 +479,7 @@ static bool plane_crossing_rk5_trial(
         double trial_state[9];
         if (!plane_crossing_rk5_trial(
                 commondata, numerical_params, spatial_context, numerical_window,
-                candidate, selected_center[0], selected_center[2],
+                candidate, selected_center[0], selected_center[2], selected_temporal_center,
                 trial_parameter, trial_state)) {
             root->status = PLANE_CROSSING_ROOT_RKF45_FAILURE;
             return;
@@ -518,6 +524,21 @@ static bool plane_crossing_rk5_trial(
         } // END IF: Brent tolerances satisfied
     } // END LOOP: iteration refines Brent bracket
 """
+    temporal_midpoint = (
+        "commondata->t_start"
+        if fast_light
+        else (
+            "0.5 * (candidate->parameter_before + candidate->parameter_after)"
+            if normalized_eom
+            else "candidate->state_before[0] + 0.5 * "
+            "(candidate->parameter_after - candidate->parameter_before) * "
+            "candidate->state_before[4]"
+        )
+    )
+    temporal_setup = "" if analytical else """const uint64_t selected_temporal_center =
+        time_window_manager_numerical_nearest_selected_slice_for_time(
+            numerical_window, """ + temporal_midpoint + ");"
+    body = body.replace("@TEMPORAL_CENTER_SETUP@", temporal_setup)
     if analytical:
         spatial_setup = """    const REAL anchor_cartesian[3] = {
         (REAL)candidate->state_before[1],
@@ -537,11 +558,11 @@ static bool plane_crossing_rk5_trial(
         body = body.replace(spatial_setup, "")
         body = body.replace(
             "commondata, numerical_params, spatial_context, numerical_window,\n"
-            "            candidate, selected_center[0], selected_center[2],",
+            "            candidate, selected_center[0], selected_center[2], selected_temporal_center,",
             "commondata, candidate,",
         ).replace(
             "commondata, numerical_params, spatial_context, numerical_window,\n"
-            "                candidate, selected_center[0], selected_center[2],",
+            "                candidate, selected_center[0], selected_center[2], selected_temporal_center,",
             "commondata, candidate,",
         )
     cfc.register_CFunction(
@@ -596,9 +617,7 @@ def find_plane_crossings_brent(
         else "non_terminal->integration_param <= selected->integration_param"
     )
     geometry_slot = (
-        "slot_get_index(&crossing_slots, commondata->t_start)"
-        if fast_light
-        else "slot"
+        "slot_get_index(&crossing_slots, commondata->t_start)" if fast_light else "slot"
     )
     body = r"""
     if (num_rays <= 0) return;

@@ -20,7 +20,7 @@ Doctests:
 >>> arguments = (terms, fractions, np.full(7, 0.5), zeros, zeros, zeros, zeros,
 ...              7, 1, (0.0, 1.0, 0.0, 1.0), 2.0,
 ...              np.full((1, 1, 3), 0.25), np.full((1, 1, 3), 0.5),
-...              colors, counts, debug, 1, 0, 2, 6, 9, 10, True)
+...              colors, counts, debug, 1, 0, 2, 6, 9, 10, 11, True)
 >>> labels = np.array([0, 1, 2, 3, 3, 3, 3], dtype=np.uint8)
 >>> _accumulate_ray_hits_jit(*arguments, labels, PUNCTURE_COLORS, True)
 >>> assert np.allclose(colors[0, :4], PUNCTURE_COLORS)
@@ -36,10 +36,20 @@ Doctests:
 >>> _accumulate_ray_hits_jit(terms[:2], fractions[:2], np.full(2, 0.5),
 ...     zeros[:2], zeros[:2], zeros[:2], zeros[:2], 1, 1, (0.0, 1.0, 0.0, 1.0),
 ...     2.0, np.full((1, 1, 3), 0.25), np.full((1, 1, 3), 0.5), mixed_colors,
-...     mixed_counts, np.empty((0, 0), dtype=np.int8), 1, 0, 2, 6, 9, 10, False,
+...     mixed_counts, np.empty((0, 0), dtype=np.int8), 1, 0, 2, 6, 9, 10, 11, False,
 ...     np.array([1, 2], dtype=np.uint8), PUNCTURE_COLORS, True)
 >>> assert mixed_counts[0, 0] == 2
 >>> assert np.allclose(mixed_colors[0, 0] / 2, PUNCTURE_COLORS[1:3].mean(axis=0))
+>>> terms[-1] = cfg.FAILURE_RKF45_MIN_STEP_LIMIT
+>>> colors.fill(0); counts.fill(0); debug.fill(_DEBUG_STATUS_UNSET)
+>>> _accumulate_ray_hits_jit(*arguments, labels, PUNCTURE_COLORS, True)
+>>> assert debug[0, -1] == cfg.FAILURE_RKF45_MIN_STEP_LIMIT
+>>> assert counts[0, -1] == 0 and np.all(colors[0, -1] == 0)
+>>> debug.fill(_DEBUG_STATUS_UNSET)
+>>> no_debug_arguments = (*arguments[:-1], False)
+>>> _accumulate_ray_hits_jit(*no_debug_arguments, labels, PUNCTURE_COLORS, True)
+>>> assert debug[0, -1] == _DEBUG_STATUS_UNSET
+
 """
 
 import os
@@ -93,6 +103,7 @@ DEBUG_FAILURE_INFO: Tuple[Tuple[int, str, Tuple[int, int, int]], ...] = (
         (255, 0, 0),
     ),
     (cfg.FAILURE_RKF45_REJECTION_LIMIT, "FAILURE_RKF45_REJECTION_LIMIT", (255, 0, 168)),
+    (cfg.FAILURE_RKF45_MIN_STEP_LIMIT, "FAILURE_RKF45_MIN_STEP_LIMIT", (160, 96, 255)),
     (cfg.STOP_CONDITION_T_MAX_EXCEEDED, "STOP_CONDITION_T_MAX_EXCEEDED", (255, 122, 0)),
     (cfg.FAILURE_SLOT_MANAGER_ERROR, "FAILURE_SLOT_MANAGER_ERROR", (182, 255, 0)),
     (cfg.FAILURE_GENERIC, "FAILURE_GENERIC", (0, 229, 255)),
@@ -343,6 +354,7 @@ def _accumulate_ray_hits_jit(
     term_fail_generic: int,
     term_fail_spatial_interpolation: int,
     term_fail_temporal_interpolation: int,
+    term_fail_min_step: int,
     enable_debug: bool,
     rays_puncture_labels: npt.NDArray[np.uint8],
     puncture_colors: npt.NDArray[np.float64],
@@ -417,6 +429,7 @@ def _accumulate_ray_hits_jit(
                 term_evolution_measure <= term <= term_fail_generic
                 or term == term_fail_spatial_interpolation
                 or term == term_fail_temporal_interpolation
+                or term == term_fail_min_step
             )
             and term < local_debug_term_types[py, px]
         ):
@@ -495,6 +508,7 @@ def _process_blueprint_tile(
             cfg.FAILURE_GENERIC,
             cfg.FAILURE_SPATIAL_INTERPOLATION,
             cfg.FAILURE_TEMPORAL_INTERPOLATION,
+            cfg.FAILURE_RKF45_MIN_STEP_LIMIT,
             enable_debug,
             puncture_labels[record_start : record_start + len(chunk_data)],
             PUNCTURE_COLORS,

@@ -73,6 +73,7 @@ def batch_integrator_numerical(
     normalized_eom: bool = False,
     axisymmetric_about_z: bool = False,
     fast_light: bool = False,
+    enable_metric_gradient_tolerances: bool = False,
 ) -> None:
     r"""
     Construct the CPU numerical-spacetime photon batch integrator.
@@ -85,6 +86,11 @@ def batch_integrator_numerical(
         Killing vector about the Cartesian ``z`` axis, permitting ``L_z`` checks.
     :param fast_light: Whether to map geometry at ``t_start`` for integration
         and diagnostics; requires matching numerical interpolation registration.
+    :param enable_metric_gradient_tolerances: Whether to accumulate the maximum
+        absolute metric derivative over each trial's stages and pass it to
+        RKF45 finalization. Requires ``g4DD`` or ``g4DD_d0`` interpolation and
+        matching finalization registration. A minimum scale of one or zero
+        sensing length skips the derivative scan and its storage allocation.
     :raises ValueError: If the parallelization mode, interpolation method, or
         dataset coordinate system is unsupported.
 
@@ -138,6 +144,16 @@ def batch_integrator_numerical(
     >>> "d_f_bundle[current][4 * BUNDLE_CAPACITY + log_energy_i]" in generated
     True
     >>> generated_modes.append(generated)
+    >>> for code in generated_modes:
+    ...     source = "".join(code.split())
+    ...     for buffer in ("current", "next"):
+    ...         assert f"min_steps_bridge[{buffer}][bridge_i]=all_photons_host.consecutive_min_steps[m_idx];" in source
+    ...         assert f"d_retries[{buffer}],d_min_steps[{buffer}],active_chunks[{buffer}]" in source
+    ...     assert "all_photons_host.consecutive_min_steps[m_idx]=min_steps_bridge[current][fin_i];" in source
+    ...     limit_check = source.index("constintmin_step_limit=commondata->rkf45_max_consecutive_min_steps;")
+    ...     assert source.rfind("event_detection_manager_kernel(", 0, limit_check) != -1
+    ...     assert limit_check < source.index("slot_add_photon(", limit_check)
+    ...     assert "status_bridge[current][fin_i]=FAILURE_RKF45_MIN_STEP_LIMIT;all_photons_host.status[m_idx]=FAILURE_RKF45_MIN_STEP_LIMIT;" in source
     >>> expected_counting = '''
     ... for (int sum_i = 0; sum_i < active_chunks[current]; ++sum_i) {
     ...     if (status_bridge[current][sum_i] == REJECTED) {
@@ -201,6 +217,14 @@ def batch_integrator_numerical(
     ...             else "all_photons_host.f[0*num_rays+m_idx]"
     ...         )
     ...         assert f"slot_get_index(&tsm,{coordinate_time})" in source
+    >>> with tempfile.TemporaryDirectory() as cache_dir, patch.dict(os.environ, {"XDG_CACHE_HOME": cache_dir}):
+    ...     batch_integrator_numerical(
+    ...         "Numerical", "SinhCylindricalv2n2", interpolation_method="GammaUDD",
+    ...         enable_metric_gradient_tolerances=True
+    ...     )
+    Traceback (most recent call last):
+        ...
+    ValueError: Metric-gradient tolerances require g4DD or g4DD_d0.
     """
     if "time_slot_manager" not in par.glb_extras_dict.get("BHaH_defines", {}):
         time_slot_manager_helpers()
@@ -227,6 +251,8 @@ def batch_integrator_numerical(
             "interpolation_method must be one of ('g4DD', 'g4DD_d0', 'GammaUDD'); "
             f"found '{interpolation_method}'."
         )
+    if enable_metric_gradient_tolerances and interpolation_method == "GammaUDD":
+        raise ValueError("Metric-gradient tolerances require g4DD or g4DD_d0.")
     if dataset_coord_system != "SinhCylindricalv2n2":
         raise ValueError(
             "batch_integrator_numerical currently supports only "
@@ -502,6 +528,7 @@ static void write_plane_crossings(
     interpolation_integration_param_args = (
         "d_spatial_stencil_center_i0[current], "
         "d_spatial_stencil_center_i2[current], "
+        "d_temporal_stencil_center[current], "
         + (
             "d_integration_param_bundle[current], d_h[current], stage,"
             if normalized_eom
@@ -512,6 +539,7 @@ static void write_plane_crossings(
     interpolation_integration_param_args_next = (
         "d_spatial_stencil_center_i0[next], "
         "d_spatial_stencil_center_i2[next], "
+        "d_temporal_stencil_center[next], "
         + (
             "d_integration_param_bundle[next], d_h[next], stage,"
             if normalized_eom
@@ -520,12 +548,12 @@ static void write_plane_crossings(
         + interpolation_synthetic_usage_args_next
     )
     interpolation_initial_integration_param_args = (
-        "NULL, NULL, "
+        "NULL, NULL, NULL, "
         + ("d_integration_param_bundle[0], d_h[0], 1," if normalized_eom else "")
         + "NULL, NULL, "
     )
     interpolation_terminal_integration_param_args = (
-        "NULL, NULL, "
+        "NULL, NULL, NULL, "
         + ("d_integration_param_bundle[0], d_h[0], 1," if normalized_eom else "")
         + "NULL, NULL, "
     )
@@ -573,18 +601,68 @@ static void write_plane_crossings(
     rhs_integration_param_args_next = (
         "d_integration_param_bundle[next], d_h[next]," if normalized_eom else ""
     )
+    gradient_validation = ""
+    gradient_declarations = ""
+    gradient_allocations = ""
+    gradient_cleanup = ""
+    gradient_update_current = ""
+    gradient_argument_current = ""
+    if enable_metric_gradient_tolerances:
+        gradient_validation = r"""
+    if (!isfinite(commondata->L_sense) || commondata->L_sense < 0.0 ||
+        !isfinite(commondata->tol_scale_min) ||
+        commondata->tol_scale_min <= 0.0 || commondata->tol_scale_min > 1.0) {
+        fprintf(stderr, "ERROR: metric-gradient tolerances require finite L_sense >= 0 and 0 < tol_scale_min <= 1.\n");
+        exit(EXIT_FAILURE);
+    } // END IF: invalid runtime tolerance parameters
+    const bool metric_gradient_tolerances_active =
+        commondata->tol_scale_min < 1.0 && commondata->L_sense > 0.0;
+"""
+        gradient_declarations = "double *d_trial_gradient_max[2] = {NULL, NULL};"
+        gradient_allocations = r"""
+        if (metric_gradient_tolerances_active) {
+            d_trial_gradient_max[s] = (double *)malloc(sizeof(double) * BUNDLE_CAPACITY);
+            if (d_trial_gradient_max[s] == NULL) {
+                fprintf(stderr, "ERROR: could not allocate photon metric-gradient maxima.\n");
+                exit(EXIT_FAILURE);
+            } // END IF: metric-gradient array allocation failed
+        } // END IF: metric-gradient tolerance scaling enabled
+"""
+        gradient_cleanup = "free(d_trial_gradient_max[s]);"
+        gradient_argument_current = "d_trial_gradient_max[current], "
+        gradient_update_current = r"""
+                if (metric_gradient_tolerances_active) {
+                    #pragma omp parallel for
+                    for (long int ray = 0; ray < active_chunks[current]; ++ray) {
+                        if (d_status[current][ray] != ACTIVE) continue;
+                        double stage_gradient_max = 0.0;
+                        for (int comp = 0; comp < 40; ++comp) {
+                            stage_gradient_max = fmax(stage_gradient_max,
+                                fabs(d_rhs_geometry_bundle[current][comp * BUNDLE_CAPACITY + ray]));
+                        } // END LOOP: maximum absolute Cartesian metric derivative
+                        d_trial_gradient_max[current][ray] = stage == 1
+                            ? stage_gradient_max
+                            : fmax(d_trial_gradient_max[current][ray], stage_gradient_max);
+                    } // END LOOP: accumulate per-photon derivative maxima
+                } // END IF: metric-gradient tolerance scaling enabled
+"""
+    gradient_argument_next = gradient_argument_current.replace("[current]", "[next]")
+    gradient_update_next = gradient_update_current.replace("[current]", "[next]")
     spatial_center_declarations = """
     // Trial-locked spatial stencil centers, one pair per double-buffered ray.
     int *d_spatial_stencil_center_i0[2];
     int *d_spatial_stencil_center_i2[2];
+    uint64_t *d_temporal_stencil_center[2];
 """
     spatial_center_allocations = f"""
         {malloc_device}(d_spatial_stencil_center_i0[s], sizeof(int) * BUNDLE_CAPACITY); // Allocate native dimension-0 trial centers.
         {malloc_device}(d_spatial_stencil_center_i2[s], sizeof(int) * BUNDLE_CAPACITY); // Allocate native dimension-2 trial centers.
+        {malloc_device}(d_temporal_stencil_center[s], sizeof(uint64_t) * BUNDLE_CAPACITY); // Allocate retained temporal centers.
 """
     spatial_center_frees = f"""
             {free_device}(d_spatial_stencil_center_i0[s]); // Purges native dimension-0 trial centers.
             {free_device}(d_spatial_stencil_center_i2[s]); // Purges native dimension-2 trial centers.
+            {free_device}(d_temporal_stencil_center[s]); // Release retained temporal centers.
 """
     trial_spatial_center_setup_current = r"""
             for (long int stencil_i = 0; stencil_i < active_chunks[current]; ++stencil_i) {
@@ -641,6 +719,36 @@ static void write_plane_crossings(
                     } // END ELSE: next trial center resolved
                 } // END LOOP: for stencil_i over trial rays
 """
+
+    temporal_midpoint_current = (
+        "commondata->t_start"
+        if fast_light
+        else (
+            "d_integration_param_bundle[current][stencil_i] + "
+            "0.5 * d_h[current][stencil_i]"
+            if normalized_eom
+            else "d_f_start_bundle[current][stencil_i] + "
+            "0.5 * d_h[current][stencil_i] * "
+            "d_f_start_bundle[current][4 * BUNDLE_CAPACITY + stencil_i]"
+        )
+    )
+    temporal_center_setup_current = r"""
+            for (long int stencil_i = 0; stencil_i < active_chunks[current]; ++stencil_i) {
+                d_temporal_stencil_center[current][stencil_i] =
+                    time_window_manager_numerical_nearest_selected_slice_for_time(
+                        &numerical_window, @MIDPOINT@);
+            } // END LOOP: select fixed temporal centers
+""".replace("@MIDPOINT@", temporal_midpoint_current)
+    trial_spatial_center_setup_current += temporal_center_setup_current
+    trial_spatial_center_setup_next += temporal_center_setup_current.replace(
+        "[current]", "[next]"
+    )
+    temporal_cap_disable = (
+        "commondata->numerical_spacetime_temporal_max_delta_t = 0.0;"
+        if fast_light
+        else ""
+    )
+
     normalization_kernel_name = (
         "normalization_constraint_photon_normalized"
         if normalized_eom
@@ -720,13 +828,17 @@ static void write_plane_crossings(
             memcpy(trial_status[current], d_status[current], sizeof(termination_type_t) * active_chunks[current]);
             // Finalize step: apply RKF45 error control and update the
             // integration-parameter baseline and step size $h$.
-            rkf45_finalize_and_control(commondata, d_f_bundle[current], d_f_start_bundle[current], d_k_bundle[current], d_h[current], d_status[current], d_integration_param_bundle[current], d_retries[current], active_chunks[current], current);"""
+            rkf45_finalize_and_control(commondata, d_f_bundle[current], d_f_start_bundle[current], d_k_bundle[current], d_h[current], d_status[current], d_integration_param_bundle[current], d_retries[current], d_min_steps[current], @GRADIENT_ARGUMENT@active_chunks[current], current);""".replace(
+        "@GRADIENT_ARGUMENT@", gradient_argument_current
+    )
     finalize_next = r"""
                 // Keep this chunk's reasons separate from the current buffer.
                 memcpy(trial_status[next], d_status[next], sizeof(termination_type_t) * active_chunks[next]);
                 // Finalize step: apply RKF45 error control and update the
                 // integration-parameter baseline and step size $h$.
-                rkf45_finalize_and_control(commondata, d_f_bundle[next], d_f_start_bundle[next], d_k_bundle[next], d_h[next], d_status[next], d_integration_param_bundle[next], d_retries[next], active_chunks[next], next);"""
+                rkf45_finalize_and_control(commondata, d_f_bundle[next], d_f_start_bundle[next], d_k_bundle[next], d_h[next], d_status[next], d_integration_param_bundle[next], d_retries[next], d_min_steps[next], @GRADIENT_ARGUMENT@active_chunks[next], next);""".replace(
+        "@GRADIENT_ARGUMENT@", gradient_argument_next
+    )
 
     accepted_metric_refresh_current = (
         """
@@ -742,6 +854,7 @@ static void write_plane_crossings(
                     d_status[current],
                     d_spatial_stencil_center_i0[current],
                     d_spatial_stencil_center_i2[current],
+                    d_temporal_stencil_center[current],
                     NULL,
                     NULL,
                     d_metric_bundle[current],
@@ -766,6 +879,7 @@ static void write_plane_crossings(
                     d_status[next],
                     d_spatial_stencil_center_i0[next],
                     d_spatial_stencil_center_i2[next],
+                    d_temporal_stencil_center[next],
                     NULL,
                     NULL,
                     d_metric_bundle[next],
@@ -1258,6 +1372,8 @@ static void write_plane_crossings(
                                         STOP_CONDITION_EVOLUTION_MEASURE_EXCEEDED &&
                                     all_photons_host.status[master_idx] !=
                                         FAILURE_RKF45_REJECTION_LIMIT &&
+                                    all_photons_host.status[master_idx] !=
+                                        FAILURE_RKF45_MIN_STEP_LIMIT &&
                                     current_norm_err >
                                         max_err_norm_excluding_failures) {
                                     max_err_norm_excluding_failures =
@@ -1282,7 +1398,7 @@ static void write_plane_crossings(
                     max_err_norm,
                     worst_ray_norm);
                 printf(
-                    "  Max Absolute Error, excluding STOP_CONDITION_EVOLUTION_MEASURE_EXCEEDED; FAILURE_RKF45_REJECTION_LIMIT: %e (Ray %ld)\n",
+                    "  Max Absolute Error, excluding STOP_CONDITION_EVOLUTION_MEASURE_EXCEEDED; FAILURE_RKF45_REJECTION_LIMIT; FAILURE_RKF45_MIN_STEP_LIMIT: %e (Ray %ld)\n",
                     max_err_norm_excluding_failures,
                     worst_ray_norm_excluding_failures);
                 printf(
@@ -1445,6 +1561,7 @@ static void write_plane_crossings(
 
     puncture_helpers = puncture_diagnostics()
     body = rf"""
+{gradient_validation}
     // Read requested horizon positions before evolving any photons in this tile.
     puncture_diagnostics_t puncture_data =
         puncture_load_diagnostics(commondata->puncture_diagnostics_dir);
@@ -1513,6 +1630,11 @@ static void write_plane_crossings(
     {malloc_pinned}(all_photons_host.status, sizeof(termination_type_t) * num_rays);
     // {pin_comment} the number of step-size rejections.
     {malloc_pinned}(all_photons_host.rejection_retries, sizeof(int) * num_rays);
+    {malloc_pinned}(all_photons_host.consecutive_min_steps, sizeof(int) * num_rays);
+    if (all_photons_host.consecutive_min_steps == NULL) {{
+        fprintf(stderr, "ERROR: could not allocate photon minimum-step counters.\n");
+        exit(EXIT_FAILURE);
+    }} // END IF: minimum-step allocation failed
     // {pin_comment} the previous nonterminal plane boundary state.
     {malloc_pinned}(all_photons_host.on_positive_side_of_non_terminal_plane_prev, sizeof(bool) * num_rays);
     // {pin_comment} the previous terminal-plane boundary state.
@@ -1536,6 +1658,7 @@ static void write_plane_crossings(
     termination_type_t *trial_status[2];
     // Bridge array staging the number of step-size rejections for memory transfers.
     int *retries_bridge[2];
+    int *min_steps_bridge[2];
     // Bridge array staging the previous nonterminal plane boundary side flag for memory transfers.
     bool *on_pos_non_terminal_plane_prev_bridge[2];
     // Bridge array staging the previous terminal-plane boundary side flag for memory transfers.
@@ -1568,6 +1691,7 @@ static void write_plane_crossings(
     termination_type_t *d_status[2];
     // Array tracking sequential error rejections per photon.
     int *d_retries[2];
+    int *d_min_steps[2];
     // Array flagging the previous nonterminal plane boundary side.
     bool *d_on_pos_non_terminal_plane_prev[2];
     // Array flagging the previous terminal-plane boundary side.
@@ -1577,6 +1701,7 @@ static void write_plane_crossings(
     // Array carrying the absolute master indices $m_{{idx}}$ mapping the execution chunk.
     long int *d_chunk_buffer[2];
 {spatial_center_declarations}
+{gradient_declarations}
 
     // Loop iterator for instantiating the double-buffered operational arrays.
     for (int s = 0; s < 2; ++s) {{
@@ -1592,6 +1717,7 @@ static void write_plane_crossings(
             exit(EXIT_FAILURE);
         }} // END IF: trial status allocation failed
         {malloc_pinned}(retries_bridge[s], sizeof(int) * BUNDLE_CAPACITY); // Pin retries bridges.
+        {malloc_pinned}(min_steps_bridge[s], sizeof(int) * BUNDLE_CAPACITY);
         {malloc_pinned}(on_pos_non_terminal_plane_prev_bridge[s], sizeof(bool) * BUNDLE_CAPACITY); // Pin nonterminal-plane flag bridges.
         {malloc_pinned}(on_pos_terminal_plane_prev_bridge[s], sizeof(bool) * BUNDLE_CAPACITY); // Pin source flag bridges.
 
@@ -1607,10 +1733,16 @@ static void write_plane_crossings(
         {malloc_device}(d_integration_param_bundle[s], sizeof(double) * BUNDLE_CAPACITY); // Allocate integration-parameter scratchpad.
         {malloc_device}(d_status[s], sizeof(termination_type_t) * BUNDLE_CAPACITY); // Allocate status scratchpad.
         {malloc_device}(d_retries[s], sizeof(int) * BUNDLE_CAPACITY); // Allocate retries scratchpad.
+        {malloc_device}(d_min_steps[s], sizeof(int) * BUNDLE_CAPACITY);
+        if (min_steps_bridge[s] == NULL || d_min_steps[s] == NULL) {{
+            fprintf(stderr, "ERROR: could not allocate minimum-step chunk counters.\n");
+            exit(EXIT_FAILURE);
+        }} // END IF: chunk counter allocation failed
         {malloc_device}(d_on_pos_non_terminal_plane_prev[s], sizeof(bool) * BUNDLE_CAPACITY); // Allocate nonterminal-plane flag scratchpad.
         {malloc_device}(d_on_pos_terminal_plane_prev[s], sizeof(bool) * BUNDLE_CAPACITY); // Allocate source flag scratchpad.
         {malloc_device}(d_chunk_buffer[s], sizeof(long int) * BUNDLE_CAPACITY); // Allocate chunk mapping scratchpad.
 {spatial_center_allocations}
+{gradient_allocations}
     }} // END LOOP: for s over 2
 
     // Scratchpad array holding the initialization constraint outputs. It is
@@ -1699,6 +1831,7 @@ static void write_plane_crossings(
         slot_manager_free(&tsm);
         exit(1);
     }} // END IF: numerical time-window manager initialization failed
+    {temporal_cap_disable}
     printf("Numerical spacetime first stored slice time: %.15e\n",
            (double)commondata->t_numerical_initial);
 
@@ -1954,6 +2087,13 @@ static void write_plane_crossings(
         all_photons_host.status[sync_i] = ACTIVE; // Assigns the initial trajectory activity enum for the global physics engine.
         all_photons_host.integration_param[sync_i] = {initial_integration_param}; // Sets the initial integration parameter.
         all_photons_host.rejection_retries[sync_i] = 0; // Clears the error rejection scalar to initialize the step size convergence tracking.
+        all_photons_host.consecutive_min_steps[sync_i] = 0;
+        all_photons_host.h[sync_i] = rkf45_cap_numerical_step(
+            commondata, all_photons_host.h[sync_i],
+            all_photons_host.f[4 * num_rays + sync_i],
+            &all_photons_host.status[sync_i]);
+        if (all_photons_host.status[sync_i] != ACTIVE)
+            continue;
 
         int s_idx = slot_get_index(&tsm, {initial_coordinate_time}); // Maps coordinate time to a TimeSlotManager bin.
         if (s_idx != -1) {{
@@ -2035,6 +2175,7 @@ static void write_plane_crossings(
                 h_bridge[current][bridge_i] = all_photons_host.h[m_idx]; // Packs the current integration step size $h$ into the transfer bridge.
                 status_bridge[current][bridge_i] = all_photons_host.status[m_idx]; // Packs the trajectory status enum into the transfer bridge.
                 retries_bridge[current][bridge_i] = all_photons_host.rejection_retries[m_idx]; // Packs the error rejection scalar into the transfer bridge.
+                min_steps_bridge[current][bridge_i] = all_photons_host.consecutive_min_steps[m_idx];
                 integration_param_bridge[current][bridge_i] = all_photons_host.integration_param[m_idx]; // Packs the integration parameter into the transfer bridge.
                 on_pos_non_terminal_plane_prev_bridge[current][bridge_i] = all_photons_host.on_positive_side_of_non_terminal_plane_prev[m_idx]; // Packs the nonterminal plane boundary flag into the transfer bridge.
                 on_pos_terminal_plane_prev_bridge[current][bridge_i] = all_photons_host.on_positive_side_of_terminal_plane_prev[m_idx]; // Packs the terminal-plane boundary flag into the transfer bridge.
@@ -2050,6 +2191,7 @@ static void write_plane_crossings(
             {memcpy_cpu("d_status[current]", "status_bridge[current]", "sizeof(termination_type_t) * active_chunks[current]")}
             // CPU buffer copy: Synchronously pushes rejection scalars to CPU scratch strictly on buffer [current] to minimize latency.
             {memcpy_cpu("d_retries[current]", "retries_bridge[current]", "sizeof(int) * active_chunks[current]")}
+            {memcpy_cpu("d_min_steps[current]", "min_steps_bridge[current]", "sizeof(int) * active_chunks[current]")}
             // CPU buffer copy: Synchronously pushes integration parameters to CPU scratch on buffer [current].
             {memcpy_cpu("d_integration_param_bundle[current]", "integration_param_bridge[current]", "sizeof(double) * active_chunks[current]")}
             // CPU buffer copy: Synchronously pushes nonterminal-plane boundary flags to CPU scratch strictly on buffer [current] to minimize latency.
@@ -2086,6 +2228,7 @@ static void write_plane_crossings(
                     current);
                 // RHS step: compute the geodesic equation derivatives $\dot{{ f}}^\mu$
                 // on the active buffer.
+{gradient_update_current}
                 calculate_ode_rhs_kernel(d_f_temp_bundle[current], d_metric_bundle[current], d_rhs_geometry_bundle[current], {rhs_integration_param_args} d_k_bundle[current], stage, active_chunks[current]{stream_arg_current});
                 // Stage 6 still computes its RHS; only intermediate state update is skipped.
                 if (stage < 6) {{
@@ -2112,6 +2255,7 @@ static void write_plane_crossings(
             {memcpy_cpu("status_bridge[current]", "d_status[current]", "sizeof(termination_type_t) * active_chunks[current]")}
             // CPU buffer copy: Retrieves active rejection counts back to CPU RAM synchronously on the active buffer.
             {memcpy_cpu("retries_bridge[current]", "d_retries[current]", "sizeof(int) * active_chunks[current]")}
+            {memcpy_cpu("min_steps_bridge[current]", "d_min_steps[current]", "sizeof(int) * active_chunks[current]")}
             // CPU buffer copy: Retrieves integration-parameter progress from the active buffer.
             {memcpy_cpu("integration_param_bridge[current]", "d_integration_param_bundle[current]", "sizeof(double) * active_chunks[current]")}
             // CPU buffer copy: Retrieves updated nonterminal-plane boundary flags back to CPU RAM synchronously on the active buffer.
@@ -2145,6 +2289,7 @@ static void write_plane_crossings(
                     h_bridge[next][bridge_i] = all_photons_host.h[m_idx]; // Packs the current integration step size $h$ into the transfer bridge.
                     status_bridge[next][bridge_i] = all_photons_host.status[m_idx]; // Packs the trajectory status enum into the transfer bridge.
                     retries_bridge[next][bridge_i] = all_photons_host.rejection_retries[m_idx]; // Packs the error rejection scalar into the transfer bridge.
+                    min_steps_bridge[next][bridge_i] = all_photons_host.consecutive_min_steps[m_idx];
                     integration_param_bridge[next][bridge_i] = all_photons_host.integration_param[m_idx]; // Packs the integration parameter into the transfer bridge.
                     on_pos_non_terminal_plane_prev_bridge[next][bridge_i] = all_photons_host.on_positive_side_of_non_terminal_plane_prev[m_idx]; // Packs the nonterminal plane boundary flag into the transfer bridge.
                     on_pos_terminal_plane_prev_bridge[next][bridge_i] = all_photons_host.on_positive_side_of_terminal_plane_prev[m_idx]; // Packs the terminal-plane boundary flag into the transfer bridge.
@@ -2160,6 +2305,7 @@ static void write_plane_crossings(
                 {memcpy_cpu("d_status[next]", "status_bridge[next]", "sizeof(termination_type_t) * active_chunks[next]")}
                 // CPU buffer copy: Synchronously pushes rejection scalars to CPU scratch strictly on buffer [next] to overlap execution.
                 {memcpy_cpu("d_retries[next]", "retries_bridge[next]", "sizeof(int) * active_chunks[next]")}
+                {memcpy_cpu("d_min_steps[next]", "min_steps_bridge[next]", "sizeof(int) * active_chunks[next]")}
                 // CPU buffer copy: Synchronously pushes integration parameters to CPU scratch on buffer [next].
                 {memcpy_cpu("d_integration_param_bundle[next]", "integration_param_bridge[next]", "sizeof(double) * active_chunks[next]")}
                 // CPU buffer copy: Synchronously pushes nonterminal-plane boundary flags to CPU scratch strictly on buffer [next] to overlap execution.
@@ -2197,6 +2343,7 @@ static void write_plane_crossings(
                         next);
                     // RHS step: compute the geodesic equation derivatives
                     // $\dot{{ f}}^\mu$ on the alternate buffer.
+{gradient_update_next}
                     calculate_ode_rhs_kernel(d_f_temp_bundle[next], d_metric_bundle[next], d_rhs_geometry_bundle[next], {rhs_integration_param_args_next} d_k_bundle[next], stage, active_chunks[next]{stream_arg_next});
                     // Stage 6 still computes its RHS; only intermediate state update is skipped.
                     if (stage < 6) {{
@@ -2222,6 +2369,7 @@ static void write_plane_crossings(
                 {memcpy_cpu("status_bridge[next]", "d_status[next]", "sizeof(termination_type_t) * active_chunks[next]")}
                 // CPU buffer copy: Retrieves upcoming active rejection counts back to CPU RAM synchronously on the alternate buffer.
                 {memcpy_cpu("retries_bridge[next]", "d_retries[next]", "sizeof(int) * active_chunks[next]")}
+                {memcpy_cpu("min_steps_bridge[next]", "d_min_steps[next]", "sizeof(int) * active_chunks[next]")}
                 // CPU buffer copy: Retrieves integration-parameter progress from the alternate buffer.
                 {memcpy_cpu("integration_param_bridge[next]", "d_integration_param_bundle[next]", "sizeof(double) * active_chunks[next]")}
                 // CPU buffer copy: Retrieves upcoming updated nonterminal-plane boundary flags back to CPU RAM synchronously on the alternate buffer.
@@ -2248,6 +2396,7 @@ static void write_plane_crossings(
                     all_photons_host.h[m_idx] = h_bridge[current][fin_i]; // Unpacks the synchronized step size $h$ into the global Host matrix.
                     all_photons_host.status[m_idx] = status_bridge[current][fin_i]; // Unpacks the synchronized trajectory status into the global Host matrix.
                     all_photons_host.rejection_retries[m_idx] = retries_bridge[current][fin_i]; // Unpacks the synchronized rejection count into the global Host matrix.
+                    all_photons_host.consecutive_min_steps[m_idx] = min_steps_bridge[current][fin_i];
                     all_photons_host.integration_param[m_idx] = integration_param_bridge[current][fin_i]; // Unpacks the synchronized integration parameter into the global Host matrix.
                     all_photons_host.on_positive_side_of_non_terminal_plane_prev[m_idx] = on_pos_non_terminal_plane_prev_bridge[current][fin_i]; // Unpacks the synchronized nonterminal-plane boundary flag into the global Host matrix.
                     all_photons_host.on_positive_side_of_terminal_plane_prev[m_idx] = on_pos_terminal_plane_prev_bridge[current][fin_i]; // Unpacks the synchronized terminal-plane boundary flag into the global Host matrix.
@@ -2257,6 +2406,15 @@ static void write_plane_crossings(
                 // 3. TimeSlotManager State Update (Cache-hot, strictly sequential)
                 for (int fin_i = 0; fin_i < active_chunks[current]; ++fin_i) {{
                     long int m_idx = chunk_buffer[current][fin_i];
+                    // Preserve existing physical stops and time-domain errors.
+                    const int min_step_limit = commondata->rkf45_max_consecutive_min_steps;
+                    if (min_step_limit > 0 && min_steps_bridge[current][fin_i] >= min_step_limit &&
+                        (status_bridge[current][fin_i] == REJECTED ||
+                         (status_bridge[current][fin_i] == ACTIVE &&
+                          slot_get_index(&tsm, {updated_coordinate_time}) != -1))) {{
+                        status_bridge[current][fin_i] = FAILURE_RKF45_MIN_STEP_LIMIT;
+                        all_photons_host.status[m_idx] = FAILURE_RKF45_MIN_STEP_LIMIT;
+                    }} // END IF: consecutive minimum-step limit reached
                     if (status_bridge[current][fin_i] == ACTIVE) {{  // Evaluates the continuation logic if the trajectory remains within safe physical bounds.
                         int next_s_idx = slot_get_index(&tsm, {updated_coordinate_time}); // Maps updated coordinate time to the next operational bin.
                         if (next_s_idx != -1) {{  // Confirms the physical state has not exceeded the maximum simulation time bounds.
@@ -2472,6 +2630,7 @@ static void write_plane_crossings(
             {free_pinned}(status_bridge[s]); // Purges the trajectory status bridge.
             {free_pinned}(trial_status[s]); // Release the saved trial statuses.
             {free_pinned}(retries_bridge[s]); // Purges the error rejection scalar bridge.
+            {free_pinned}(min_steps_bridge[s]);
             {free_pinned}(on_pos_non_terminal_plane_prev_bridge[s]); // Purges the nonterminal plane boundary flag bridge.
             {free_pinned}(on_pos_terminal_plane_prev_bridge[s]); // Purges the terminal-plane boundary flag bridge.
 
@@ -2482,11 +2641,13 @@ static void write_plane_crossings(
             {free_device}(d_metric_bundle[s]); // Purges the symmetric metric tensor $g_{{\mu\nu}}$ scratchpad.
             {free_device}(d_log_energy_bundle[s]); // Purges the common log-energy scratchpad.
             {free_device}(d_rhs_geometry_bundle[s]); // Purges the geometry scratchpad.
+{gradient_cleanup}
             {free_device}(d_k_bundle[s]); // Purges the derivative tensor $\dot{{f}}^\mu$ scratchpad.
             {free_device}(d_h[s]); // Purges the active integration step sizing $h$ scratchpad.
             {free_device}(d_integration_param_bundle[s]); // Purges the integration-parameter scratchpad.
             {free_device}(d_status[s]); // Purges the current trajectory status limit scratchpad.
             {free_device}(d_retries[s]); // Purges the sequential error rejection scratchpad.
+            {free_device}(d_min_steps[s]);
             {free_device}(d_on_pos_non_terminal_plane_prev[s]); // Purges the previous nonterminal plane boundary side scratchpad.
             {free_device}(d_on_pos_terminal_plane_prev[s]); // Purges the previous terminal-plane boundary side scratchpad.
             {free_device}(d_chunk_buffer[s]); // Purges the absolute master indices $m_{{idx}}$ mapping scratchpad.
@@ -2500,6 +2661,7 @@ static void write_plane_crossings(
         {free_pinned}(all_photons_host.h); // Purges the primary Host array integration step size $h$.
         {free_pinned}(all_photons_host.status); // Purges the primary Host array trajectory status enum.
         {free_pinned}(all_photons_host.rejection_retries); // Purges the primary Host array error rejection scalar.
+        {free_pinned}(all_photons_host.consecutive_min_steps);
         {free_pinned}(all_photons_host.on_positive_side_of_non_terminal_plane_prev); // Purges the primary Host array nonterminal plane boundary flag.
         {free_pinned}(all_photons_host.on_positive_side_of_terminal_plane_prev); // Purges the primary Host array terminal-plane boundary flag.
         {free_pinned}(plane_crossing_candidates);

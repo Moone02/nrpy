@@ -3,7 +3,7 @@
 Define C helpers for numerical-spacetime time-window mmap management.
 
 The NumericalTimeWindowManager owns the active mapped group of adjacent 3D-grid
-payloads in one trusted combined numerical-spacetime binary container. It
+time slices in one trusted combined numerical-spacetime binary file. It
 depends on shared TimeSlotManager definitions for slot time bounds, but keeps
 mmap and numerical file state out of analytic builds.
 
@@ -36,8 +36,9 @@ def time_window_manager_numerical(
     determines the expected combined-file magic and point-record width; the
     manager does not inspect or support multiple data formats at runtime.
 
-    This registration owns the `rkf45_max_delta_t` CodeParameter consumed by
-    the generated time-window C helpers. It also ensures the shared
+    This function registers `rkf45_max_delta_t` for backward-time lookahead and
+    `numerical_spacetime_temporal_max_delta_t` for the runtime temporal-stencil
+    step limit. It also ensures the shared
     TimeSlotManager helper is registered first so the emitted code sees
     `TimeSlotManager`, `slot_lower_time()`, and `slot_upper_time()`, and so
     the commondata slot-lattice parameters already exist.
@@ -50,12 +51,13 @@ def time_window_manager_numerical(
     combined-file slice table and queried through binary search, so the
     mapped slot window remains correct even when stored output times are not
     uniformly spaced. The debugging-only time-slice stride selects every nth
-    stored slice without changing the combined container. The nominal
-    `dt_numerical_spacetime_data` is used only for synthesized edge-node times;
-    stored slice-table times remain authoritative. The matching RKF45 step-size
-    cap is enforced in the companion finalization kernel.
+    stored slice without changing the combined file. The nominal
+    `dt_numerical_spacetime_data` sets synthesized edge-node times and bounds
+    the spacing used to compute the temporal-stencil step limit. Stored
+    slice-table times remain authoritative for retained nodes. The companion
+    finalization kernel applies that limit to initial, next, and retry steps.
 
-    :param interpolation_method: Geometry payload method to generate.
+    :param interpolation_method: Stored geometry components to interpolate.
     :param include_batch_startup_validation: Whether to emit the batch-only
         one-time startup validator. Single-photon projects do not need it.
     :raises ValueError: If `interpolation_method` is unsupported or conflicts
@@ -168,6 +170,16 @@ def time_window_manager_numerical(
             commondata=False,
             add_to_parfile=False,
         )
+
+    _ = par.register_CodeParameter(
+        "REAL",
+        __name__,
+        "numerical_spacetime_temporal_max_delta_t",
+        0.0,
+        commondata=True,
+        add_to_parfile=False,
+        description="Runtime temporal-stencil coordinate-time step limit; zero disables it.",
+    )
 
     # Step 2: Register the shared backward-time RKF45 lookahead parameter.
     _ = par.register_CodeParameter(
@@ -874,6 +886,84 @@ void Cart_to_xx_and_nearest_i0i1i2_assume_valid__rfm__SinhCylindricalv2n2(
     // NUMERICAL WINDOW LIFETIME MANAGEMENT
     //==========================================
     /**
+     * Compute a coordinate-time step limit from the retained time-node gaps.
+     *
+     * @param[in] ntwm Initialized numerical time-window manager.
+     * @return Conservative positive span, zero for one-node sampling, or NAN.
+     */
+    static inline double time_window_manager_numerical_temporal_step_limit(
+        const NumericalTimeWindowManager *ntwm) {
+      if (ntwm->temporal_interp_half_width == 0)
+        return 0.0;
+      double spacing = ntwm->dt_numerical_spacetime_data *
+                       (double)ntwm->time_slice_stride;
+      const uint64_t last =
+          time_window_manager_numerical_final_selected_slice(ntwm);
+      for (uint64_t left = 0ULL; left < last;
+           left += ntwm->time_slice_stride) {
+        const double gap =
+            ntwm->slice_times[left + ntwm->time_slice_stride] -
+            ntwm->slice_times[left];
+        if (!(gap > 0.0) || !isfinite(gap))
+          return NAN;
+        spacing = fmin(spacing, gap);
+      } // END LOOP: retained time-node gaps
+      // Include the joins between actual endpoint nodes and synthetic nodes.
+      const double nominal_spacing = ntwm->dt_numerical_spacetime_data *
+                                     (double)ntwm->time_slice_stride;
+      const uint64_t retained_intervals = last / ntwm->time_slice_stride;
+      for (uint64_t offset = 0ULL;
+           offset < (uint64_t)ntwm->temporal_interp_half_width &&
+           offset <= retained_intervals; ++offset) {
+        const uint64_t lower_center = offset * ntwm->time_slice_stride;
+        const uint64_t upper_center = last - lower_center;
+        const double lower_gap = ntwm->slice_times[0] -
+            (ntwm->slice_times[lower_center] -
+             (double)(offset + 1ULL) * nominal_spacing);
+        const double upper_gap =
+            ntwm->slice_times[upper_center] +
+            (double)(offset + 1ULL) * nominal_spacing -
+            ntwm->slice_times[last];
+        if (!(lower_gap > 0.0) || !(upper_gap > 0.0) ||
+            !isfinite(lower_gap) || !isfinite(upper_gap))
+          return NAN;
+        spacing = fmin(spacing, fmin(lower_gap, upper_gap));
+      } // END LOOP: synthetic endpoint joins
+      const double span =
+          (2.0 * (double)ntwm->temporal_interp_half_width - 1.0) * spacing;
+      return span > 0.0 && isfinite(span) ? nextafter(span, 0.0) : NAN;
+    } // END FUNCTION: temporal step limit
+
+
+    /**
+     * Return a retained or synthetic node time relative to a selected center.
+     *
+     * @param[in] ntwm Initialized numerical time-window manager.
+     * @param center Retained global center index.
+     * @param offset Signed offset in retained nodes.
+     * @return Actual stored time, or synthetic endpoint time.
+     */
+    static inline double time_window_manager_numerical_temporal_node_time(
+        const NumericalTimeWindowManager *ntwm,
+        const uint64_t center,
+        const int offset) {
+      const uint64_t last =
+          time_window_manager_numerical_final_selected_slice(ntwm);
+      if (offset < 0) {
+        const uint64_t count = (uint64_t)(-offset);
+        if (count <= center / ntwm->time_slice_stride)
+          return ntwm->slice_times[center - count * ntwm->time_slice_stride];
+      } else { // END IF: lower temporal node
+        const uint64_t count = (uint64_t)offset;
+        if (count <= (last - center) / ntwm->time_slice_stride)
+          return ntwm->slice_times[center + count * ntwm->time_slice_stride];
+      } // END ELSE: upper temporal node
+      return ntwm->slice_times[center] +
+             (double)offset * ntwm->dt_numerical_spacetime_data *
+             (double)ntwm->time_slice_stride;
+    } // END FUNCTION: temporal node time
+
+    /**
      * Reset a numerical time-window manager to an inert state.
      *
      * @param[in,out] ntwm Numerical time-window manager to reset.
@@ -1328,6 +1418,14 @@ void Cart_to_xx_and_nearest_i0i1i2_assume_valid__rfm__SinhCylindricalv2n2(
         return TIME_WINDOW_MANAGER_NUMERICAL_ERROR;
       } // END IF: first slice time nonfinite
       commondata->t_numerical_initial = (REAL)ntwm->slice_times[0];
+      const double temporal_step_limit =
+          time_window_manager_numerical_temporal_step_limit(ntwm);
+      if (!isfinite(temporal_step_limit)) {
+        time_window_manager_numerical_free(ntwm);
+        return TIME_WINDOW_MANAGER_NUMERICAL_ERROR;
+      } // END IF: retained time-node gaps invalid
+      commondata->numerical_spacetime_temporal_max_delta_t =
+          (REAL)temporal_step_limit;
       if (!isfinite((double)commondata->t_numerical_end) ||
           commondata->t_numerical_initial >= commondata->t_numerical_end) {
         fprintf(stderr,
@@ -1362,7 +1460,7 @@ void Cart_to_xx_and_nearest_i0i1i2_assume_valid__rfm__SinhCylindricalv2n2(
      * @return TIME_WINDOW_MANAGER_NUMERICAL_SUCCESS or TIME_WINDOW_MANAGER_NUMERICAL_ERROR.
      *
      * @note This mapped interval is intentionally wider than the exact slice
-     * set requested later by time_window_manager_numerical_stencil_for_time().
+     * set requested later by time_window_manager_numerical_stencil_for_center().
      * The upper side covers the centered temporal-interpolation halo above the
      * slot, while the lower side covers both the centered halo and the extra
      * backward-time RKF45 lookahead stored in
@@ -1584,23 +1682,24 @@ void Cart_to_xx_and_nearest_i0i1i2_assume_valid__rfm__SinhCylindricalv2n2(
     } // END FUNCTION: time_window_manager_numerical_grid_ptr
 
     /**
-     * Return one adaptive centered temporal interpolation stencil.
+     * Return a temporal interpolation stencil around one retained center.
      *
      * @param[in] ntwm Numerical time-window manager with an active mapped slot window.
-     * @param photon_time Photon coordinate time.
+     * @param center_slice Retained global slice index fixed for this trial.
      * @param temporal_interp_half_width Centered temporal interpolation half-width n.
      * @param[out] slice_indices Global slice indices for available mapped stencil nodes.
      * @param[out] slice_times Physical coordinate times for available mapped stencil nodes.
-     * @param[out] slice_payloads Pointers to mapped 3D-grid payloads for available stencil nodes.
+     * @param[out] slice_payloads Pointers to mapped numerical grids for available stencil nodes.
      * @param[out] num_available_slices Number of available mapped stencil nodes returned.
      * @param[out] missing_slice_times Synthetic physical coordinate times for unmapped stencil nodes.
      * @param[out] num_missing_slices Number of unmapped stencil nodes returned.
      * @return TIME_WINDOW_MANAGER_NUMERICAL_SUCCESS or TIME_WINDOW_MANAGER_NUMERICAL_ERROR.
      *
      * @pre The caller provides arrays of length at least `2*temporal_interp_half_width + 1`.
+     * @pre center_slice is returned by time_window_manager_numerical_nearest_selected_slice_for_time().
      *
      * @note This routine always constructs the same conceptual centered
-     * stencil of `2*n+1` selected time nodes around the nearest selected
+     * stencil of `2*n+1` selected time nodes around the selected
      * numerical slice. Nodes currently backed by the active mmap are returned
      * through `slice_indices`, `slice_times`, and `slice_payloads`, while
      * nodes that conceptually belong to the stencil but fall outside the
@@ -1609,9 +1708,9 @@ void Cart_to_xx_and_nearest_i0i1i2_assume_valid__rfm__SinhCylindricalv2n2(
      * The missing nodes are assumed contiguous at one stencil edge; the
      * helper does not attempt to diagnose unsupported internal holes.
      */
-    static inline int time_window_manager_numerical_stencil_for_time(
+    static inline int time_window_manager_numerical_stencil_for_center(
         const NumericalTimeWindowManager *ntwm,
-        const double photon_time,
+        const uint64_t center_slice,
         const int temporal_interp_half_width,
         uint64_t *restrict slice_indices,
         REAL *restrict slice_times,
@@ -1629,7 +1728,6 @@ void Cart_to_xx_and_nearest_i0i1i2_assume_valid__rfm__SinhCylindricalv2n2(
           missing_slice_times == NULL || num_missing_slices == NULL ||
           ntwm->slice_times == NULL || ntwm->mapped_base == NULL ||
           ntwm->time_slice_stride == 0ULL ||
-          !isfinite(photon_time) ||
           !isfinite(ntwm->dt_numerical_spacetime_data) ||
           ntwm->dt_numerical_spacetime_data <= 0.0) {
         return TIME_WINDOW_MANAGER_NUMERICAL_ERROR;
@@ -1643,9 +1741,6 @@ void Cart_to_xx_and_nearest_i0i1i2_assume_valid__rfm__SinhCylindricalv2n2(
       *num_available_slices = 0;
       *num_missing_slices = 0;
 
-      const uint64_t center_slice =
-          time_window_manager_numerical_nearest_selected_slice_for_time(
-              ntwm, photon_time);
       const uint64_t final_selected_slice =
           time_window_manager_numerical_final_selected_slice(ntwm);
       const int center_pos = temporal_interp_half_width;
@@ -1705,7 +1800,7 @@ void Cart_to_xx_and_nearest_i0i1i2_assume_valid__rfm__SinhCylindricalv2n2(
       if (*num_available_slices <= 0)
         return TIME_WINDOW_MANAGER_NUMERICAL_ERROR;
       return TIME_WINDOW_MANAGER_NUMERICAL_SUCCESS;
-    } // END FUNCTION: time_window_manager_numerical_stencil_for_time
+    } // END FUNCTION: time_window_manager_numerical_stencil_for_center
 
     """.replace("{combined_magic}", combined_magic).replace(
         "{point_record_real_count}", str(point_record_real_count)

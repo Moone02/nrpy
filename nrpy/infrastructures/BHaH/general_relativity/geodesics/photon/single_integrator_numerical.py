@@ -70,17 +70,18 @@ def single_integrator_numerical(  # pylint: disable=invalid-name,too-many-locals
     axisymmetric_about_z: bool = False,
     track_synthetic_slice_usage: bool = False,
     fast_light: bool = False,
+    enable_metric_gradient_tolerances: bool = False,
 ) -> None:
     """
     Register the standalone numerical-spacetime single-photon C integrator.
 
     :param spacetime_name: Spacetime identifier used to select photon equations.
     :param dataset_coord_system: Coordinate system used by the numerical dataset.
-    :param interpolation_method: Numerical geometry payload method used by the generated project.
+    :param interpolation_method: Stored numerical geometry components to interpolate.
     :param normalized_eom: Whether to evolve normalized coordinate-time equations.
     :param enable_rkf45_trial_debug: Whether to write one diagnostic row for every
-        RKF45 trial to ``rkf45_trials.txt`` and one row for each of its six
-        stages to ``rkf45_stages.txt``. When axial symmetry is enabled, this
+        RKF45 trial to ``rkf45_trials.txt`` and one row for each successfully
+        interpolated stage to ``rkf45_stages.txt``. When axial symmetry is enabled, this
         also adds accepted-state $L_z$ values to ``trajectory.txt``.
     :param axisymmetric_about_z: Whether the numerical spacetime has rotational
         symmetry about the Cartesian ``z`` axis, allowing $L_z$ diagnostics.
@@ -91,6 +92,11 @@ def single_integrator_numerical(  # pylint: disable=invalid-name,too-many-locals
     :param fast_light: Whether to map numerical geometry at ``t_start`` while
         photon time advances. Numerical interpolation and plane refinement
         must be registered with the same sampling option.
+    :param enable_metric_gradient_tolerances: Whether to accumulate first metric
+        derivatives over each RKF45 attempt and pass their maximum to matching
+        finalization code. Requires ``g4DD`` or ``g4DD_d0``. Trial debugging
+        appends the derivative maxima, controlling stage and component, and
+        finalization's actual tolerance scale and effective tolerances.
     :raises ValueError: If the interpolation method or dataset coordinate system
         is unsupported.
 
@@ -106,6 +112,7 @@ def single_integrator_numerical(  # pylint: disable=invalid-name,too-many-locals
     ...     cfc.CFunction_dict.clear()
     ...     single_integrator_numerical("Numerical", "SinhCylindricalv2n2")
     ...     generated = cfc.CFunction_dict["single_integrator_numerical"].full_function
+    >>> minimum_step_modes = [generated]
     >>> "# lambda t x y z p^t p^x p^y p^z L_normal norm" in generated
     True
     >>> "const double trajectory_norm = normalization.C;" in generated
@@ -118,6 +125,14 @@ def single_integrator_numerical(  # pylint: disable=invalid-name,too-many-locals
     ...     cfc.CFunction_dict.clear()
     ...     single_integrator_numerical("Numerical", "SinhCylindricalv2n2", normalized_eom=True)
     ...     generated = cfc.CFunction_dict["single_integrator_numerical"].full_function
+    >>> minimum_step_modes.append(generated)
+    >>> for code in minimum_step_modes:
+    ...     source = "".join(code.split())
+    ...     accepted_check = source.index("if(*status==ACTIVE&&commondata.rkf45_max_consecutive_min_steps>0&&")
+    ...     assert source.rfind("event_detection_manager_kernel(", 0, accepted_check) != -1
+    ...     assert source.rfind("accepted_steps++;", 0, accepted_check) != -1
+    ...     rejected = source.index("elseif(*status==REJECTED)")
+    ...     assert source.index("*status=FAILURE_RKF45_MIN_STEP_LIMIT;", rejected) < source.index("*status=ACTIVE;", rejected)
     >>> ("# lambda t x y z u Pi_1 Pi_2 Pi_3 L_normal norm" in generated and
     ...  "const double trajectory_norm = normalization.C - 1.0;" in generated)
     True
@@ -165,12 +180,22 @@ def single_integrator_numerical(  # pylint: disable=invalid-name,too-many-locals
     True
     >>> par.glb_code_params_dict["perform_synthetic_slice_check"].add_to_parfile
     True
+    >>> with tempfile.TemporaryDirectory() as cache_dir, patch.dict(os.environ, {"XDG_CACHE_HOME": cache_dir}):
+    ...     single_integrator_numerical(
+    ...         "Numerical", "SinhCylindricalv2n2", interpolation_method="GammaUDD",
+    ...         enable_metric_gradient_tolerances=True
+    ...     )
+    Traceback (most recent call last):
+        ...
+    ValueError: Metric-gradient tolerances require g4DD or g4DD_d0.
     """
     if interpolation_method not in ("g4DD", "g4DD_d0", "GammaUDD"):
         raise ValueError(
             "interpolation_method must be one of ('g4DD', 'g4DD_d0', 'GammaUDD'); "
             f"found '{interpolation_method}'."
         )
+    if enable_metric_gradient_tolerances and interpolation_method == "GammaUDD":
+        raise ValueError("Metric-gradient tolerances require g4DD or g4DD_d0.")
     if dataset_coord_system != "SinhCylindricalv2n2":
         raise ValueError(
             "single_integrator_numerical supports only "
@@ -312,10 +337,10 @@ def single_integrator_numerical(  # pylint: disable=invalid-name,too-many-locals
         trajectory_time_expression = "*integration_param"
         trajectory_header = "# lambda t x y z u Pi_1 Pi_2 Pi_3 L_normal norm\\n"
         interpolation_stage_arguments = (
-            "&trial_spatial_center.i0, &trial_spatial_center.i2, "
+            "&trial_spatial_center.i0, &trial_spatial_center.i2, &trial_temporal_center, "
             "integration_param, h, stage,"
         )
-        interpolation_initial_arguments = "NULL, NULL, integration_param, h, 1,"
+        interpolation_initial_arguments = "NULL, NULL, NULL, integration_param, h, 1,"
         rhs_integration_arguments = "integration_param, h,"
         momentum_conversion_call = (
             "photon_momentum_to_normalized_kernel(f, metric, chunk_size);"
@@ -331,14 +356,32 @@ def single_integrator_numerical(  # pylint: disable=invalid-name,too-many-locals
         trajectory_lambda_expression = "*integration_param"
         trajectory_time_expression = "f[0]"
         trajectory_header = "# lambda t x y z p^t p^x p^y p^z L_normal norm\\n"
-        interpolation_stage_arguments = (
-            "&trial_spatial_center.i0, &trial_spatial_center.i2,"
-        )
-        interpolation_initial_arguments = "NULL, NULL,"
+        interpolation_stage_arguments = "&trial_spatial_center.i0, &trial_spatial_center.i2, &trial_temporal_center,"
+        interpolation_initial_arguments = "NULL, NULL, NULL,"
         rhs_integration_arguments = ""
         momentum_conversion_call = ""
         normalization_kernel_name = "normalization_constraint_photon"
         normalization_diagnostic_expression = "normalization.C"
+
+    temporal_midpoint = (
+        "commondata.t_start"
+        if fast_light
+        else (
+            "*integration_param + 0.5 * (*h)"
+            if normalized_eom
+            else "f_start[0] + 0.5 * (*h) * f_start[4]"
+        )
+    )
+    trial_spatial_center_setup += r"""
+    const uint64_t trial_temporal_center =
+        time_window_manager_numerical_nearest_selected_slice_for_time(
+            &numerical_window, @MIDPOINT@);
+""".replace("@MIDPOINT@", temporal_midpoint)
+    temporal_cap_disable = (
+        "commondata.numerical_spacetime_temporal_max_delta_t = 0.0;"
+        if fast_light
+        else ""
+    )
 
     event_state_columns = (
         "lambda x y z u Pi_1 Pi_2 Pi_3 L_normal"
@@ -410,9 +453,18 @@ def single_integrator_numerical(  # pylint: disable=invalid-name,too-many-locals
         failed_interpolation_Lz_argument = ""
 
     accepted_metric_interpolation_arguments = (
-        interpolation_initial_arguments
+        "&trial_spatial_center.i0, &trial_spatial_center.i2, "
+        "&trial_temporal_center, integration_param, h, 1,"
         if normalized_eom
-        else "&trial_spatial_center.i0, &trial_spatial_center.i2,"
+        else "&trial_spatial_center.i0, &trial_spatial_center.i2, &trial_temporal_center,"
+    )
+    initial_temporal_cap_diagnostic = (
+        "next_h_before_temporal_cap = *h;" if enable_rkf45_trial_debug else ""
+    )
+    next_temporal_cap_diagnostic = (
+        "next_h_before_temporal_cap = trial_debug.h_before_temporal_cap;"
+        if enable_rkf45_trial_debug
+        else ""
     )
     synthetic_slice_usage_declarations = (
         r"""
@@ -470,6 +522,102 @@ def single_integrator_numerical(  # pylint: disable=invalid-name,too-many-locals
     else:
         stage_time_expression = "f_temp[0]"
 
+    gradient_validation = ""
+    gradient_trial_setup = ""
+    gradient_stage_setup = ""
+    gradient_stage_update = ""
+    gradient_call_argument = ""
+    gradient_before_finalize = ""
+    gradient_debug_declarations = ""
+    gradient_stage_format = ""
+    gradient_stage_arguments = ""
+    gradient_trial_header = ""
+    gradient_trial_format = ""
+    gradient_trial_arguments = ""
+    if enable_metric_gradient_tolerances:
+        gradient_validation = r"""
+  if (!isfinite(commondata.L_sense) || commondata.L_sense < 0.0 ||
+      !isfinite(commondata.tol_scale_min) ||
+      commondata.tol_scale_min <= 0.0 || commondata.tol_scale_min > 1.0) {
+    fprintf(stderr, "ERROR: metric-gradient tolerances require finite L_sense >= 0 and 0 < tol_scale_min <= 1.\n");
+    return EXIT_FAILURE;
+  } // END IF: invalid runtime tolerance parameters
+  const bool metric_gradient_tolerances_active =
+      commondata.tol_scale_min < 1.0 && commondata.L_sense > 0.0;
+"""
+        gradient_trial_setup = "    double trial_gradient_max = NAN;\n"
+        gradient_call_argument = "&trial_gradient_max,\n        "
+        gradient_stage_update = r"""
+      if (metric_gradient_tolerances_active && *status == ACTIVE) {
+        double stage_max = 0.0;
+        for (int comp = 0; comp < 40; ++comp) {
+          const double derivative_abs = fabs(rhs_geometry[comp]);
+          if (comp == 0 || derivative_abs > stage_max) {
+            stage_max = derivative_abs;
+@STAGE_COMPONENT@
+          } // END IF: first or larger derivative
+        } // END LOOP: maximum absolute Cartesian metric derivative
+@STAGE_MAXIMUM@
+        if (stage == 1 || stage_max > trial_gradient_max) {
+          trial_gradient_max = stage_max;
+@TRIAL_COMPONENT@
+        } // END IF: first or larger stage maximum
+      } // END IF: accumulate valid-stage metric derivatives
+"""
+        stage_component = ""
+        stage_maximum = ""
+        trial_component = ""
+        if enable_rkf45_trial_debug:
+            derivative_names = ", ".join(
+                f'"g{mu}{nu}_{direction}"'
+                for mu in range(4)
+                for nu in range(mu, 4)
+                for direction in ("t", "x", "y", "z")
+            )
+            gradient_debug_declarations = (
+                f"  const char *metric_derivative_names[40] = {{{derivative_names}}};\n"
+            )
+            gradient_trial_setup += (
+                "    int trial_gradient_max_stage = -1;\n"
+                "    int trial_gradient_max_component = -1;\n"
+            )
+            gradient_stage_setup = (
+                "      double stage_gradient_max = NAN;\n"
+                "      int stage_gradient_component = -1;\n"
+            )
+            stage_component = "            stage_gradient_component = comp;"
+            stage_maximum = "        stage_gradient_max = stage_max;"
+            trial_component = (
+                "          trial_gradient_max_stage = stage;\n"
+                "          trial_gradient_max_component = stage_gradient_component;"
+            )
+            gradient_stage_format = " %.17g %s %.17g"
+            gradient_stage_arguments = """,
+          stage_gradient_max,
+          stage_gradient_component >= 0 ? metric_derivative_names[stage_gradient_component] : "NOT_COMPUTED",
+          trial_gradient_max"""
+            gradient_trial_header = (
+                " trial_gradient_max gradient_max_stage gradient_max_component"
+                " q tol_scale atol_effective rtol_effective interpolation_status"
+            )
+            gradient_trial_format = " %.17g %d %s %.17g %.17g %.17g %.17g %s"
+            gradient_before_finalize = "    const termination_type_t interpolation_status_before_finalize = *status;"
+            gradient_trial_arguments = """,
+        trial_debug.trial_gradient_max,
+        isfinite(trial_debug.trial_gradient_max) ? trial_gradient_max_stage : -1,
+        isfinite(trial_debug.trial_gradient_max) && trial_gradient_max_component >= 0
+            ? metric_derivative_names[trial_gradient_max_component] : "NOT_COMPUTED",
+        trial_debug.q,
+        trial_debug.tol_scale,
+        trial_debug.atol_effective,
+        trial_debug.rtol_effective,
+        status_names[(int)interpolation_status_before_finalize]"""
+        gradient_stage_update = (
+            gradient_stage_update.replace("@STAGE_COMPONENT@", stage_component)
+            .replace("@STAGE_MAXIMUM@", stage_maximum)
+            .replace("@TRIAL_COMPONENT@", trial_component)
+        )
+
     if enable_rkf45_trial_debug:
         trial_component_names = (
             r"""
@@ -498,6 +646,7 @@ def single_integrator_numerical(  # pylint: disable=invalid-name,too-many-locals
         )
         trial_debug_declarations = r"""
   FILE *trial_debug_file = NULL;
+  double next_h_before_temporal_cap = NAN;
   rkf45_trial_diagnostic_t trial_debug;
   const char *trial_component_names[] = {
 {trial_component_names}
@@ -512,6 +661,15 @@ def single_integrator_numerical(  # pylint: disable=invalid-name,too-many-locals
         else:
             stage_debug_header = """# accepted_step trial_number retry_number stage h_trial t_start stage_time t x y z r_stage xx0 xx1 xx2 i0 i1 i2 stencil_i0_low stencil_i0_high stencil_i2_low stencil_i2_high stage_norm_error p^0 p^1 p^1_derivative
 """
+        if enable_metric_gradient_tolerances:
+            stage_debug_header = (
+                stage_debug_header.rstrip("\n")
+                + " stage_gradient_max stage_gradient_component trial_gradient_max_so_far\n"
+            )
+        stage_debug_header = stage_debug_header.rstrip("\n") + (
+            " temporal_center_slice temporal_center_time temporal_stencil_first_time"
+            " temporal_stencil_last_time temporal_max_delta_t h_trial_before_temporal_cap h_trial_after_temporal_cap\n"
+        )
         stage_debug_header_c = (
             stage_debug_header.rstrip("\n").replace("\\", "\\\\").replace('"', '\\"')
             + "\\n"
@@ -576,6 +734,20 @@ def single_integrator_numerical(  # pylint: disable=invalid-name,too-many-locals
           f_temp[2] * f_temp[2] +
           f_temp[3] * f_temp[3]);
       const double stage_time = {stage_time_expression};
+      const double sample_time = {"commondata.t_start" if fast_light else "stage_time"};
+      const double first_slice_time = numerical_window.slice_times[0];
+      const double final_slice_time = numerical_window.slice_times[
+          time_window_manager_numerical_final_selected_slice(&numerical_window)];
+      const double sample_first_time = sample_time <= first_slice_time ? first_slice_time :
+          sample_time >= final_slice_time ? final_slice_time :
+          time_window_manager_numerical_temporal_node_time(
+              &numerical_window, trial_temporal_center,
+              -commondata.numerical_spacetime_temporal_interp_half_width);
+      const double sample_last_time = sample_time <= first_slice_time ? first_slice_time :
+          sample_time >= final_slice_time ? final_slice_time :
+          time_window_manager_numerical_temporal_node_time(
+              &numerical_window, trial_temporal_center,
+              commondata.numerical_spacetime_temporal_interp_half_width);
       const double stage_pi1_derivative =
           k_bundle[(stage - 1) * 9 + 5];
       fprintf(
@@ -583,7 +755,7 @@ def single_integrator_numerical(  # pylint: disable=invalid-name,too-many-locals
           "%ld %ld %d %d "
           "%.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g "
           "%d %d %d %d %d %d %d "
-          "%.17g %.17g %.17g %.17g\n",
+          "%.17g %.17g %.17g %.17g{gradient_stage_format} %llu %.17g %.17g %.17g %.17g %.17g %.17g\n",
           accepted_step_before_trial,
           trial_number,
           retry_number_before,
@@ -609,7 +781,13 @@ def single_integrator_numerical(  # pylint: disable=invalid-name,too-many-locals
           stage_norm_error,
           f_temp[4],
           f_temp[5],
-          stage_pi1_derivative);
+          stage_pi1_derivative{gradient_stage_arguments},
+          (unsigned long long)trial_temporal_center,
+          numerical_window.slice_times[trial_temporal_center],
+          sample_first_time,
+          sample_last_time,
+          (double)commondata.numerical_spacetime_temporal_max_delta_t,
+          h_trial_before_temporal_cap, h_trial);
       fflush(stage_debug_file);
       }} // END IF: stage interpolation valid
 """
@@ -626,7 +804,14 @@ def single_integrator_numerical(  # pylint: disable=invalid-name,too-many-locals
       "status_name status_value t_start h_trial h_error_controller h_proposed "
       "err_norm limiting_component limiting_component_name "
       "limiting_delta_5_minus_4 limiting_error_absolute limiting_scale "
-      "limiting_error_normalized trial_result x_start y_start z_start r_start\n");
+      "limiting_error_normalized trial_result x_start y_start z_start r_start@GRADIENT_HEADER@ temporal_center_slice temporal_center_time temporal_stencil_first_time temporal_stencil_last_time temporal_max_delta_t h_trial_before_temporal_cap h_trial_after_temporal_cap\n");
+""".replace("@GRADIENT_HEADER@", gradient_trial_header)
+        if enable_metric_gradient_tolerances:
+            trial_debug_open += r"""
+  fprintf(trial_debug_file,
+      "# L_sense=%.17g tol_scale_min=%.17g atol_base=%.17g rtol_base=%.17g\n",
+      commondata.L_sense, commondata.tol_scale_min,
+      commondata.rkf45_absolute_error_tolerance, commondata.rkf45_error_tolerance);
 """
         trial_debug_trial_metadata = r"""
     const long int accepted_step_before_trial = accepted_steps;
@@ -634,6 +819,7 @@ def single_integrator_numerical(  # pylint: disable=invalid-name,too-many-locals
     const int retry_number_before = *rejection_retries;
     const double t_start = coordinate_time;
     const double h_trial = *h;
+    const double h_trial_before_temporal_cap = next_h_before_temporal_cap;
     const double x_start = f_start[1];
     const double y_start = f_start[2];
     const double z_start = f_start[3];
@@ -644,7 +830,7 @@ def single_integrator_numerical(  # pylint: disable=invalid-name,too-many-locals
         trial_debug_record = r"""
     const int trial_status_value = (int)*status;
     const char *trial_status_name =
-        (trial_status_value >= 0 && trial_status_value < 11)
+        (trial_status_value >= 0 && (size_t)trial_status_value < sizeof(status_names) / sizeof(*status_names))
             ? status_names[trial_status_value]
             : "UNKNOWN_STATUS";
     const int trial_component_value = trial_debug.limiting_component;
@@ -668,7 +854,7 @@ def single_integrator_numerical(  # pylint: disable=invalid-name,too-many-locals
     fprintf(
         trial_debug_file,
         "%ld %ld %d %d %s %d %.17g %.17g %.17g %.17g %.17g %d %s "
-        "%.17g %.17g %.17g %.17g %s %.17g %.17g %.17g %.17g\n",
+        "%.17g %.17g %.17g %.17g %s %.17g %.17g %.17g %.17g@GRADIENT_FORMAT@ %llu %.17g %.17g %.17g %.17g %.17g %.17g\n",
         accepted_step_before_trial,
         trial_number,
         retry_number_before,
@@ -690,9 +876,21 @@ def single_integrator_numerical(  # pylint: disable=invalid-name,too-many-locals
         x_start,
         y_start,
         z_start,
-        r_start);
+        r_start@GRADIENT_ARGUMENTS@,
+          (unsigned long long)trial_temporal_center,
+          numerical_window.slice_times[trial_temporal_center],
+          time_window_manager_numerical_temporal_node_time(
+              &numerical_window, trial_temporal_center,
+              -commondata.numerical_spacetime_temporal_interp_half_width),
+          time_window_manager_numerical_temporal_node_time(
+              &numerical_window, trial_temporal_center,
+              commondata.numerical_spacetime_temporal_interp_half_width),
+          (double)commondata.numerical_spacetime_temporal_max_delta_t,
+          h_trial_before_temporal_cap, h_trial);
     fflush(trial_debug_file);
-"""
+""".replace("@GRADIENT_FORMAT@", gradient_trial_format).replace(
+            "@GRADIENT_ARGUMENTS@", gradient_trial_arguments
+        )
         trial_debug_cleanup = r"""
   if (trial_debug_file != NULL)
     fclose(trial_debug_file);
@@ -739,7 +937,12 @@ numerical spacetime is axisymmetric about the Cartesian ``z`` axis
 and RKF45 trial debugging is enabled, the initial $L_z$ is printed and each
 accepted-state $L_z$ is appended to that row. When RKF45 trial debugging is
 enabled, ``rkf45_trials.txt`` records every trial and ``rkf45_stages.txt``
-records all six interpolation/RHS stages of every trial in execution order.
+records successfully interpolated RK stages in execution order. With optional
+metric-gradient scaling, stage rows append the derivative maximum, its metric
+component and derivative direction, and the running trial maximum. Trial rows
+append the final maximum, its stage and component, and finalization's actual
+q, tolerance scale, and effective absolute and relative tolerances. Uncomputed
+derivatives and unused quantities after interpolation failures are NaN.
 When a terminal or nonterminal plane is enabled, accepted steps pass through the
 shared event detector. After evolution, fixed-anchor RKF45 steps and Brent
 refinement locate each saved crossing. ``plane_crossings.txt`` records selected
@@ -775,6 +978,13 @@ the RKF45 integration parameter is lambda and ``f[0]`` is coordinate time.
   commondata_struct commondata;
   commondata_struct_set_to_default(&commondata);
   cmdline_input_and_parfile_parser(&commondata, argc, argv);
+{gradient_validation}
+
+    if (commondata.rkf45_max_consecutive_min_steps < 0) {{
+        fprintf(stderr, "ERROR: rkf45_max_consecutive_min_steps must be nonnegative.\n");
+        return 1;
+    }} // END IF: invalid minimum-step limit
+
 
   const bool plane_enabled[2] = {{
       commondata.non_terminal_plane_enabled, commondata.terminal_plane_enabled
@@ -837,6 +1047,7 @@ the RKF45 integration parameter is lambda and ``f[0]`` is coordinate time.
     "REJECTED",
     "FAILURE_SPATIAL_INTERPOLATION",
     "FAILURE_TEMPORAL_INTERPOLATION",
+    "FAILURE_RKF45_MIN_STEP_LIMIT",
   }};
 
   int exit_status = EXIT_SUCCESS;
@@ -844,6 +1055,7 @@ the RKF45 integration parameter is lambda and ``f[0]`` is coordinate time.
   FILE *plane_crossings_file = NULL;
 {trial_debug_declarations}
 {stage_debug_declarations}
+{gradient_debug_declarations}
 {synthetic_slice_usage_declarations}
   bool slot_manager_initialized = false;
   bool numerical_window_initialized = false;
@@ -861,6 +1073,7 @@ the RKF45 integration parameter is lambda and ``f[0]`` is coordinate time.
   double *integration_param = NULL;
   double *h = NULL;
   int *rejection_retries = NULL;
+  int *consecutive_min_steps = NULL;
   termination_type_t *status = NULL;
   PhotonStateSoA initial_photon = {{0}};
   bool on_positive_side_of_non_terminal_plane_prev = false;
@@ -888,11 +1101,12 @@ the RKF45 integration parameter is lambda and ``f[0]`` is coordinate time.
   BHAH_MALLOC(integration_param, sizeof(double));
   BHAH_MALLOC(h, sizeof(double));
   BHAH_MALLOC(rejection_retries, sizeof(int));
+  BHAH_MALLOC(consecutive_min_steps, sizeof(int));
   BHAH_MALLOC(status, sizeof(termination_type_t));
 
   if (f == NULL || f_start == NULL || f_temp == NULL || metric == NULL ||
       rhs_geometry == NULL || k_bundle == NULL || integration_param == NULL ||
-      h == NULL || rejection_retries == NULL || status == NULL) {{
+      h == NULL || rejection_retries == NULL || consecutive_min_steps == NULL || status == NULL) {{
     fprintf(stderr, "ERROR: failed to allocate single-photon CPU buffers.\n");
     exit_status = EXIT_FAILURE;
     goto cleanup;
@@ -949,6 +1163,7 @@ the RKF45 integration parameter is lambda and ``f[0]`` is coordinate time.
     goto cleanup;
   }} // END IF: numerical time-window manager initialization failed
   numerical_window_initialized = true;
+  {temporal_cap_disable}
   printf("Numerical spacetime first stored slice time: %.15e\n",
          (double)commondata.t_numerical_initial);
 
@@ -1124,7 +1339,16 @@ the RKF45 integration parameter is lambda and ``f[0]`` is coordinate time.
 {initial_Lz_evaluation}
 
   *rejection_retries = 0;
+  *consecutive_min_steps = 0;
   *status = ACTIVE;
+  {initial_temporal_cap_diagnostic}
+  *h = rkf45_cap_numerical_step(
+      &commondata, *h, initial_direct_momentum[0], status);
+  if (*status != ACTIVE) {{
+    fprintf(stderr, "ERROR: initial step conflicts with numerical step limits.\n");
+    exit_status = EXIT_FAILURE;
+    goto cleanup;
+  }} // END IF: initial numerical step limits incompatible
 
   printf("Initial State:\n");
   printf("  Pos (%.4f, %.4f, %.4f)\n", f[1], f[2], f[3]);
@@ -1210,10 +1434,12 @@ the RKF45 integration parameter is lambda and ``f[0]`` is coordinate time.
     const double integration_param_before_step = *integration_param;
     memcpy(f_start, f, sizeof(double) * 9);
     memcpy(f_temp, f, sizeof(double) * 9);
+{gradient_trial_setup}
 {trial_debug_trial_metadata}
 {trial_spatial_center_setup}
 
     for (int stage = 1; stage <= 6; ++stage) {{
+{gradient_stage_setup}
       numerical_interpolation(
           &commondata,
           &numerical_params,
@@ -1228,6 +1454,7 @@ the RKF45 integration parameter is lambda and ``f[0]`` is coordinate time.
           chunk_size,
           stream_idx);
 
+{gradient_stage_update}
       calculate_ode_rhs_kernel(
           f_temp,
           metric,
@@ -1250,6 +1477,7 @@ the RKF45 integration parameter is lambda and ``f[0]`` is coordinate time.
       }} // END IF: skip stage-6 intermediate state update
     }} // END LOOP: for stage over RKF45 stages
 
+{gradient_before_finalize}
     rkf45_finalize_and_control(
         &commondata,
         f,
@@ -1259,10 +1487,12 @@ the RKF45 integration parameter is lambda and ``f[0]`` is coordinate time.
         status,
         integration_param,
         rejection_retries,
-        {trial_debug_call_argument}chunk_size,
+        consecutive_min_steps,
+        {trial_debug_call_argument}{gradient_call_argument}chunk_size,
         stream_idx);
     rkf45_attempts++;
 {trial_debug_record}
+{next_temporal_cap_diagnostic}
 
     if (*status == ACTIVE) {{
       for (int component = 0; component < 9; ++component) {{
@@ -1361,6 +1591,12 @@ the RKF45 integration parameter is lambda and ``f[0]`` is coordinate time.
       fflush(trajectory_file);
       accepted_steps++;
 
+      if (*status == ACTIVE &&
+          commondata.rkf45_max_consecutive_min_steps > 0 &&
+          *consecutive_min_steps >= commondata.rkf45_max_consecutive_min_steps) {{
+        *status = FAILURE_RKF45_MIN_STEP_LIMIT;
+      }} // END IF: consecutive minimum-step limit reached
+
       if (*status != ACTIVE) {{
         if (*status == STOP_CONDITION_COORD_RADIUS_EXCEEDED) {{
           printf("Photon escaped to r > %.15e.\n", (double)commondata.r_escape);
@@ -1373,10 +1609,20 @@ the RKF45 integration parameter is lambda and ``f[0]`` is coordinate time.
         }} else if (*status == FAILURE_GENERIC) {{
           fprintf(stderr, "Accepted-state event detection failed.\n");
           exit_status = EXIT_FAILURE;
+        }} else if (*status == FAILURE_RKF45_MIN_STEP_LIMIT) {{
+          printf("RKF45 reached its consecutive minimum-step limit (%d).\n",
+                 *consecutive_min_steps);
         }} // END ELSE IF: accepted-state stop
         break;
       }} // END IF: event manager stopped the photon
     }} else if (*status == REJECTED) {{
+      if (commondata.rkf45_max_consecutive_min_steps > 0 &&
+          *consecutive_min_steps >= commondata.rkf45_max_consecutive_min_steps) {{
+        *status = FAILURE_RKF45_MIN_STEP_LIMIT;
+        printf("RKF45 reached its consecutive minimum-step limit (%d).\n",
+               *consecutive_min_steps);
+        break;
+      }} // END IF: consecutive minimum-step limit reached
       *status = ACTIVE;
       continue;
     }} // END ELSE IF: retry rejected RKF45 step
@@ -1622,6 +1868,7 @@ the RKF45 integration parameter is lambda and ``f[0]`` is coordinate time.
   BHAH_FREE(integration_param);
   BHAH_FREE(h);
   BHAH_FREE(rejection_retries);
+  BHAH_FREE(consecutive_min_steps);
   BHAH_FREE(status);
 
   return exit_status;

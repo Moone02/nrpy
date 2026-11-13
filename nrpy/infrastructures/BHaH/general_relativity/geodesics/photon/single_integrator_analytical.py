@@ -74,6 +74,12 @@ def single_integrator_analytical(
     >>> ("rkf45_trials.txt" in generated and "rkf45_stages.txt" in generated and
     ...  "# lambda t x y z u Pi_1 Pi_2 Pi_3 L_normal" in generated)
     True
+    >>> source = "".join(generated.split())
+    >>> limit_check = source.index("if(commondata.rkf45_max_consecutive_min_steps>0&&")
+    >>> assert source.rfind("event_detection_manager_kernel(", 0, limit_check) != -1
+    >>> assert source.rfind("log_energy_measure>commondata.evolution_measure_max", 0, limit_check) != -1
+    >>> assert source.rfind("*status==FAILURE_RKF45_REJECTION_LIMIT", 0, limit_check) != -1
+    >>> assert "*status=FAILURE_RKF45_MIN_STEP_LIMIT;" in source[limit_check:]
     >>> cache_dir.cleanup()
     """
     register_photon_batch_structs()
@@ -368,7 +374,7 @@ connection, and right-hand-side stages of each trial in execution order.
         trial_debug_record = r"""
       const int trial_status_value = (int)*status;
       const char *trial_status_name =
-        (trial_status_value >= 0 && trial_status_value < 9)
+        (trial_status_value >= 0 && (size_t)trial_status_value < sizeof(status_names) / sizeof(*status_names))
           ? status_names[trial_status_value]
           : "UNKNOWN_STATUS";
       const int trial_component_value = trial_debug.limiting_component;
@@ -470,6 +476,12 @@ connection, and right-hand-side stages of each trial in execution order.
     commondata_struct_set_to_default(&commondata);
     cmdline_input_and_parfile_parser(&commondata, argc, argv);
 
+    if (commondata.rkf45_max_consecutive_min_steps < 0) {{
+        fprintf(stderr, "ERROR: rkf45_max_consecutive_min_steps must be nonnegative.\n");
+        return 1;
+    }} // END IF: invalid minimum-step limit
+
+
     const bool plane_enabled[2] = {{
         commondata.non_terminal_plane_enabled, commondata.terminal_plane_enabled
     }};
@@ -516,10 +528,7 @@ connection, and right-hand-side stages of each trial in execution order.
     const long int num_rays = 1;
     const long int chunk_size = 1;
     const int stream_idx = 0;
-    // These values match the shared termination_type_t through REJECTED.
-    // Numerical-only interpolation failures are omitted because this path
-    // evaluates the analytic metric and connection directly. ACTIVE and
-    // REJECTED are intentionally 7 and 8, not the first two enum values.
+    // Match the shared termination_type_t values, including numerical failures.
     const char *status_names[] = {{
       "STOP_CONDITION_COORD_RADIUS_EXCEEDED",
       "STOP_CONDITION_TERMINAL_PLANE",
@@ -529,7 +538,10 @@ connection, and right-hand-side stages of each trial in execution order.
       "FAILURE_SLOT_MANAGER_ERROR",
       "FAILURE_GENERIC",
       "ACTIVE",
-      "REJECTED"
+      "REJECTED",
+      "FAILURE_SPATIAL_INTERPOLATION",
+      "FAILURE_TEMPORAL_INTERPOLATION",
+      "FAILURE_RKF45_MIN_STEP_LIMIT"
     }};
 
     int exit_status = EXIT_SUCCESS;
@@ -561,6 +573,7 @@ connection, and right-hand-side stages of each trial in execution order.
     double *integration_param = NULL;
     double *h = NULL;
     int *rejection_retries = NULL;
+  int *consecutive_min_steps = NULL;
     termination_type_t *status = NULL;
     double *log_energy_bundle = NULL;
 
@@ -573,12 +586,13 @@ connection, and right-hand-side stages of each trial in execution order.
     BHAH_MALLOC(integration_param, sizeof(double));
     BHAH_MALLOC(h, sizeof(double));
     BHAH_MALLOC(rejection_retries, sizeof(int));
+  BHAH_MALLOC(consecutive_min_steps, sizeof(int));
     BHAH_MALLOC(status, sizeof(termination_type_t));
     BHAH_MALLOC(log_energy_bundle, sizeof(double));
 
     if (f == NULL || f_base == NULL || f_temp == NULL || metric == NULL ||
         connection == NULL || k_bundle == NULL || integration_param == NULL ||
-        h == NULL || rejection_retries == NULL || status == NULL ||
+        h == NULL || rejection_retries == NULL || consecutive_min_steps == NULL || status == NULL ||
         log_energy_bundle == NULL) {{
       fprintf(stderr, "Error: failed to allocate photon state buffers.\n");
       exit_status = EXIT_FAILURE;
@@ -618,6 +632,7 @@ connection, and right-hand-side stages of each trial in execution order.
     *integration_param = {initial_integration_parameter};
     *h = commondata.initial_h;
     *rejection_retries = 0;
+  *consecutive_min_steps = 0;
     *status = ACTIVE;
 
     // ==========================================
@@ -704,6 +719,7 @@ connection, and right-hand-side stages of each trial in execution order.
         status,
         integration_param,
         rejection_retries,
+        consecutive_min_steps,
         {trial_debug_call_argument}chunk_size,
         stream_idx
       );
@@ -787,6 +803,15 @@ connection, and right-hand-side stages of each trial in execution order.
         );
         break;
       }} // END IF: RKF45 rejection limit was reached
+
+      if (commondata.rkf45_max_consecutive_min_steps > 0 &&
+          *consecutive_min_steps >= commondata.rkf45_max_consecutive_min_steps &&
+          (*status == ACTIVE || *status == REJECTED)) {{
+        *status = FAILURE_RKF45_MIN_STEP_LIMIT;
+        printf("RKF45 reached its consecutive minimum-step limit (%d).\n",
+               *consecutive_min_steps);
+        break;
+      }} // END IF: consecutive minimum-step limit reached
 
       if (steps >= max_accepted_steps)
         printf(
@@ -890,6 +915,7 @@ connection, and right-hand-side stages of each trial in execution order.
     BHAH_FREE(integration_param);
     BHAH_FREE(h);
     BHAH_FREE(rejection_retries);
+  BHAH_FREE(consecutive_min_steps);
     BHAH_FREE(status);
     BHAH_FREE(log_energy_bundle);
 

@@ -346,11 +346,38 @@ if __name__ == "__main__":
         help="RKF45 absolute and relative error tolerances.",
     )
     parser.add_argument(
+        "--l-sense",
+        type=float,
+        metavar="LENGTH",
+        help=(
+            "Length multiplying the maximum metric derivative for tolerance scaling; "
+            "requires g4DD or g4DD_d0; default: 1; 0 disables scaling."
+        ),
+    )
+    parser.add_argument(
+        "--tol-scale-min",
+        type=float,
+        metavar="SCALE",
+        help=(
+            "Minimum multiplier for absolute and relative RKF45 tolerances, "
+            "with 0 < SCALE <= 1; requires g4DD or g4DD_d0; default: 1 disables scaling."
+        ),
+    )
+    parser.add_argument(
         "--rkf45-step-range",
         nargs=2,
         type=float,
         metavar=("H_MIN", "H_MAX"),
         help="RKF45 minimum and maximum step magnitudes.",
+    )
+    parser.add_argument(
+        "--rkf45-max-consecutive-min-steps",
+        type=int,
+        metavar="N",
+        help=(
+            "Maximum consecutive RKF45 attempts at the minimum step magnitude, "
+            "including accepted and rejected attempts; default: 100; 0 disables."
+        ),
     )
     parser.add_argument(
         "--rkf45-max-retries",
@@ -403,6 +430,12 @@ if __name__ == "__main__":
         parser.print_help()
         sys.exit(0)
     args = parser.parse_args()
+    if args.rkf45_max_consecutive_min_steps is not None and not (
+        0 <= args.rkf45_max_consecutive_min_steps <= 2147483647
+    ):
+        parser.error(
+            "--rkf45-max-consecutive-min-steps must be between 0 and 2147483647."
+        )
 
     puncture_diagnostics_dir = ""
     if args.puncture_diagnostics_dir:
@@ -435,6 +468,24 @@ if __name__ == "__main__":
     axisymmetric_about_z = args.axisymmetric_about_z
     interpolation_method = args.interpolation_method
     rhs_uses_metric_derivatives = interpolation_method != "GammaUDD"
+
+    for option, value in (
+        ("--l-sense", args.l_sense),
+        ("--tol-scale-min", args.tol_scale_min),
+    ):
+        if value is not None:
+            _require(
+                rhs_uses_metric_derivatives,
+                f"{option} requires --interpolation-method g4DD or g4DD_d0.",
+            )
+            _require(math.isfinite(value), f"{option} must be finite.")
+    if args.l_sense is not None:
+        _require(args.l_sense >= 0.0, "--l-sense must be nonnegative.")
+    if args.tol_scale_min is not None:
+        _require(
+            0.0 < args.tol_scale_min <= 1.0,
+            "--tol-scale-min must satisfy 0 < SCALE <= 1.",
+        )
 
     _require(
         os.path.basename(args.bin_name) == args.bin_name,
@@ -681,11 +732,13 @@ if __name__ == "__main__":
     rkf45_stage_update.rkf45_stage_update()
     find_plane_crossings_brent.plane_crossing_brent_refine_candidate(
         normalized_eom=normalized_eom,
+        fast_light=args.fast_light,
     )
     rkf45_finalize_and_control_kernel.rkf45_finalize_and_control_kernel(
         enable_numerical_time_window_step_cap=True,
         normalized_eom=normalized_eom,
         retry_interpolation_failures=True,
+        enable_metric_gradient_tolerances=rhs_uses_metric_derivatives,
     )
 
     # Step 5.e: Register plane parameters and accepted-step crossing detection.
@@ -717,6 +770,7 @@ if __name__ == "__main__":
         normalized_eom=normalized_eom,
         axisymmetric_about_z=axisymmetric_about_z,
         fast_light=args.fast_light,
+        enable_metric_gradient_tolerances=rhs_uses_metric_derivatives,
     )
     main_batch.main(
         SPACETIME,
@@ -896,6 +950,10 @@ if __name__ == "__main__":
     par.adjust_CodeParam_default("rkf45_error_tolerance", 1.0e-8)
     par.adjust_CodeParam_default("rkf45_h_max", 10.0)
     par.adjust_CodeParam_default("rkf45_h_min", 1.0e-8)
+    if args.l_sense is not None:
+        par.adjust_CodeParam_default("L_sense", args.l_sense)
+    if args.tol_scale_min is not None:
+        par.adjust_CodeParam_default("tol_scale_min", args.tol_scale_min)
     if normalized_eom:
         par.adjust_CodeParam_default("rkf45_log_energy_tolerance", 1.0e0)
 
@@ -924,6 +982,10 @@ if __name__ == "__main__":
             args.rkf45_max_retries >= 0, "--rkf45-max-retries must be nonnegative."
         )
         par.adjust_CodeParam_default("rkf45_max_retries", args.rkf45_max_retries)
+    if args.rkf45_max_consecutive_min_steps is not None:
+        par.adjust_CodeParam_default(
+            "rkf45_max_consecutive_min_steps", args.rkf45_max_consecutive_min_steps
+        )
     if args.evolution_measure_max is not None:
         _require(
             args.evolution_measure_max > 0.0,

@@ -32,7 +32,7 @@ the particle-independent forwarding `main` from `geodesics/main_single.py`.
 Both single-photon generators register optional event-plane parameters and the
 crossing functions used by their integrators.
 
-Evidence (generated evidence): `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/main_batch.py` — `main`; corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/calculate_and_fill_blueprint_data_universal.py` — normalized record fields
+Evidence (descriptive behavior): `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/main_batch.py` — `main`; corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/calculate_and_fill_blueprint_data_universal.py` — normalized record fields
 
 The shared `set_initial_conditions_kernel` receives one metric evaluated at the
 observer event and constructs one validated metric-orthonormal tetrad per call.
@@ -69,22 +69,22 @@ affine normalization is distinct from the hypersurface-normal measure
 
 Evidence (public/scientific contract): `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/set_initial_conditions_kernel.py` — observer initialization; corroboration: `nrpy/examples/photon_batch_geodesic_integrator_numerical.py`, `nrpy/examples/photon_single_geodesic_integrator_analytical.py`, `nrpy/examples/photon_single_geodesic_integrator_numerical.py`, `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/single_integrator_analytical.py`, and `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/single_integrator_numerical.py` — shared observer and plane-side initialization arguments
 
-`batch_integrator_numerical` is the host orchestrator for photon batches. It
+`batch_integrator_numerical` evolves numerical-spacetime photon batches. It
 registers integration limits and RKF45 controls in `commondata`, allocates the
 Structure-of-Arrays photon state, step-size, status, saved crossing steps, and
 result buffers, and uses the TimeSlotManager to process active rays by
-coordinate-time slots. The split
-pipeline stages exchange flat bundles for state, metric, connection, derivative
-stages, affine parameter, retries, and termination state. After an accepted RKF45
+coordinate-time slots. The split kernels exchange component arrays for photon
+state, metric, metric derivatives or Christoffels, RKF45 stage derivatives,
+integration parameter, retries, and termination state. After an accepted RKF45
 step, direct mode refreshes the metric at the accepted state using the same
-trial-locked spatial stencil centers used by the RK stages. The integrator then
-fills a common per-ray log-energy bundle: normalized mode copies `u`, while
+spatial and temporal stencil centers used by the RK stages. The integrator then
+fills a per-ray log-energy array: normalized mode copies `u`, while
 direct mode computes `ln|alpha p^0|` with `normal_observer_log_energy`. The event
 manager applies the shared upper-only `evolution_measure_max` cutoff. Its
 normalization sidecar stores `|C_direct|` for direct EOM and
 `|exp(2u)(C_normalized - 1)|` for normalized EOM.
 
-Evidence (generated evidence): `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/batch_integrator_numerical.py` — `batch_integrator_numerical`; corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/time_slot_manager_helpers.py` — `TimeSlotManager`
+Evidence (descriptive behavior): `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/batch_integrator_numerical.py` — `batch_integrator_numerical`; corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/time_slot_manager_helpers.py` — `TimeSlotManager`
 
 The numerical batch terminal display reports retryable rejections in the latest
 processed photon chunk. Its `RKF45`, `Spatial`, and `Temporal` percentages all
@@ -100,6 +100,28 @@ from the smoothed RKF45 attempt rate and are not cumulative over the run.
 
 Evidence (descriptive behavior): `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/batch_integrator_numerical.py` — saved trial statuses, rejection counting, and terminal output in `batch_integrator_numerical`; corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/rkf45_finalize_and_control_kernel.py` — retryable interpolation failures and RKF45 error control
 
+All four photon integrators carry an independent per-photon
+`consecutive_min_steps` counter. The shared RKF45 finalizer increments it
+once per accepted or rejected attempt whose magnitude satisfies
+`abs(h_used) <= rkf45_h_min`, including retryable interpolation failures.
+An attempted magnitude above the floor resets it; acceptance alone does not.
+The comparison precedes any update of the proposed next step, and zero
+`rkf45_max_consecutive_min_steps` disables counting. The default positive
+limit is `100`, configurable through the generated parameter file or
+`--rkf45-max-consecutive-min-steps` in each photon example generator.
+
+The host integrators apply the limit after normal physical stopping checks
+and before requeue or retry continuation. A photon that would otherwise
+continue at the threshold receives `FAILURE_RKF45_MIN_STEP_LIMIT = 11`;
+other terminal reasons retain precedence. Accepted threshold steps retain
+their states and event checks; rejected attempts retain the previous accepted
+state. Batch counts follow global photon indices across both buffers and
+time slots. The counter is separate from the rejection counter, which still
+resets on acceptance. Its value is not added to blueprint records. Existing
+post-evolution terminal-plane selection retains its trajectory-stop reason.
+
+Evidence (descriptive behavior): `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/rkf45_finalize_and_control_kernel.py` — `rkf45_max_consecutive_min_steps` and attempted-step counting; `set_initial_conditions_kernel.py` — photon field and status; corroboration: `batch_integrator_numerical.py`, `batch_integrator_analytical.py`, `single_integrator_numerical.py`, and `single_integrator_analytical.py` — preserved counts and stopping order
+
 The RKF45 kernels are deliberately split. `interpolation_kernel` evaluates
 spacetime-specialized `g4DD_metric` and `connections` helpers for each ray and
 writes 10 metric and 40 connection components into bundles. `calculate_ode_rhs_kernel`
@@ -113,6 +135,56 @@ log-energy calculation, event manager, and time-slot helpers then decide which
 rays remain active and which step sizes advance.
 
 Evidence (public/scientific contract): `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/interpolation_kernel.py`, `calculate_ode_rhs_kernel.py`, and `rkf45_stage_update.py` — generated kernel interfaces; corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/rkf45_finalize_and_control_kernel.py` — acceptance/control
+
+The numerical batch and single-photon generators enable optional metric-gradient tolerance scaling
+for `g4DD` and `g4DD_d0` in either photon equation mode. Immediately after each
+stage's interpolation, the batch integrator scans the forty Cartesian first
+metric derivatives and retains their maximum absolute value for each photon
+over all six trial stages. Stage one overwrites the previous maximum, including
+on retries and when a working buffer receives a different photon chunk.
+Interpolation failures retain their existing rejection handling.
+The single-photon integrator performs the same scan using one local scalar
+maximum, initialized for every attempt, without an additional allocated array.
+
+Finalization computes `q = L_sense * trial_gradient_max` and
+`tol_scale = max(tol_scale_min, 1 / (1 + q))`, then multiplies both base absolute
+and relative tolerances by `tol_scale` before calculating the error norm.
+`L_sense` has units of length when Cartesian coordinates and coordinate time
+have the same units; `tol_scale_min` is dimensionless. These generated runtime
+parameters default to one. `tol_scale_min = 1` or `L_sense = 0` skips the scan,
+its per-photon allocation, and tolerance scaling. Finite `L_sense >= 0` and
+`0 < tol_scale_min <= 1` are required. The normalized log-energy tolerance is
+separate and is not multiplied by this scale.
+
+This maximum measures coordinate-dependent metric variation, not curvature.
+No additional spacetime fields are interpolated. A Python generation option
+selects the additional finalization argument and calculation; analytical
+generators retain the existing finalization calls. `GammaUDD`
+retains its existing tolerances. Fixed-anchor Brent trials and their plane
+distance and parameter-width tolerances do not use this scaling.
+
+With single-photon trial debugging enabled, `rkf45_stages.txt` appends
+`stage_gradient_max`, `stage_gradient_component`, and
+`trial_gradient_max_so_far`. Components name the metric pair and Cartesian
+derivative direction, such as `g00_t` or `g12_z`. `rkf45_trials.txt` appends
+`trial_gradient_max`, `gradient_max_stage`, `gradient_max_component`, `q`,
+`tol_scale`, `atol_effective`, `rtol_effective`, and `interpolation_status`. The shared finalization
+function writes the actual effective tolerances into its trial diagnostic
+structure. The trial file also records the sensing length, minimum scale,
+and base tolerances in a comment following its column header.
+
+Disabled scaling records `tol_scale = 1`, the base tolerances, and NaN for
+uncomputed gradient quantities, with stage `-1` and component `NOT_COMPUTED`.
+On interpolation failures, finalization records NaN for the unused gradient
+maximum, `q`, scale, and effective tolerances; stage and component also use the
+uncomputed markers. The trial failure and retry information remain available.
+`interpolation_status` preserves the status before finalization changes a
+retryable geometry failure to `REJECTED`, distinguishing it from an RKF45
+error-estimate rejection whose interpolations succeeded.
+Stage rows are written only for successful interpolations. These diagnostics
+do not add geometry evaluations or modify Brent refinement.
+
+Evidence (descriptive behavior): `nrpy/examples/photon_batch_geodesic_integrator_numerical.py` and `nrpy/examples/photon_single_geodesic_integrator_numerical.py` — metric-method registration and optional `--l-sense` and `--tol-scale-min`; corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/batch_integrator_numerical.py` and `single_integrator_numerical.py` — stage maxima and runtime parameter validation; `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/rkf45_finalize_and_control_kernel.py` — `enable_metric_gradient_tolerances`, parameter registration, local tolerance multiplication, and optional diagnostic fields
 
 `event_detection_manager_kernel` applies log-energy and coordinate-radius
 termination rules and checks enabled planes after accepted RKF45 steps. In
@@ -162,10 +234,13 @@ crossing coordinates, affine parameter, and coordinate time; terminal-plane
 texture coordinates; final angles, termination affine parameter and coordinate
 time; normalized image-sample fractions; and axial angular momentum, its
 measurement time, and signed plane residual at a refined nonterminal crossing.
-Final records admit spatial- and
-temporal-interpolation failure statuses in addition to the existing physical
-stops and numerical failures; internal `ACTIVE` and `REJECTED` states remain
-invalid serialized outcomes.
+Final records admit spatial- and temporal-interpolation failures and
+`FAILURE_RKF45_MIN_STEP_LIMIT` alongside the existing physical stops and
+numerical failures; internal `ACTIVE` and `REJECTED` states remain invalid
+serialized outcomes. The new enum value does not change the record layout
+or version. Updated readers accept earlier files of this version; older
+readers reject the new value. Analysis names the minimum-step failure, and
+the optional renderer debug overlay gives it a distinct color.
 The renderer maps the stored scan bounds to the output edges and preserves the
 vertical raster flip. The requested pixel width spans the complete stored
 `a` range; height follows the selected projected camera-plane proportions,
@@ -176,7 +251,7 @@ sample-center extrema. Plane diagnostics remain available to
 `blueprint_analysis.py`. That analysis also consumes optional matching
 normalization sidecars and plots their magnitudes by termination status.
 
-Evidence (generated evidence): `nrpy/examples/geodesic_visualizations/blueprint_config_and_schema.py` — binary-layout constants and dtype; corroboration: `nrpy/examples/geodesic_visualizations/visualize_lensed_image.py` — image placement
+Evidence (descriptive behavior): `nrpy/examples/geodesic_visualizations/blueprint_config_and_schema.py` — binary-layout constants and dtype; corroboration: `nrpy/examples/geodesic_visualizations/visualize_lensed_image.py` — image placement
 
 Metric and connection generation is shared by photon and massive geodesic
 runtimes. `g4DD_metric` writes the upper-triangular 10-component covariant
@@ -203,14 +278,33 @@ including ghost-zone points; `InputSliceInfo` describes source slices in the
 combiner. Stored slice-table times are authoritative: the first stored time is
 loaded into runtime `t_numerical_initial` and printed at startup, while the
 user supplies only `t_numerical_end`. The nominal `dt_numerical_spacetime_data`
-describes approximate evolution spacing and is used only when synthetic
-stencil edge times are required; stored output times may be nearby, nonuniform
-values.
-Callers may supply trial-locked native spatial-stencil centers; when provided,
-the wrapper reuses those center indices for every temporal-stencil payload and
-endpoint refresh. Normalized-EOM calls also provide the integration parameter,
-trial step, and RK stage so interpolated geometry uses the RK stage coordinate
-time by default; direct-EOM calls read coordinate time from the state.
+describes approximate evolution spacing, sets synthetic stencil-node times,
+and bounds the spacing used for the temporal-stencil step limit. Retained nodes
+use the stored slice-table times, which may be nonuniform.
+Numerical integration callers supply fixed native spatial centers and a fixed
+retained temporal center for each attempted RKF45 step. The wrapper reuses the
+temporal node indices and spatial centers for all stages and the accepted-state
+metric refresh. Normalized callers select the time node nearest the predicted
+coordinate-time midpoint; direct callers predict that midpoint using the
+accepted `p^0`. Retries select again using the reduced step. Standalone
+geometry requests can omit the temporal center and select nodes automatically.
+Normalized-EOM calls provide the integration parameter, trial step, and RK
+stage so the interpolant is evaluated at the actual stage coordinate time;
+direct-EOM calls read that time from the stage state.
+
+The time-window manager computes the internal runtime field
+`numerical_spacetime_temporal_max_delta_t` from temporal half-width and actual
+retained/synthetic node gaps. The finalizer's shared cap helper also bounds
+initial photon steps. This temporal limit is separate from `rkf45_h_max`
+and the mapped-slot cap. Direct conversion divides by the magnitude of the
+current accepted `p^0` with a factor of 0.9; it predicts rather than guarantees
+the stage-time span. A half-width of zero or fixed-time fast-light sampling
+disables this additional travel cap. Existing frozen endpoint dispatch and
+retry classifications remain. Single-photon trial and stage diagnostics record
+the current attempted step before and after the temporal cap; stage node bounds
+reduce to the frozen endpoint time when no temporal interpolation is performed.
+
+Evidence (descriptive behavior): `nrpy/infrastructures/BHaH/general_relativity/geodesics/interpolation/time_window_manager_numerical.py` — `time_window_manager_numerical_temporal_step_limit` and `time_window_manager_numerical_stencil_for_center`; corroboration: `numerical_interpolation.py` — `register_CFunction_numerical_interpolation`; `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/rkf45_finalize_and_control_kernel.py` — `rkf45_cap_numerical_step`; `single_integrator_numerical.py` and `batch_integrator_numerical.py` — temporal-center selection and step diagnostics
 
 ### Fixed-Time Geometry Sampling
 
@@ -233,8 +327,8 @@ propagation limits retain those advancing values. The mapping calls use the
 slot containing `t_start`, independently of the photons' scheduling slots.
 The batch diagnostic slot grids have the same time bounds and spacing as the
 main grid, so they reuse its initial slot index. Numerical plane refinement
-selects that time's slot in its own grid. The shared time-slot and numerical
-time-window helper definitions are unchanged.
+selects that time's slot in its own grid. Fast-light sampling uses the same
+time-slot and numerical time-window helpers as dynamical sampling.
 
 The single-photon integrator keeps its existing checks on the advancing
 coordinate-time slot, but fast light reuses `initial_slot_index` for geometry
@@ -247,8 +341,9 @@ outputs retain their evolving photon times.
 
 This option fixes the time used to evaluate the dynamical RHS. It does not
 construct a stationary metric by discarding its temporal derivatives. The
-existing RKF45 error controller, numerical time-window step cap, and photon
-termination conditions remain active.
+existing RKF45 error controller, mapped-slot step cap, and photon termination
+conditions remain active; fast light disables the additional temporal-stencil
+travel cap.
 
 Evidence (descriptive behavior): `nrpy/infrastructures/BHaH/general_relativity/geodesics/interpolation/numerical_interpolation.py` — `register_CFunction_numerical_interpolation`, `fast_light`; corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/batch_integrator_numerical.py` — `batch_integrator_numerical`, integration and diagnostic mapping calls; `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/find_plane_crossings_brent.py` — `find_plane_crossings_brent`; `nrpy/examples/photon_batch_geodesic_integrator_numerical.py` — `--fast-light` registration arguments
 
@@ -363,17 +458,18 @@ nonuniform slice times. For `g4DD`, analytic derivatives of that temporal basis
 provide metric time derivatives; `g4DD_d0` and `GammaUDD` instead interpolate
 their stored secondary payloads.
 
-Ray-local interpolation errors have distinct statuses. Coordinate
+Per-photon interpolation errors have distinct statuses. Coordinate
 inversion, spatial-helper, and nonfinite spatial-output failures produce
 `FAILURE_SPATIAL_INTERPOLATION`; temporal-window, temporal-helper, and
 nonfinite final temporal-output failures produce
 `FAILURE_TEMPORAL_INTERPOLATION`. The wrapper fills that ray's interpolation
-scratch outputs with `NAN`. Numerical batch RKF45 finalization retries stage
+scratch outputs with `NAN`. Numerical single- and batch-photon RKF45 finalization retry stage
 interpolation failures with a halved step magnitude, bounded below by
 `rkf45_h_min`, while preserving the last accepted state. Retryable trials use
 `REJECTED`; exceeding `rkf45_max_retries` retains the interpolation-failure
-status and ends that photon. Single-photon interpolation failures and batch
-accepted-state metric-refresh failures retain their failure status immediately.
+status and ends that photon. Accepted-state metric-refresh failures retain
+their failure status immediately. The temporal-stencil cap also bounds retry
+magnitudes; incompatible limits produce `FAILURE_GENERIC`.
 The batch integrator continues the remaining photons. Observer
 interpolation remains fatal because no rays can be initialized without the
 observer metric. Optional terminal and nonterminal normalization diagnostics
@@ -382,9 +478,9 @@ sidecar entries as `NAN` without replacing a physical termination status.
 
 Evidence (public/scientific contract): `nrpy/infrastructures/BHaH/general_relativity/geodesics/interpolation/azimuthal_symmetry_spatial_lagrange_interpolation.py`, `temporal_lagrange_interpolation.py`, and `time_window_manager_numerical.py` — spatial interpolation, temporal interpolation, and time-window behavior; corroboration: `nrpy/infrastructures/BHaH/diagnostics/combine_raytracing_time_slices.py` — combined layout and metadata; `nrpy/infrastructures/BHaH/interpolation/differentiate_interpolation_lagrange_uniform.h` — uniform-basis derivative helper
 
-Evidence (runtime diagnostic output): `nrpy/infrastructures/BHaH/general_relativity/geodesics/interpolation/numerical_interpolation.py` and `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/batch_integrator_numerical.py` — stencil classification, per-photon storage, and binary output; corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/main_batch.py` — optional parameter, per-tile filename, and runtime telemetry
+Evidence (descriptive behavior): `nrpy/infrastructures/BHaH/general_relativity/geodesics/interpolation/numerical_interpolation.py` — interpolation failure statuses and synthetic-node tracking; corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/rkf45_finalize_and_control_kernel.py` — `retry_interpolation_failures` and retry-step caps; `batch_integrator_numerical.py` — saved statuses and binary diagnostic output; `main_batch.py` — diagnostic filenames and parameters
 
-Evidence (runtime diagnostic output): `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/single_integrator_numerical.py` — single-photon tracker storage, evolution calls, and terminal reporting; corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/interpolation/numerical_interpolation.py` — synthetic-node detection and first-request recording
+Evidence (descriptive behavior): `nrpy/infrastructures/BHaH/general_relativity/geodesics/photon/single_integrator_numerical.py` — single-photon tracker storage, evolution calls, and terminal reporting; corroboration: `nrpy/infrastructures/BHaH/general_relativity/geodesics/interpolation/numerical_interpolation.py` — synthetic-node detection and first-request recording
 
 Numerical endpoint dispatch is piecewise constant. At or below the first stored
 time, the first slice is spatially interpolated; at or above the selected final
@@ -450,7 +546,7 @@ stored and applies its own endpoint policy. `combine_raytracing_time_slices.py`
 then parses those stage-1 files, validates headers, sorts by simulation time,
 and writes a read-only stacked container for downstream interpolation.
 
-Evidence (generated evidence): `nrpy/infrastructures/BHaH/diagnostics/diagnostics.py` and `output_raytracing_data.py` — diagnostics registration and exporter; corroboration: `nrpy/infrastructures/BHaH/diagnostics/combine_raytracing_time_slices.py` — stage-1 validation and combined container
+Evidence (descriptive behavior): `nrpy/infrastructures/BHaH/diagnostics/diagnostics.py` and `output_raytracing_data.py` — diagnostics registration and exporter; corroboration: `nrpy/infrastructures/BHaH/diagnostics/combine_raytracing_time_slices.py` — stage-1 validation and combined container
 
 ## Sources
 
@@ -477,7 +573,7 @@ Evidence (generated evidence): `nrpy/infrastructures/BHaH/diagnostics/diagnostic
 - [ode_gsl_wrapper_massive.py](../../../nrpy/infrastructures/BHaH/general_relativity/geodesics/massive/ode_gsl_wrapper_massive.py) - `ode_gsl_wrapper_massive`
 - [calculate_ode_rhs_massive.py](../../../nrpy/infrastructures/BHaH/general_relativity/geodesics/massive/calculate_ode_rhs_massive.py) - `calculate_ode_rhs_massive`
 - [numerical_interpolation.py](../../../nrpy/infrastructures/BHaH/general_relativity/geodesics/interpolation/numerical_interpolation.py) - `register_CFunction_numerical_interpolation`
-- [time_window_manager_numerical.py](../../../nrpy/infrastructures/BHaH/general_relativity/geodesics/interpolation/time_window_manager_numerical.py) - `time_window_manager_numerical`, `NumericalTimeWindowManager`
+- [time_window_manager_numerical.py](../../../nrpy/infrastructures/BHaH/general_relativity/geodesics/interpolation/time_window_manager_numerical.py) - `time_window_manager_numerical`, `NumericalTimeWindowManager`, `time_window_manager_numerical_temporal_step_limit`, `time_window_manager_numerical_stencil_for_center`
 - [azimuthal_symmetry_spatial_lagrange_interpolation.py](../../../nrpy/infrastructures/BHaH/general_relativity/geodesics/interpolation/azimuthal_symmetry_spatial_lagrange_interpolation.py) - `register_CFunction_azimuthal_symmetry_spatial_lagrange_interpolation`
 - [temporal_lagrange_interpolation.py](../../../nrpy/infrastructures/BHaH/general_relativity/geodesics/interpolation/temporal_lagrange_interpolation.py) - `register_CFunction_temporal_lagrange_interpolation`
 - [differentiate_interpolation_lagrange_uniform.h](../../../nrpy/infrastructures/BHaH/interpolation/differentiate_interpolation_lagrange_uniform.h) - `compute_lagrange_basis_derivative_coeffs_xi`
@@ -488,8 +584,8 @@ Evidence (generated evidence): `nrpy/infrastructures/BHaH/diagnostics/diagnostic
 
 ## See Also
 
-- [BHaH](index.md)
-- [Diagnostics Output And Checkpointing](diagnostics-output-and-checkpointing.md)
-- [Geodesics](../../equations/general-relativity/geodesics.md)
-- [Black Hole Evolution](../../examples/black-hole-evolution.md)
+- Parent: [BHaH](index.md)
+- See also: [Diagnostics Output And Checkpointing](diagnostics-output-and-checkpointing.md)
+- Depends on: [Geodesics](../../equations/general-relativity/geodesics.md)
+- Example: [Black Hole Evolution](../../examples/black-hole-evolution.md)
 - Depends on: [Grids, Coordinates, Reference Metrics, And Boundaries](grids-coordinates-reference-metrics-and-boundaries.md)

@@ -32,6 +32,29 @@ def batch_integrator_analytical(spacetime_name: str) -> None:
     Construct the CPU/OpenMP or CUDA orchestrator for analytical photon batches.
 
     :param spacetime_name: The identifier for the spacetime metric (e.g., 'KerrSchild').
+
+    Counts of minimum-size attempts follow each photon's global index across
+    both chunk buffers. Apply the limit after event checks and before requeue.
+
+    Doctests:
+    >>> import os
+    >>> import tempfile
+    >>> from unittest.mock import patch
+    >>> saved_parallelization = par.parval_from_str("parallelization")
+    >>> with tempfile.TemporaryDirectory() as cache_dir, patch.dict(os.environ, {"XDG_CACHE_HOME": cache_dir}):
+    ...     for mode in ("openmp", "cuda"):
+    ...         par.set_parval_from_str("parallelization", mode)
+    ...         cfc.CFunction_dict.clear()
+    ...         batch_integrator_analytical("KerrSchild_Cartesian")
+    ...         source = "".join(cfc.CFunction_dict["batch_integrator_analytical"].full_function.split())
+    ...         for buffer in ("current", "next"):
+    ...             assert f"min_steps_bridge[{buffer}][bridge_i]=all_photons_host.consecutive_min_steps[m_idx];" in source
+    ...             assert f"d_retries[{buffer}],d_min_steps[{buffer}],active_chunks[{buffer}]" in source
+    ...         assert "all_photons_host.consecutive_min_steps[m_idx]=min_steps_bridge[current][fin_i];" in source
+    ...         check = source.index("constintmin_step_limit=commondata->rkf45_max_consecutive_min_steps;")
+    ...         assert source.rfind("event_detection_manager_kernel(", 0, check) != -1
+    ...         assert check < source.index("slot_add_photon(", check)
+    >>> par.set_parval_from_str("parallelization", saved_parallelization)
     """
     if "time_slot_manager" not in par.glb_extras_dict.get("BHaH_defines", {}):
         time_slot_manager_helpers()
@@ -370,6 +393,11 @@ static void write_plane_crossings(
     {malloc_pinned}(all_photons_host.status, sizeof(termination_type_t) * num_rays);
     // {pin_comment} the number of step-size rejections.
     {malloc_pinned}(all_photons_host.rejection_retries, sizeof(int) * num_rays);
+    {malloc_pinned}(all_photons_host.consecutive_min_steps, sizeof(int) * num_rays);
+    if (all_photons_host.consecutive_min_steps == NULL) {{
+        fprintf(stderr, "ERROR: could not allocate photon minimum-step counters.\n");
+        exit(EXIT_FAILURE);
+    }} // END IF: minimum-step allocation failed
     // {pin_comment} the previous nonterminal plane boundary state.
     {malloc_pinned}(all_photons_host.on_positive_side_of_non_terminal_plane_prev, sizeof(bool) * num_rays);
     // {pin_comment} the previous terminal-plane boundary state.
@@ -394,6 +422,7 @@ static void write_plane_crossings(
     termination_type_t *status_bridge[2];
     // Bridge array staging the number of step-size rejections for memory transfers.
     int *retries_bridge[2];
+    int *min_steps_bridge[2];
     // Bridge array staging the previous nonterminal plane boundary side flag for memory transfers.
     bool *on_pos_non_terminal_plane_prev_bridge[2];
     // Bridge array staging the previous terminal-plane boundary side flag for memory transfers.
@@ -427,6 +456,7 @@ static void write_plane_crossings(
     termination_type_t *d_status[2];
     // Array tracking sequential error rejections per photon.
     int *d_retries[2];
+    int *d_min_steps[2];
     // Array flagging the previous nonterminal plane boundary side.
     bool *d_on_pos_non_terminal_plane_prev[2];
     // Array flagging the previous terminal-plane boundary side.
@@ -445,6 +475,7 @@ static void write_plane_crossings(
         {malloc_pinned}(h_bridge[s], sizeof(double) * BUNDLE_CAPACITY); // Pin $h$ bridges.
         {malloc_pinned}(status_bridge[s], sizeof(termination_type_t) * BUNDLE_CAPACITY); // Pin status bridges.
         {malloc_pinned}(retries_bridge[s], sizeof(int) * BUNDLE_CAPACITY); // Pin retries bridges.
+        {malloc_pinned}(min_steps_bridge[s], sizeof(int) * BUNDLE_CAPACITY);
         {malloc_pinned}(on_pos_non_terminal_plane_prev_bridge[s], sizeof(bool) * BUNDLE_CAPACITY); // Pin nonterminal-plane flag bridges.
         {malloc_pinned}(on_pos_terminal_plane_prev_bridge[s], sizeof(bool) * BUNDLE_CAPACITY); // Pin terminal-plane side-flag bridges.
 
@@ -461,6 +492,11 @@ static void write_plane_crossings(
         {malloc_device}(d_integration_param_start[s], sizeof(double) * BUNDLE_CAPACITY);
         {malloc_device}(d_status[s], sizeof(termination_type_t) * BUNDLE_CAPACITY); // Allocate status scratchpad.
         {malloc_device}(d_retries[s], sizeof(int) * BUNDLE_CAPACITY); // Allocate retries scratchpad.
+        {malloc_device}(d_min_steps[s], sizeof(int) * BUNDLE_CAPACITY);
+        if (min_steps_bridge[s] == NULL || d_min_steps[s] == NULL) {{
+            fprintf(stderr, "ERROR: could not allocate minimum-step chunk counters.\n");
+            exit(EXIT_FAILURE);
+        }} // END IF: chunk counter allocation failed
         {malloc_device}(d_on_pos_non_terminal_plane_prev[s], sizeof(bool) * BUNDLE_CAPACITY); // Allocate nonterminal-plane flag scratchpad.
         {malloc_device}(d_on_pos_terminal_plane_prev[s], sizeof(bool) * BUNDLE_CAPACITY); // Allocate terminal-plane side-flag scratchpad.
         {malloc_device}(d_chunk_buffer[s], sizeof(long int) * BUNDLE_CAPACITY); // Allocate chunk mapping scratchpad.
@@ -621,6 +657,7 @@ static void write_plane_crossings(
         all_photons_host.status[sync_i] = ACTIVE; // Assigns the initial trajectory activity enum for the global physics engine.
         all_photons_host.integration_param[sync_i] = 0.0; // Sets the initial baseline progression scalar for the integration parameter $\lambda$.
         all_photons_host.rejection_retries[sync_i] = 0; // Clears the error rejection scalar to initialize the step size convergence tracking.
+        all_photons_host.consecutive_min_steps[sync_i] = 0;
 
 
         int s_idx = slot_get_index(&tsm, all_photons_host.f[sync_i]); // Integer index $s_{{idx}}$ mapping the current photon's temporal coordinate $t$ to a discrete execution bin in the TimeSlotManager.
@@ -680,6 +717,7 @@ static void write_plane_crossings(
                 h_bridge[current][bridge_i] = all_photons_host.h[m_idx]; // Packs the current integration step size $h$ into the transfer bridge.
                 status_bridge[current][bridge_i] = all_photons_host.status[m_idx]; // Packs the trajectory status enum into the transfer bridge.
                 retries_bridge[current][bridge_i] = all_photons_host.rejection_retries[m_idx]; // Packs the error rejection scalar into the transfer bridge.
+                min_steps_bridge[current][bridge_i] = all_photons_host.consecutive_min_steps[m_idx];
                 integration_param_bridge[current][bridge_i] = all_photons_host.integration_param[m_idx]; // Packs the integration parameter $\lambda$ into the transfer bridge.
                 on_pos_non_terminal_plane_prev_bridge[current][bridge_i] = all_photons_host.on_positive_side_of_non_terminal_plane_prev[m_idx]; // Packs the nonterminal plane boundary flag into the transfer bridge.
                 on_pos_terminal_plane_prev_bridge[current][bridge_i] = all_photons_host.on_positive_side_of_terminal_plane_prev[m_idx]; // Packs the terminal-plane boundary flag into the transfer bridge.
@@ -695,6 +733,7 @@ static void write_plane_crossings(
             {memcpy_async("d_status[current]", "status_bridge[current]", "sizeof(termination_type_t) * active_chunks[current]", "cudaMemcpyHostToDevice", "streams[current]")}
             // Host-to-Device transfer: Asynchronously pushes rejection scalars to VRAM strictly on stream [current] to minimize latency.
             {memcpy_async("d_retries[current]", "retries_bridge[current]", "sizeof(int) * active_chunks[current]", "cudaMemcpyHostToDevice", "streams[current]")}
+            {memcpy_async("d_min_steps[current]", "min_steps_bridge[current]", "sizeof(int) * active_chunks[current]", "cudaMemcpyHostToDevice", "streams[current]")}
             // Host-to-Device transfer: Asynchronously pushes integration parameters $\lambda$ to VRAM strictly on stream [current] to minimize latency.
             {memcpy_async("d_integration_param[current]", "integration_param_bridge[current]", "sizeof(double) * active_chunks[current]", "cudaMemcpyHostToDevice", "streams[current]")}
             {memcpy_async("d_integration_param_start[current]", "integration_param_bridge[current]", "sizeof(double) * active_chunks[current]", "cudaMemcpyHostToDevice", "streams[current]")}
@@ -725,7 +764,7 @@ static void write_plane_crossings(
             }} // END LOOP: for stage over 6
 
             // Kernel Launch: Applies RKF45 error control to finalize the step-size $h$ and update the integration baseline.
-            rkf45_finalize_and_control(commondata, d_f_bundle[current], d_f_start_bundle[current], d_k_bundle[current], d_h[current], d_status[current], d_integration_param[current], d_retries[current], active_chunks[current]{stream_arg_current});
+            rkf45_finalize_and_control(commondata, d_f_bundle[current], d_f_start_bundle[current], d_k_bundle[current], d_h[current], d_status[current], d_integration_param[current], d_retries[current], d_min_steps[current], active_chunks[current]{stream_arg_current});
             // Kernel Launch: Refreshes the accepted-state metric before evaluating the common log-energy measure.
             interpolation_kernel_{spacetime_name}(commondata, d_f_bundle[current], d_metric_bundle[current], NULL, active_chunks[current]{stream_arg_current});
             // Kernel Launch: Computes the accepted-state normal-observer log-energy measure $\ln|\alpha p^0|$.
@@ -743,6 +782,7 @@ static void write_plane_crossings(
             {memcpy_async("status_bridge[current]", "d_status[current]", "sizeof(termination_type_t) * active_chunks[current]", "cudaMemcpyDeviceToHost", "streams[current]")}
             // Device-to-Host transfer: Retrieves active rejection counts back to CPU RAM asynchronously on the active stream.
             {memcpy_async("retries_bridge[current]", "d_retries[current]", "sizeof(int) * active_chunks[current]", "cudaMemcpyDeviceToHost", "streams[current]")}
+            {memcpy_async("min_steps_bridge[current]", "d_min_steps[current]", "sizeof(int) * active_chunks[current]", "cudaMemcpyDeviceToHost", "streams[current]")}
             // Device-to-Host transfer: Retrieves total integration-parameter progression $\lambda$ back to CPU RAM asynchronously on the active stream.
             {memcpy_async("integration_param_bridge[current]", "d_integration_param[current]", "sizeof(double) * active_chunks[current]", "cudaMemcpyDeviceToHost", "streams[current]")}
             // Device-to-Host transfer: Retrieves updated nonterminal-plane boundary flags back to CPU RAM asynchronously on the active stream.
@@ -778,6 +818,7 @@ static void write_plane_crossings(
                     h_bridge[next][bridge_i] = all_photons_host.h[m_idx]; // Packs the current integration step size $h$ into the transfer bridge.
                     status_bridge[next][bridge_i] = all_photons_host.status[m_idx]; // Packs the trajectory status enum into the transfer bridge.
                     retries_bridge[next][bridge_i] = all_photons_host.rejection_retries[m_idx]; // Packs the error rejection scalar into the transfer bridge.
+                    min_steps_bridge[next][bridge_i] = all_photons_host.consecutive_min_steps[m_idx];
                     integration_param_bridge[next][bridge_i] = all_photons_host.integration_param[m_idx]; // Packs the integration parameter $\lambda$ into the transfer bridge.
                     on_pos_non_terminal_plane_prev_bridge[next][bridge_i] = all_photons_host.on_positive_side_of_non_terminal_plane_prev[m_idx]; // Packs the nonterminal plane boundary flag into the transfer bridge.
                     on_pos_terminal_plane_prev_bridge[next][bridge_i] = all_photons_host.on_positive_side_of_terminal_plane_prev[m_idx]; // Packs the terminal-plane boundary flag into the transfer bridge.
@@ -793,6 +834,7 @@ static void write_plane_crossings(
                 {memcpy_async("d_status[next]", "status_bridge[next]", "sizeof(termination_type_t) * active_chunks[next]", "cudaMemcpyHostToDevice", "streams[next]")}
                 // Host-to-Device transfer: Asynchronously pushes rejection scalars to VRAM strictly on stream [next] to overlap execution.
                 {memcpy_async("d_retries[next]", "retries_bridge[next]", "sizeof(int) * active_chunks[next]", "cudaMemcpyHostToDevice", "streams[next]")}
+                {memcpy_async("d_min_steps[next]", "min_steps_bridge[next]", "sizeof(int) * active_chunks[next]", "cudaMemcpyHostToDevice", "streams[next]")}
                 // Host-to-Device transfer: Asynchronously pushes integration parameters $\lambda$ to VRAM strictly on stream [next] to overlap execution.
                 {memcpy_async("d_integration_param[next]", "integration_param_bridge[next]", "sizeof(double) * active_chunks[next]", "cudaMemcpyHostToDevice", "streams[next]")}
                 {memcpy_async("d_integration_param_start[next]", "integration_param_bridge[next]", "sizeof(double) * active_chunks[next]", "cudaMemcpyHostToDevice", "streams[next]")}
@@ -823,7 +865,7 @@ static void write_plane_crossings(
                 }} // END LOOP: for stage over 6
 
                 // Kernel Launch: Applies RKF45 error control to finalize the step-size $h$ and update the upcoming integration baseline.
-                rkf45_finalize_and_control(commondata, d_f_bundle[next], d_f_start_bundle[next], d_k_bundle[next], d_h[next], d_status[next], d_integration_param[next], d_retries[next], active_chunks[next]{stream_arg_next});
+                rkf45_finalize_and_control(commondata, d_f_bundle[next], d_f_start_bundle[next], d_k_bundle[next], d_h[next], d_status[next], d_integration_param[next], d_retries[next], d_min_steps[next], active_chunks[next]{stream_arg_next});
                 // Kernel Launch: Refreshes the accepted-state metric before evaluating the common log-energy measure.
                 interpolation_kernel_{spacetime_name}(commondata, d_f_bundle[next], d_metric_bundle[next], NULL, active_chunks[next]{stream_arg_next});
                 // Kernel Launch: Computes the accepted-state normal-observer log-energy measure $\ln|\alpha p^0|$.
@@ -840,6 +882,7 @@ static void write_plane_crossings(
                 {memcpy_async("status_bridge[next]", "d_status[next]", "sizeof(termination_type_t) * active_chunks[next]", "cudaMemcpyDeviceToHost", "streams[next]")}
                 // Device-to-Host transfer: Retrieves upcoming active rejection counts back to CPU RAM asynchronously on the alternate stream.
                 {memcpy_async("retries_bridge[next]", "d_retries[next]", "sizeof(int) * active_chunks[next]", "cudaMemcpyDeviceToHost", "streams[next]")}
+                {memcpy_async("min_steps_bridge[next]", "d_min_steps[next]", "sizeof(int) * active_chunks[next]", "cudaMemcpyDeviceToHost", "streams[next]")}
                 // Device-to-Host transfer: Retrieves upcoming total integration-parameter progression $\lambda$ back to CPU RAM asynchronously on the alternate stream.
                 {memcpy_async("integration_param_bridge[next]", "d_integration_param[next]", "sizeof(double) * active_chunks[next]", "cudaMemcpyDeviceToHost", "streams[next]")}
                 // Device-to-Host transfer: Retrieves upcoming updated nonterminal-plane boundary flags back to CPU RAM asynchronously on the alternate stream.
@@ -868,6 +911,7 @@ static void write_plane_crossings(
                     all_photons_host.h[m_idx] = h_bridge[current][fin_i]; // Unpacks the synchronized step size $h$ into the global Host matrix.
                     all_photons_host.status[m_idx] = status_bridge[current][fin_i]; // Unpacks the synchronized trajectory status into the global Host matrix.
                     all_photons_host.rejection_retries[m_idx] = retries_bridge[current][fin_i]; // Unpacks the synchronized rejection count into the global Host matrix.
+                    all_photons_host.consecutive_min_steps[m_idx] = min_steps_bridge[current][fin_i];
                     all_photons_host.integration_param[m_idx] = integration_param_bridge[current][fin_i]; // Unpacks the synchronized integration parameter $\lambda$ into the global Host matrix.
                     all_photons_host.on_positive_side_of_non_terminal_plane_prev[m_idx] = on_pos_non_terminal_plane_prev_bridge[current][fin_i]; // Unpacks the synchronized nonterminal-plane boundary flag into the global Host matrix.
                     all_photons_host.on_positive_side_of_terminal_plane_prev[m_idx] = on_pos_terminal_plane_prev_bridge[current][fin_i]; // Unpacks the synchronized terminal-plane boundary flag into the global Host matrix.
@@ -876,6 +920,15 @@ static void write_plane_crossings(
                 // 3. TimeSlotManager State Update (Cache-hot, strictly sequential)
                 for (int fin_i = 0; fin_i < active_chunks[current]; ++fin_i) {{
                     long int m_idx = chunk_buffer[current][fin_i];
+                    // Preserve existing physical stops and time-domain errors.
+                    const int min_step_limit = commondata->rkf45_max_consecutive_min_steps;
+                    if (min_step_limit > 0 && min_steps_bridge[current][fin_i] >= min_step_limit &&
+                        (status_bridge[current][fin_i] == REJECTED ||
+                         (status_bridge[current][fin_i] == ACTIVE &&
+                          slot_get_index(&tsm, all_photons_host.f[m_idx]) != -1))) {{
+                        status_bridge[current][fin_i] = FAILURE_RKF45_MIN_STEP_LIMIT;
+                        all_photons_host.status[m_idx] = FAILURE_RKF45_MIN_STEP_LIMIT;
+                    }} // END IF: consecutive minimum-step limit reached
                     if (status_bridge[current][fin_i] == ACTIVE) {{  // Evaluates the continuation logic if the trajectory remains within safe physical bounds.
                         int next_s_idx = slot_get_index(&tsm, all_photons_host.f[m_idx]); // Evaluates the updated temporal coordinate $t$ to determine the next operational bin.
                         if (next_s_idx != -1) {{  // Confirms the physical state has not exceeded the maximum simulation time bounds.
@@ -1081,6 +1134,7 @@ static void write_plane_crossings(
             {free_pinned}(h_bridge[s]); // Purges the integration step size $h$ bridge.
             {free_pinned}(status_bridge[s]); // Purges the trajectory status bridge.
             {free_pinned}(retries_bridge[s]); // Purges the error rejection scalar bridge.
+            {free_pinned}(min_steps_bridge[s]);
             {free_pinned}(on_pos_non_terminal_plane_prev_bridge[s]); // Purges the nonterminal plane boundary flag bridge.
             {free_pinned}(on_pos_terminal_plane_prev_bridge[s]); // Purges the terminal-plane boundary flag bridge.
 
@@ -1097,6 +1151,7 @@ static void write_plane_crossings(
             {free_device}(d_integration_param_start[s]);
             {free_device}(d_status[s]); // Purges the current trajectory status limit scratchpad.
             {free_device}(d_retries[s]); // Purges the sequential error rejection scratchpad.
+            {free_device}(d_min_steps[s]);
             {free_device}(d_on_pos_non_terminal_plane_prev[s]); // Purges the previous nonterminal plane boundary side scratchpad.
             {free_device}(d_on_pos_terminal_plane_prev[s]); // Purges the previous terminal-plane boundary side scratchpad.
             {free_device}(d_chunk_buffer[s]); // Purges the absolute master indices $m_{{idx}}$ mapping scratchpad.
@@ -1197,6 +1252,7 @@ static void write_plane_crossings(
         {free_pinned}(all_photons_host.h); // Purges the primary Host array integration step size $h$.
         {free_pinned}(all_photons_host.status); // Purges the primary Host array trajectory status enum.
         {free_pinned}(all_photons_host.rejection_retries); // Purges the primary Host array error rejection scalar.
+        {free_pinned}(all_photons_host.consecutive_min_steps);
         {free_pinned}(all_photons_host.on_positive_side_of_non_terminal_plane_prev); // Purges the primary Host array nonterminal plane boundary flag.
         {free_pinned}(all_photons_host.on_positive_side_of_terminal_plane_prev); // Purges the primary Host array terminal-plane boundary flag.
         {free_pinned}(plane_crossing_candidates);

@@ -72,9 +72,12 @@ def register_CFunction_numerical_interpolation(
     or apply a C1 temporal interpolator. For `g4DD_d0`, metric time derivatives
     are zeroed at direct endpoints and synthetic frozen nodes; `GammaUDD`
     endpoint Christoffels are reused exactly as stored. Rays between those
-    bounds use the adaptive temporal stencil selected by
-    `time_window_manager_numerical_stencil_for_time()` in
-    `time_window_manager_numerical`, spatially interpolate only the mapped
+    bounds use `time_window_manager_numerical_stencil_for_center()` with the
+    optional retained temporal center supplied by the caller. Without that
+    center, standalone requests select the nearest retained slice automatically.
+    All stages of a numerical RKF45 attempt use one midpoint-selected center
+    while evaluating the interpolant at each stage's actual event. They
+    spatially interpolate only the mapped
     numerical stencil subset, fill lower missing stencil nodes by spatially
     interpolating the first selected numerical slice, fill upper missing stencil
     nodes by reusing the final selected numerical slice, and then perform
@@ -205,13 +208,14 @@ def register_CFunction_numerical_interpolation(
         if interpolation_method == "g4DD_d0"
         else ""
     )
-    # Both EOM modes accept optional fixed spatial centers. The numerical batch
-    # integrator locks these once per RK trial and reuses them for every stage,
-    # including the accepted-state metric refresh used by direct EOM.
+    # Numerical callers can retain spatial and temporal centers for every stage
+    # and the accepted-state metric refresh within one RK trial.
     spatial_center_params = """const int *restrict d_spatial_stencil_center_i0,
-                const int *restrict d_spatial_stencil_center_i2,"""
+                const int *restrict d_spatial_stencil_center_i2,
+                const uint64_t *restrict d_temporal_stencil_center,"""
     spatial_center_desc = """@param[in] d_spatial_stencil_center_i0 Trial-locked native dimension-0 centers, or NULL.
 @param[in] d_spatial_stencil_center_i2 Trial-locked native dimension-2 centers, or NULL.
+@param[in] d_temporal_stencil_center Trial-locked retained time-slice centers, or NULL.
 """
     spatial_center_setup = r"""
     NumericalSpatialStencilCenter fixed_center;
@@ -583,10 +587,15 @@ independently ray-by-ray.
         } // END ELSE: final endpoint spatial output
       } // END ELSE: final endpoint payload available
     } else {
-      // Step 2: Recover one adaptive numerical stencil from the slot-level
-      // time window shared by the whole chunk.
-      const int window_status = time_window_manager_numerical_stencil_for_time(
-          numerical_window, (double)t, temporal_half_width,
+      // Step 2: Use the trial's retained temporal center, or select one for
+      // a standalone request, within the mapped numerical time window.
+      const uint64_t temporal_center =
+          d_temporal_stencil_center != NULL
+              ? d_temporal_stencil_center[i]
+              : time_window_manager_numerical_nearest_selected_slice_for_time(
+                    numerical_window, (double)t);
+      const int window_status = time_window_manager_numerical_stencil_for_center(
+          numerical_window, temporal_center, temporal_half_width,
           available_slice_indices, available_slice_times,
           available_slice_payloads, &num_available_slices, missing_slice_times,
           &num_missing_slices);

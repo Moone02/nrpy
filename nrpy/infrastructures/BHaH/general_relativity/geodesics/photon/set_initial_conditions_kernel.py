@@ -55,6 +55,7 @@ batch_structs_c_code = r"""
         REJECTED = 8, // Photon RKF45 step was rejected.
         FAILURE_SPATIAL_INTERPOLATION = 9, // Spatial interpolation failed for this photon.
         FAILURE_TEMPORAL_INTERPOLATION = 10, // Temporal interpolation failed for this photon.
+        FAILURE_RKF45_MIN_STEP_LIMIT = 11, // Too many consecutive minimum-size attempts.
     } termination_type_t; // END ENUM: termination_type_t
 
     // Native same-build metadata for one serialized blueprint tile.
@@ -193,6 +194,7 @@ batch_structs_c_code = r"""
         double *h; // Current adaptive step size $h$ for the RKF45 integrator.
         termination_type_t *status; // Current physical/numerical status of the photon.
         int *rejection_retries; // Counter for consecutive RKF45 error tolerance rejections.
+        int *consecutive_min_steps; // Consecutive attempts at the minimum step magnitude.
 
         // Event Detection State Flags (Persistence Layer for Batch C)
         bool *on_positive_side_of_non_terminal_plane_prev; // Previous side of nonterminal plane.
